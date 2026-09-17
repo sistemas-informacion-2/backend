@@ -14,11 +14,17 @@ import { RolUsuario } from './entities/rol-usuario.entity.js';
 import { Sesion } from './entities/sesion.entity.js';
 import { OperacionesModule } from '../operaciones/operaciones.module.js';
 import { AuthController } from './controllers/auth.controller.js';
+import { UsuariosController } from './controllers/usuarios.controller.js';
+import { RolesController } from './controllers/roles.controller.js';
 import { AuthService } from './services/auth.service.js';
+import { UsuariosService } from './services/usuarios.service.js';
+import { RolesService } from './services/roles.service.js';
 import { UsuarioRepository } from './repositories/usuario.repository.js';
 import { SesionRepository } from './repositories/sesion.repository.js';
 import { ClienteRepository } from './repositories/cliente.repository.js';
 import { EmpleadoSucursalRepository } from './repositories/empleado-sucursal.repository.js';
+import { RolRepository } from './repositories/rol.repository.js';
+import { RolUsuarioRepository } from './repositories/rol-usuario.repository.js';
 import { JwtStrategy } from './jwt.strategy.js';
 
 @Module({
@@ -37,14 +43,18 @@ import { JwtStrategy } from './jwt.strategy.js';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, UsuariosController, RolesController],
   providers: [
     AuthService,
+    UsuariosService,
+    RolesService,
     JwtStrategy,
     UsuarioRepository,
     SesionRepository,
     ClienteRepository,
     EmpleadoSucursalRepository,
+    RolRepository,
+    RolUsuarioRepository,
   ],
   exports: [TypeOrmModule],
 })

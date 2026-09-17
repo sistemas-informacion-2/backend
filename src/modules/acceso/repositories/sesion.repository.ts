@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, MoreThan, type Repository } from 'typeorm';
+import { IsNull, MoreThan, type EntityManager, type Repository } from 'typeorm';
 import { Sesion } from '../entities/sesion.entity.js';
 
 @Injectable()
@@ -33,5 +33,12 @@ export class SesionRepository {
   cerrar(sesion: Sesion): Promise<Sesion> {
     sesion.fechaCierre = new Date();
     return this.repo.save(sesion);
+  }
+
+  cerrarAbiertasPorUsuario(idUsuario: number, manager: EntityManager = this.repo.manager): Promise<unknown> {
+    return manager.getRepository(Sesion).update(
+      { idUsuario, fechaCierre: IsNull() },
+      { fechaCierre: new Date() },
+    );
   }
 }
