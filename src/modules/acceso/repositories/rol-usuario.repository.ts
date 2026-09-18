@@ -25,4 +25,21 @@ export class RolUsuarioRepository {
     if (existentes.length > 0) await repository.save(existentes);
     if (nuevos.length > 0) await repository.save(nuevos);
   }
+
+  async contarActivosPorRoles(
+    idsRol: number[],
+    manager: EntityManager = this.repo.manager,
+  ): Promise<Map<number, number>> {
+    if (idsRol.length === 0) return new Map();
+    const filas = await manager
+      .getRepository(RolUsuario)
+      .createQueryBuilder('ru')
+      .select('ru.id_rol', 'idRol')
+      .addSelect('COUNT(*)', 'total')
+      .where('ru.id_rol IN (:...idsRol)', { idsRol })
+      .andWhere('ru.activo = true')
+      .groupBy('ru.id_rol')
+      .getRawMany<{ idRol: number; total: string }>();
+    return new Map(filas.map((fila) => [Number(fila.idRol), Number(fila.total)]));
+  }
 }

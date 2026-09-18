@@ -181,7 +181,9 @@ CREATE TABLE CATEGORIA (
     id SERIAL PRIMARY KEY,
     id_categoria_padre INT,
     nombre VARCHAR(100) NOT NULL,
+    slug VARCHAR(120) NOT NULL UNIQUE, -- URLs limpias para la barra de categorias del e-commerce (CU08)
     descripcion TEXT,
+    imagen_url VARCHAR(500), -- imagen de la categoria, la pide CU08 explicitamente
     activo BOOLEAN DEFAULT TRUE,
     CONSTRAINT fk_categoria_padre FOREIGN KEY (id_categoria_padre) REFERENCES CATEGORIA(id) ON DELETE CASCADE
 );

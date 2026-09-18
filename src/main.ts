@@ -5,6 +5,7 @@ import { AppModule } from './app.module.js';
 import { AppValidationPipe } from './common/pipes/validation.pipe.js';
 import type { AppConfig } from './config/configuration.js';
 import { InitialSeederService } from './database/seeders/initial-seeder.service.js';
+import { UbicacionSeederService } from './modules/operaciones/seeders/ubicacion-seeder.service.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -17,6 +18,8 @@ async function bootstrap() {
   // Idempotente: crea permisos base, rol ADMINISTRADOR y el usuario admin
   // (SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD) si todavia no existen.
   await app.get(InitialSeederService).run();
+  // Idempotente: siembra los 9 departamentos de Bolivia como referencia fija.
+  await app.get(UbicacionSeederService).run();
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('FashionStore API')

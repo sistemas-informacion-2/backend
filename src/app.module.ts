@@ -6,6 +6,7 @@ import { SeedersModule } from './database/seeders/seeders.module.js';
 import { CommonModule } from './common/common.module.js';
 import { AccesoModule } from './modules/acceso/acceso.module.js';
 import { OperacionesModule } from './modules/operaciones/operaciones.module.js';
+import { InventarioModule } from './modules/inventario/inventario.module.js';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { OperacionesModule } from './modules/operaciones/operaciones.module.js';
     SeedersModule,
     CommonModule,
     OperacionesModule,
+    InventarioModule,
     AccesoModule,
   ],
 })

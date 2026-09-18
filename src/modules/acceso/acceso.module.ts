@@ -16,6 +16,7 @@ import { OperacionesModule } from '../operaciones/operaciones.module.js';
 import { AuthController } from './controllers/auth.controller.js';
 import { UsuariosController } from './controllers/usuarios.controller.js';
 import { RolesController } from './controllers/roles.controller.js';
+import { PermisosController } from './controllers/permisos.controller.js';
 import { AuthService } from './services/auth.service.js';
 import { UsuariosService } from './services/usuarios.service.js';
 import { RolesService } from './services/roles.service.js';
@@ -25,6 +26,8 @@ import { ClienteRepository } from './repositories/cliente.repository.js';
 import { EmpleadoSucursalRepository } from './repositories/empleado-sucursal.repository.js';
 import { RolRepository } from './repositories/rol.repository.js';
 import { RolUsuarioRepository } from './repositories/rol-usuario.repository.js';
+import { RolPermisoRepository } from './repositories/rol-permiso.repository.js';
+import { PermisoRepository } from './repositories/permiso.repository.js';
 import { JwtStrategy } from './jwt.strategy.js';
 
 @Module({
@@ -43,7 +46,7 @@ import { JwtStrategy } from './jwt.strategy.js';
       }),
     }),
   ],
-  controllers: [AuthController, UsuariosController, RolesController],
+  controllers: [AuthController, UsuariosController, RolesController, PermisosController],
   providers: [
     AuthService,
     UsuariosService,
@@ -55,6 +58,8 @@ import { JwtStrategy } from './jwt.strategy.js';
     EmpleadoSucursalRepository,
     RolRepository,
     RolUsuarioRepository,
+    RolPermisoRepository,
+    PermisoRepository,
   ],
   exports: [TypeOrmModule],
 })
