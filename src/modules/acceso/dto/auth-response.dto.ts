@@ -11,6 +11,7 @@ export class PerfilDto {
   sucursalId?: number;
   sucursalNombre?: string;
   puntosFidelidad?: number;
+  direccion?: string | null;
 }
 
 export class AuthResponseDto {

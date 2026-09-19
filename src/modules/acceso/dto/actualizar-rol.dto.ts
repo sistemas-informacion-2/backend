@@ -9,7 +9,7 @@ export class ActualizarRolDto {
 
   @IsOptional()
   @IsString()
-  descripcion?: string;
+  descripcion?: string | null;
 
   @IsOptional()
   @IsBoolean()

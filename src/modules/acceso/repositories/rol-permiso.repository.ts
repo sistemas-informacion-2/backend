@@ -29,4 +29,15 @@ export class RolPermisoRepository {
     if (existentes.length > 0) await repository.save(existentes);
     if (nuevos.length > 0) await repository.save(nuevos);
   }
+
+  findActiveByRole(idRol: number, manager: EntityManager = this.repo.manager): Promise<RolPermiso[]> {
+    return manager
+      .getRepository(RolPermiso)
+      .createQueryBuilder('rolPermiso')
+      .leftJoinAndSelect('rolPermiso.permiso', 'permiso')
+      .where('rolPermiso.id_rol = :idRol', { idRol })
+      .andWhere('rolPermiso.activo = :activo', { activo: true })
+      .andWhere('permiso.activo = :permisoActivo', { permisoActivo: true })
+      .getMany();
+  }
 }

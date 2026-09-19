@@ -8,5 +8,5 @@ export class CrearRolDto {
 
   @IsOptional()
   @IsString()
-  descripcion?: string;
+  descripcion?: string | null;
 }

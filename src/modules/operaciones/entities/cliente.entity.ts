@@ -1,5 +1,5 @@
 import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn, type Relation } from 'typeorm';
-import { Usuario } from './usuario.entity.js';
+import { Usuario } from '../../acceso/entities/usuario.entity.js';
 
 @Entity('cliente')
 export class Cliente {

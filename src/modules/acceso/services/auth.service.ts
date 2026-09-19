@@ -7,7 +7,7 @@ import type { AppConfig } from '../../../config/configuration.js';
 import { Usuario } from '../entities/usuario.entity.js';
 import { UsuarioRepository } from '../repositories/usuario.repository.js';
 import { SesionRepository } from '../repositories/sesion.repository.js';
-import { ClienteRepository } from '../repositories/cliente.repository.js';
+import { ClienteRepository } from '../../operaciones/repositories/cliente.repository.js';
 import { EmpleadoSucursalRepository } from '../repositories/empleado-sucursal.repository.js';
 import { extraerPermisos, toPerfilBase } from '../mappers/usuario.mapper.js';
 import type { LoginDto } from '../dto/login.dto.js';
@@ -171,6 +171,7 @@ export class AuthService {
     if (usuario.tipoUsuario === 'C') {
       const cliente = await this.clienteRepo.findByUsuarioId(usuario.id);
       perfil.puntosFidelidad = cliente?.puntosFidelidad ?? 0;
+      perfil.direccion = cliente?.direccionPrincipal ?? null;
     }
 
     return perfil;

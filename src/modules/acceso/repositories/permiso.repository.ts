@@ -11,6 +11,10 @@ export class PermisoRepository {
     return manager.getRepository(Permiso).find({ where: { activo: true }, order: { accion: 'ASC' } });
   }
 
+  findActive(manager: EntityManager = this.repo.manager): Promise<Permiso[]> {
+    return this.findAllActivos(manager);
+  }
+
   findActiveByIds(ids: number[], manager: EntityManager = this.repo.manager): Promise<Permiso[]> {
     if (ids.length === 0) return Promise.resolve([]);
     return manager.getRepository(Permiso).find({ where: { id: In(ids), activo: true } });

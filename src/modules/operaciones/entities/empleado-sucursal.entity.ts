@@ -1,6 +1,6 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, type Relation } from 'typeorm';
 import { Sucursal } from './sucursal.entity.js';
-import { Empleado } from '../../acceso/entities/empleado.entity.js';
+import { Empleado } from './empleado.entity.js';
 
 @Entity('empleado_sucursal')
 export class EmpleadoSucursal {
