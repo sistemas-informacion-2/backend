@@ -20,6 +20,11 @@ export class EmpleadosQueryDto {
   search?: string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  idSucursal?: number;
+
+  @IsOptional()
   @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
   @IsBoolean()
   activo?: boolean;

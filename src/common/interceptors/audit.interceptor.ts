@@ -33,6 +33,7 @@ export class AuditInterceptor implements NestInterceptor {
             accion: `${request.method} ${request.originalUrl}`,
             tablaAfectada: this.extraerRecurso(request.originalUrl),
             ipOrigen: request.ip ?? null,
+            userAgent: request.headers['user-agent'] ?? null,
             datosNuevos: this.sanitizar(request.body),
           })
           .catch(() => undefined); // la auditoría nunca debe romper la respuesta al cliente

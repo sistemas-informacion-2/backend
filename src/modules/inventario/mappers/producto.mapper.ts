@@ -10,8 +10,9 @@ export function toProductoResponseDto(producto: Producto): ProductoResponseDto {
     activo: producto.activo,
     categoriaId: producto.idCategoria,
     categoriaNombre: producto.categoria?.nombre ?? '',
-    sucursalId: producto.idSucursal,
-    sucursalNombre: producto.sucursal?.nombre ?? null,
+    sucursales: (producto.productoSucursales ?? [])
+      .filter((relacion) => !!relacion.sucursal)
+      .map((relacion) => ({ id: relacion.idSucursal, nombre: relacion.sucursal.nombre, activo: relacion.activo })),
     imagenes: (producto.imagenes ?? [])
       .slice()
       .sort((a, b) => a.orden - b.orden)
@@ -22,7 +23,6 @@ export function toProductoResponseDto(producto: Producto): ProductoResponseDto {
       talla: variante.talla,
       color: variante.color,
       corte: variante.corte,
-      codigoHexColor: variante.codigoHexColor,
       modelo3dUrl: variante.modelo3dUrl,
       activo: variante.activo,
     })),

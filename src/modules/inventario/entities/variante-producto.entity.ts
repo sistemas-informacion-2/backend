@@ -25,9 +25,6 @@ export class VarianteProducto {
   @Column({ type: 'varchar', length: 50 })
   corte: string;
 
-  @Column({ name: 'codigo_hex_color', type: 'varchar', length: 10, nullable: true })
-  codigoHexColor: string | null;
-
   @Column({ name: 'modelo_3d_url', type: 'varchar', length: 500, nullable: true })
   modelo3dUrl: string | null;
 

@@ -2,7 +2,7 @@ import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColum
 import { Categoria } from './categoria.entity.js';
 import { ImagenProducto } from './imagen-producto.entity.js';
 import { VarianteProducto } from './variante-producto.entity.js';
-import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
+import { ProductoSucursal } from './producto-sucursal.entity.js';
 
 /** Postgres devuelve NUMERIC como string para no perder precision; lo convertimos a number en ambos sentidos. */
 const TRANSFORMER_DECIMAL = {
@@ -22,13 +22,6 @@ export class Producto {
   @JoinColumn({ name: 'id_categoria' })
   categoria: Relation<Categoria>;
 
-  @Column({ name: 'id_sucursal', type: 'int', nullable: true })
-  idSucursal: number | null;
-
-  @ManyToOne(() => Sucursal, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'id_sucursal' })
-  sucursal: Relation<Sucursal> | null;
-
   @Column({ type: 'varchar', length: 150 })
   nombre: string;
 
@@ -46,4 +39,7 @@ export class Producto {
 
   @OneToMany(() => VarianteProducto, (variante) => variante.producto)
   variantes: Relation<VarianteProducto>[];
+
+  @OneToMany(() => ProductoSucursal, (productoSucursal) => productoSucursal.producto)
+  productoSucursales: Relation<ProductoSucursal>[];
 }

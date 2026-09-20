@@ -1,6 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, In, type Repository } from 'typeorm';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { Producto } from '../entities/producto.entity.js';
 import { ImagenProducto } from '../entities/imagen-producto.entity.js';
@@ -8,6 +8,7 @@ import { VarianteProducto } from '../entities/variante-producto.entity.js';
 import { ProductoRepository } from '../repositories/producto.repository.js';
 import { ImagenProductoRepository } from '../repositories/imagen-producto.repository.js';
 import { VarianteProductoRepository } from '../repositories/variante-producto.repository.js';
+import { ProductoSucursalRepository } from '../repositories/producto-sucursal.repository.js';
 import { CategoriaRepository } from '../repositories/categoria.repository.js';
 import { toProductoResponseDto } from '../mappers/producto.mapper.js';
 import type { CrearProductoDto } from '../dto/crear-producto.dto.js';
@@ -16,6 +17,7 @@ import type { CrearImagenProductoDto } from '../dto/crear-imagen-producto.dto.js
 import type { ActualizarImagenProductoDto } from '../dto/actualizar-imagen-producto.dto.js';
 import type { CrearVarianteProductoDto } from '../dto/crear-variante-producto.dto.js';
 import type { ActualizarVarianteProductoDto } from '../dto/actualizar-variante-producto.dto.js';
+import type { GestionarSucursalesProductoDto } from '../dto/gestionar-sucursales-producto.dto.js';
 import type { ProductosQueryDto } from '../dto/productos-query.dto.js';
 import type { ProductosPublicoQueryDto } from '../dto/productos-publico-query.dto.js';
 import type { ProductoResponseDto, ProductosPaginatedResponseDto } from '../dto/producto-response.dto.js';
@@ -27,6 +29,7 @@ export class ProductosService {
     private readonly productoRepo: ProductoRepository,
     private readonly imagenRepo: ImagenProductoRepository,
     private readonly varianteRepo: VarianteProductoRepository,
+    private readonly productoSucursalRepo: ProductoSucursalRepository,
     private readonly categoriaRepo: CategoriaRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
   ) {}
@@ -57,14 +60,13 @@ export class ProductosService {
 
   async crear(dto: CrearProductoDto): Promise<ProductoResponseDto> {
     await this.validarCategoria(dto.idCategoria);
-    if (dto.idSucursal !== undefined) await this.validarSucursal(dto.idSucursal);
+    if (dto.sucursalIds !== undefined) await this.validarSucursales(dto.sucursalIds);
     await this.validarSkusUnicos(dto.variantes.map((variante) => variante.sku));
 
     const idProducto = await this.dataSource.transaction(async (manager) => {
       const producto = this.productoRepo.create(
         {
           idCategoria: dto.idCategoria,
-          idSucursal: dto.idSucursal ?? null,
           nombre: dto.nombre.trim(),
           descripcion: dto.descripcion?.trim() || null,
           precio: dto.precio,
@@ -73,6 +75,10 @@ export class ProductosService {
         manager,
       );
       await this.productoRepo.save(producto, manager);
+
+      if (dto.sucursalIds !== undefined) {
+        await this.productoSucursalRepo.reemplazarSucursales(producto.id, dto.sucursalIds, manager);
+      }
 
       const imagenesDto = dto.imagenes ?? [];
       if (imagenesDto.length > 0) {
@@ -99,7 +105,6 @@ export class ProductosService {
             talla: variante.talla.trim(),
             color: variante.color.trim(),
             corte: variante.corte.trim(),
-            codigoHexColor: variante.codigoHexColor?.trim() || null,
             modelo3dUrl: variante.modelo3dUrl?.trim() || null,
             activo: true,
           },
@@ -119,11 +124,10 @@ export class ProductosService {
     if (!producto) throw new NotFoundException('Producto no encontrado');
 
     if (dto.idCategoria !== undefined) await this.validarCategoria(dto.idCategoria);
-    if (dto.idSucursal !== undefined && dto.idSucursal !== null) await this.validarSucursal(dto.idSucursal);
+    if (dto.sucursalIds !== undefined) await this.validarSucursales(dto.sucursalIds);
 
     Object.assign(producto, {
       ...(dto.idCategoria !== undefined && { idCategoria: dto.idCategoria }),
-      ...(dto.idSucursal !== undefined && { idSucursal: dto.idSucursal }),
       ...(dto.nombre !== undefined && { nombre: dto.nombre.trim() }),
       ...(dto.descripcion !== undefined && { descripcion: dto.descripcion?.trim() || null }),
       ...(dto.precio !== undefined && { precio: dto.precio }),
@@ -131,7 +135,18 @@ export class ProductosService {
     });
     await this.productoRepo.save(producto);
 
+    if (dto.sucursalIds !== undefined) {
+      await this.productoSucursalRepo.reemplazarSucursales(id, dto.sucursalIds);
+    }
+
     return this.obtener(id);
+  }
+
+  async gestionarSucursales(idProducto: number, dto: GestionarSucursalesProductoDto): Promise<ProductoResponseDto> {
+    await this.obtenerProductoOFallar(idProducto);
+    await this.validarSucursales(dto.sucursalIds);
+    await this.productoSucursalRepo.reemplazarSucursales(idProducto, dto.sucursalIds);
+    return this.obtener(idProducto);
   }
 
   async eliminar(id: number): Promise<void> {
@@ -151,7 +166,6 @@ export class ProductosService {
       talla: dto.talla.trim(),
       color: dto.color.trim(),
       corte: dto.corte.trim(),
-      codigoHexColor: dto.codigoHexColor?.trim() || null,
       modelo3dUrl: dto.modelo3dUrl?.trim() || null,
       activo: true,
     });
@@ -176,7 +190,6 @@ export class ProductosService {
       ...(dto.talla !== undefined && { talla: dto.talla.trim() }),
       ...(dto.color !== undefined && { color: dto.color.trim() }),
       ...(dto.corte !== undefined && { corte: dto.corte.trim() }),
-      ...(dto.codigoHexColor !== undefined && { codigoHexColor: dto.codigoHexColor?.trim() || null }),
       ...(dto.modelo3dUrl !== undefined && { modelo3dUrl: dto.modelo3dUrl?.trim() || null }),
       ...(dto.activo !== undefined && { activo: dto.activo }),
     });
@@ -255,9 +268,12 @@ export class ProductosService {
     if (!categoria) throw new BadRequestException('La categoría indicada no existe');
   }
 
-  private async validarSucursal(idSucursal: number): Promise<void> {
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
-    if (!sucursal) throw new BadRequestException('La sucursal indicada no existe');
+  private async validarSucursales(idsSucursal: number[]): Promise<void> {
+    if (idsSucursal.length === 0) return;
+    const sucursales = await this.sucursalRepo.find({ where: { id: In(idsSucursal) } });
+    if (sucursales.length !== new Set(idsSucursal).size) {
+      throw new UnprocessableEntityException('Una o más sucursales indicadas no existen');
+    }
   }
 
   private async validarSkusUnicos(skus: string[]): Promise<void> {

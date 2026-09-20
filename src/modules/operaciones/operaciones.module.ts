@@ -21,6 +21,7 @@ import { DepartamentoRepository } from './repositories/departamento.repository.j
 import { UbicacionSeederService } from './seeders/ubicacion-seeder.service.js';
 import { ClienteRepository } from './repositories/cliente.repository.js';
 import { EmpleadoRepository } from './repositories/empleado.repository.js';
+import { AsignacionSucursalRepository } from './repositories/asignacion-sucursal.repository.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Departamento, Ciudad, Sucursal, EmpleadoSucursal, Empleado, Cliente, Usuario])],
@@ -36,6 +37,7 @@ import { EmpleadoRepository } from './repositories/empleado.repository.js';
     EmpleadosService,
     ClienteRepository,
     EmpleadoRepository,
+    AsignacionSucursalRepository,
   ],
   exports: [TypeOrmModule, UbicacionSeederService, ClienteRepository],
 })

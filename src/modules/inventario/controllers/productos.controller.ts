@@ -9,6 +9,7 @@ import { CrearVarianteProductoDto } from '../dto/crear-variante-producto.dto.js'
 import { ActualizarVarianteProductoDto } from '../dto/actualizar-variante-producto.dto.js';
 import { CrearImagenProductoDto } from '../dto/crear-imagen-producto.dto.js';
 import { ActualizarImagenProductoDto } from '../dto/actualizar-imagen-producto.dto.js';
+import { GestionarSucursalesProductoDto } from '../dto/gestionar-sucursales-producto.dto.js';
 import { ProductosQueryDto } from '../dto/productos-query.dto.js';
 import { ProductosPublicoQueryDto } from '../dto/productos-publico-query.dto.js';
 import type { ProductoResponseDto, ProductosPaginatedResponseDto } from '../dto/producto-response.dto.js';
@@ -62,6 +63,16 @@ export class ProductosController {
   @ApiOperation({ summary: 'Desactiva lógicamente un producto' })
   async eliminar(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.productosService.eliminar(id);
+  }
+
+  @Put(':id/sucursales')
+  @RequirePermission('inventario:productos:gestionar')
+  @ApiOperation({ summary: 'Reemplaza el conjunto de sucursales donde el producto está activo' })
+  gestionarSucursales(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: GestionarSucursalesProductoDto,
+  ): Promise<ProductoResponseDto> {
+    return this.productosService.gestionarSucursales(id, dto);
   }
 
   @Post(':id/variantes')

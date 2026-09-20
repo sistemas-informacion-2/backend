@@ -11,8 +11,13 @@ export class VarianteProductoResponseDto {
   talla: string;
   color: string;
   corte: string;
-  codigoHexColor: string | null;
   modelo3dUrl: string | null;
+  activo: boolean;
+}
+
+export class SucursalActivaResponseDto {
+  id: number;
+  nombre: string;
   activo: boolean;
 }
 
@@ -24,8 +29,7 @@ export class ProductoResponseDto {
   activo: boolean;
   categoriaId: number;
   categoriaNombre: string;
-  sucursalId: number | null;
-  sucursalNombre: string | null;
+  sucursales: SucursalActivaResponseDto[];
   imagenes: ImagenProductoResponseDto[];
   variantes: VarianteProductoResponseDto[];
 }

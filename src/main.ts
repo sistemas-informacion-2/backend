@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { join } from 'node:path';
+import express from 'express';
 import { AppModule } from './app.module.js';
 import { AppValidationPipe } from './common/pipes/validation.pipe.js';
 import type { AppConfig } from './config/configuration.js';
@@ -13,6 +15,7 @@ async function bootstrap() {
 
   app.enableCors({ origin: config.get('corsOrigin', { infer: true }) });
   app.setGlobalPrefix('api');
+  app.getHttpAdapter().getInstance().use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.useGlobalPipes(new AppValidationPipe());
 
   // Idempotente: crea permisos base, rol ADMINISTRADOR y el usuario admin

@@ -22,6 +22,9 @@ export class Bitacora {
   @Column({ name: 'ip_origen', type: 'varchar', length: 45, nullable: true })
   ipOrigen: string | null;
 
+  @Column({ name: 'user_agent', type: 'text', nullable: true })
+  userAgent: string | null;
+
   @Column({ name: 'datos_anteriores', type: 'jsonb', nullable: true })
   datosAnteriores: Record<string, unknown> | null;
 

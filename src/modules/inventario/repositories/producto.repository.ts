@@ -5,7 +5,7 @@ import { Producto } from '../entities/producto.entity.js';
 
 const RELACIONES_DETALLE = {
   categoria: true,
-  sucursal: true,
+  productoSucursales: { sucursal: true },
   imagenes: true,
   variantes: true,
 } as const;
@@ -55,7 +55,8 @@ export class ProductoRepository {
     const items = await this.repo
       .createQueryBuilder('producto')
       .leftJoinAndSelect('producto.categoria', 'categoria')
-      .leftJoinAndSelect('producto.sucursal', 'sucursal')
+      .leftJoinAndSelect('producto.productoSucursales', 'productoSucursal')
+      .leftJoinAndSelect('productoSucursal.sucursal', 'sucursal')
       .leftJoinAndSelect('producto.imagenes', 'imagen')
       .leftJoinAndSelect('producto.variantes', 'variante')
       .where('producto.id IN (:...ids)', { ids })
@@ -85,7 +86,8 @@ export class ProductoRepository {
     return this.repo
       .createQueryBuilder('producto')
       .leftJoinAndSelect('producto.categoria', 'categoria')
-      .leftJoinAndSelect('producto.sucursal', 'sucursal')
+      .leftJoinAndSelect('producto.productoSucursales', 'productoSucursal')
+      .leftJoinAndSelect('productoSucursal.sucursal', 'sucursal')
       .leftJoinAndSelect('producto.imagenes', 'imagen')
       .leftJoinAndSelect('producto.variantes', 'variante');
   }
@@ -105,7 +107,10 @@ export class ProductoRepository {
       builder.andWhere('producto.id_categoria = :idCategoria', { idCategoria: filtros.idCategoria });
     }
     if (filtros.idSucursal !== undefined) {
-      builder.andWhere('producto.id_sucursal = :idSucursal', { idSucursal: filtros.idSucursal });
+      builder.andWhere(
+        `producto.id IN (SELECT ps.id_producto FROM producto_sucursal ps WHERE ps.id_sucursal = :idSucursal AND ps.activo = true)`,
+        { idSucursal: filtros.idSucursal },
+      );
     }
     if (filtros.activo !== undefined) {
       builder.andWhere('producto.activo = :activo', { activo: filtros.activo });

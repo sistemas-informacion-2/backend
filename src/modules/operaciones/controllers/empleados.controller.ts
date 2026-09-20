@@ -4,6 +4,7 @@ import { RequirePermission } from '../../../common/decorators/require-permission
 import { EmpleadosService } from '../services/empleados.service.js';
 import { CrearEmpleadoDto } from '../dto/crear-empleado.dto.js';
 import { ActualizarEmpleadoDto } from '../dto/actualizar-empleado.dto.js';
+import { GestionarSucursalesEmpleadoDto } from '../dto/gestionar-sucursales-empleado.dto.js';
 import { EmpleadosQueryDto } from '../dto/empleados-query.dto.js';
 import type { EmpleadoResponseDto, EmpleadosPaginatedResponseDto } from '../dto/empleado-response.dto.js';
 
@@ -38,5 +39,14 @@ export class EmpleadosController {
     @Body() dto: ActualizarEmpleadoDto,
   ): Promise<EmpleadoResponseDto> {
     return this.empleadosService.actualizar(id, dto);
+  }
+
+  @Put(':id/sucursales')
+  @ApiOperation({ summary: 'Reemplaza el conjunto de sucursales asignadas al empleado' })
+  gestionarSucursales(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: GestionarSucursalesEmpleadoDto,
+  ): Promise<EmpleadoResponseDto> {
+    return this.empleadosService.gestionarSucursales(id, dto);
   }
 }

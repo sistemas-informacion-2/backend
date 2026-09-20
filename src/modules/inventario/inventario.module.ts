@@ -8,10 +8,12 @@ import { TemporadaCategoria } from './entities/temporada-categoria.entity.js';
 import { Producto } from './entities/producto.entity.js';
 import { ImagenProducto } from './entities/imagen-producto.entity.js';
 import { VarianteProducto } from './entities/variante-producto.entity.js';
+import { ProductoSucursal } from './entities/producto-sucursal.entity.js';
 import { CategoriasController } from './controllers/categorias.controller.js';
 import { ProveedoresController } from './controllers/proveedores.controller.js';
 import { TemporadasController } from './controllers/temporadas.controller.js';
 import { ProductosController } from './controllers/productos.controller.js';
+import { ArchivosController } from './controllers/archivos.controller.js';
 import { CategoriasService } from './services/categorias.service.js';
 import { ProveedoresService } from './services/proveedores.service.js';
 import { TemporadasService } from './services/temporadas.service.js';
@@ -23,6 +25,7 @@ import { TemporadaCategoriaRepository } from './repositories/temporada-categoria
 import { ProductoRepository } from './repositories/producto.repository.js';
 import { ImagenProductoRepository } from './repositories/imagen-producto.repository.js';
 import { VarianteProductoRepository } from './repositories/variante-producto.repository.js';
+import { ProductoSucursalRepository } from './repositories/producto-sucursal.repository.js';
 
 @Module({
   imports: [
@@ -34,10 +37,11 @@ import { VarianteProductoRepository } from './repositories/variante-producto.rep
       Producto,
       ImagenProducto,
       VarianteProducto,
+      ProductoSucursal,
       Sucursal,
     ]),
   ],
-  controllers: [CategoriasController, ProveedoresController, TemporadasController, ProductosController],
+  controllers: [CategoriasController, ProveedoresController, TemporadasController, ProductosController, ArchivosController],
   providers: [
     CategoriasService,
     ProveedoresService,
@@ -50,6 +54,7 @@ import { VarianteProductoRepository } from './repositories/variante-producto.rep
     ProductoRepository,
     ImagenProductoRepository,
     VarianteProductoRepository,
+    ProductoSucursalRepository,
   ],
   exports: [TypeOrmModule],
 })

@@ -7,6 +7,11 @@ import type {
   SucursalResponseDto,
 } from '../dto/sucursal-response.dto.js';
 
+/** Postgres devuelve TIME como "HH:mm:ss"; lo recortamos a "HH:mm" para que calce con el patron que valida ActualizarSucursalDto al reenviar el mismo valor. */
+function aHoraCorta(hora: string | null): string | null {
+  return hora === null ? null : hora.slice(0, 5);
+}
+
 /** Requiere que `sucursal.ciudad.departamento` venga cargado (ver SucursalRepository). */
 export function toSucursalResponseDto(sucursal: Sucursal): SucursalResponseDto {
   return {
@@ -15,8 +20,8 @@ export function toSucursalResponseDto(sucursal: Sucursal): SucursalResponseDto {
     ubicacion: sucursal.ubicacion,
     telefono: sucursal.telefono,
     correo: sucursal.correo,
-    horarioApertura: sucursal.horarioApertura,
-    horarioCierre: sucursal.horarioCierre,
+    horarioApertura: aHoraCorta(sucursal.horarioApertura),
+    horarioCierre: aHoraCorta(sucursal.horarioCierre),
     activo: sucursal.activo,
     ciudadId: sucursal.idCiudad,
     ciudadNombre: sucursal.ciudad.nombre,

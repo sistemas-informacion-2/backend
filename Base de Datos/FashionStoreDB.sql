@@ -98,6 +98,7 @@ CREATE TABLE BITACORA (
     accion VARCHAR(100) NOT NULL,
     tabla_afectada VARCHAR(100) NOT NULL,
     ip_origen VARCHAR(45),
+    user_agent TEXT,
     datos_anteriores JSONB,
     datos_nuevos JSONB,
     fecha_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -199,13 +200,22 @@ CREATE TABLE TEMPORADA_CATEGORIA (
 CREATE TABLE PRODUCTO (
     id SERIAL PRIMARY KEY,
     id_categoria INT NOT NULL,
-    id_sucursal INT,
     nombre VARCHAR(150) NOT NULL,
     descripcion TEXT,
     precio DECIMAL(12,2) NOT NULL,
     activo BOOLEAN DEFAULT TRUE,
-    CONSTRAINT fk_producto_categoria FOREIGN KEY (id_categoria) REFERENCES CATEGORIA(id),
-    CONSTRAINT fk_producto_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id) ON DELETE SET NULL
+    CONSTRAINT fk_producto_categoria FOREIGN KEY (id_categoria) REFERENCES CATEGORIA(id)
+);
+
+-- Catalogo global: el producto se crea una sola vez y cada sucursal decide si
+-- lo activa, sin duplicar la fila de PRODUCTO ni su SKU por sucursal.
+CREATE TABLE PRODUCTO_SUCURSAL (
+    id_producto INT NOT NULL,
+    id_sucursal INT NOT NULL,
+    activo BOOLEAN DEFAULT TRUE,
+    PRIMARY KEY (id_producto, id_sucursal),
+    CONSTRAINT fk_prodsuc_producto FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id) ON DELETE CASCADE,
+    CONSTRAINT fk_prodsuc_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IMAGEN_PRODUCTO (
@@ -224,7 +234,6 @@ CREATE TABLE VARIANTE_PRODUCTO (
     talla VARCHAR(20) NOT NULL,
     color VARCHAR(50) NOT NULL,
     corte VARCHAR(50) NOT NULL,
-    codigo_hex_color VARCHAR(10),
     modelo_3d_url VARCHAR(500),
     activo BOOLEAN DEFAULT TRUE,
     CONSTRAINT fk_variante_producto FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id) ON DELETE CASCADE

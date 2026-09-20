@@ -1,13 +1,9 @@
-import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min, MaxLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min, MaxLength } from 'class-validator';
 
 export class ActualizarProductoDto {
   @IsOptional()
   @IsInt()
   idCategoria?: number;
-
-  @IsOptional()
-  @IsInt()
-  idSucursal?: number | null;
 
   @IsOptional()
   @IsString()
@@ -26,4 +22,11 @@ export class ActualizarProductoDto {
   @IsOptional()
   @IsBoolean()
   activo?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  sucursalIds?: number[];
 }

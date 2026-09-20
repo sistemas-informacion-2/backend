@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsInt,
   IsNotEmpty,
@@ -18,9 +19,13 @@ export class CrearProductoDto {
   @IsInt()
   idCategoria: number;
 
+  /** Sucursales donde queda activo desde el alta; el producto en si es global y no se duplica por sede. */
   @IsOptional()
-  @IsInt()
-  idSucursal?: number;
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  sucursalIds?: number[];
 
   @IsString()
   @IsNotEmpty()

@@ -1,6 +1,4 @@
-import { IsBoolean, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
-
-const PATRON_HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class ActualizarVarianteProductoDto {
   @IsOptional()
@@ -22,11 +20,6 @@ export class ActualizarVarianteProductoDto {
   @IsString()
   @MaxLength(50)
   corte?: string;
-
-  @IsOptional()
-  @IsString()
-  @Matches(PATRON_HEX, { message: 'codigoHexColor debe ser un color hex válido (ej. "#FF00AA")' })
-  codigoHexColor?: string;
 
   @IsOptional()
   @IsString()
