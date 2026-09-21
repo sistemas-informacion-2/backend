@@ -31,6 +31,10 @@ export class Producto {
   @Column({ type: 'decimal', precision: 12, scale: 2, transformer: TRANSFORMER_DECIMAL })
   precio: number;
 
+  /** Descuento vigente del producto en porcentaje (0 = sin descuento). */
+  @Column({ name: 'descuento_porcentaje', type: 'decimal', precision: 5, scale: 2, default: 0, transformer: TRANSFORMER_DECIMAL })
+  descuentoPorcentaje: number;
+
   @Column({ type: 'boolean', default: true })
   activo: boolean;
 

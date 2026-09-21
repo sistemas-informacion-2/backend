@@ -18,6 +18,11 @@ export class SucursalesService {
     return sucursales.map(toSucursalResponseDto);
   }
 
+  async listarActivas(): Promise<SucursalResponseDto[]> {
+    const sucursales = await this.sucursalRepo.findAllConUbicacion();
+    return sucursales.filter((sucursal) => sucursal.activo).map(toSucursalResponseDto);
+  }
+
   async crear(dto: CrearSucursalDto): Promise<SucursalResponseDto> {
     await this.validarCiudad(dto.idCiudad);
 

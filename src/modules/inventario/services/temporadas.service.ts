@@ -4,6 +4,7 @@ import { toTemporadaResponseDto } from '../mappers/temporada.mapper.js';
 import type { CrearTemporadaDto } from '../dto/crear-temporada.dto.js';
 import type { ActualizarTemporadaDto } from '../dto/actualizar-temporada.dto.js';
 import type { TemporadaResponseDto } from '../dto/temporada-response.dto.js';
+import type { TemporadaPublicaResponseDto } from '../dto/temporada-publica-response.dto.js';
 
 @Injectable()
 export class TemporadasService {
@@ -12,6 +13,18 @@ export class TemporadasService {
   async listar(): Promise<TemporadaResponseDto[]> {
     const temporadas = await this.temporadaRepo.findAll();
     return temporadas.map(toTemporadaResponseDto);
+  }
+
+  async listarPublicas(): Promise<TemporadaPublicaResponseDto[]> {
+    const temporadas = await this.temporadaRepo.findAllConCategorias();
+    return temporadas.map((temporada) => ({
+      ...toTemporadaResponseDto(temporada),
+      categorias: temporada.temporadasCategoria
+        .map((tc) => tc.categoria)
+        .filter((categoria) => categoria.activo)
+        .map((categoria) => ({ id: categoria.id, nombre: categoria.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    }));
   }
 
   async crear(dto: CrearTemporadaDto): Promise<TemporadaResponseDto> {

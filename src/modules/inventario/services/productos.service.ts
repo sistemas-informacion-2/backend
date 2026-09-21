@@ -70,6 +70,7 @@ export class ProductosService {
           nombre: dto.nombre.trim(),
           descripcion: dto.descripcion?.trim() || null,
           precio: dto.precio,
+          descuentoPorcentaje: dto.descuentoPorcentaje ?? 0,
           activo: true,
         },
         manager,
@@ -131,6 +132,7 @@ export class ProductosService {
       ...(dto.nombre !== undefined && { nombre: dto.nombre.trim() }),
       ...(dto.descripcion !== undefined && { descripcion: dto.descripcion?.trim() || null }),
       ...(dto.precio !== undefined && { precio: dto.precio }),
+      ...(dto.descuentoPorcentaje !== undefined && { descuentoPorcentaje: dto.descuentoPorcentaje }),
       ...(dto.activo !== undefined && { activo: dto.activo }),
     });
     await this.productoRepo.save(producto);

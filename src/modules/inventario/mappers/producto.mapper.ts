@@ -7,6 +7,7 @@ export function toProductoResponseDto(producto: Producto): ProductoResponseDto {
     nombre: producto.nombre,
     descripcion: producto.descripcion,
     precio: producto.precio,
+    descuentoPorcentaje: producto.descuentoPorcentaje,
     activo: producto.activo,
     categoriaId: producto.idCategoria,
     categoriaNombre: producto.categoria?.nombre ?? '',

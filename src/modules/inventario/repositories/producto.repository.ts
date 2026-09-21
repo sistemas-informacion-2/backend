@@ -15,6 +15,7 @@ interface FiltrosProducto {
   idCategoria?: number;
   idSucursal?: number;
   idTemporada?: number;
+  soloOfertas?: boolean;
   activo?: boolean;
 }
 
@@ -23,8 +24,8 @@ export class ProductoRepository {
   constructor(@InjectRepository(Producto) private readonly repo: Repository<Producto>) {}
 
   /** Lista simple para el catálogo público: solo activos, sin paginación. */
-  findActivos(filtros: { search?: string; idCategoria?: number }): Promise<Producto[]> {
-    const builder = this.aplicarFiltros(this.crearBuilder(), { ...filtros, activo: true });
+  findActivos(filtros: { search?: string; idCategoria?: number; idTemporada?: number; soloOfertas?: boolean }): Promise<Producto[]> {
+    const builder = this.aplicarFiltros(this.crearBuilder(), { ...filtros, activo: true }, true);
     return builder.orderBy('producto.id', 'DESC').getMany();
   }
 
@@ -92,18 +93,31 @@ export class ProductoRepository {
       .leftJoinAndSelect('producto.variantes', 'variante');
   }
 
-  private aplicarFiltros<T extends { andWhere: any }>(builder: T, filtros: FiltrosProducto): T {
+  private aplicarFiltros<T extends { andWhere: any }>(builder: T, filtros: FiltrosProducto, incluirSubcategorias = false): T {
     if (filtros.search?.trim()) {
       const search = `%${filtros.search.trim().toLowerCase()}%`;
       builder.andWhere(
         new Brackets((where: any) => {
           where
             .where('LOWER(producto.nombre) LIKE :search', { search })
-            .orWhere('LOWER(producto.descripcion) LIKE :search', { search });
+            .orWhere('LOWER(producto.descripcion) LIKE :search', { search })
+            .orWhere('LOWER(categoria.nombre) LIKE :search', { search });
         }),
       );
     }
-    if (filtros.idCategoria !== undefined) {
+    if (filtros.idCategoria !== undefined && incluirSubcategorias) {
+      builder.andWhere(
+        `producto.id_categoria IN (
+          WITH RECURSIVE arbol AS (
+            SELECT id FROM categoria WHERE id = :idCategoria
+            UNION ALL
+            SELECT c.id FROM categoria c JOIN arbol a ON c.id_categoria_padre = a.id
+          )
+          SELECT id FROM arbol
+        )`,
+        { idCategoria: filtros.idCategoria },
+      );
+    } else if (filtros.idCategoria !== undefined) {
       builder.andWhere('producto.id_categoria = :idCategoria', { idCategoria: filtros.idCategoria });
     }
     if (filtros.idSucursal !== undefined) {
@@ -114,6 +128,9 @@ export class ProductoRepository {
     }
     if (filtros.activo !== undefined) {
       builder.andWhere('producto.activo = :activo', { activo: filtros.activo });
+    }
+    if (filtros.soloOfertas) {
+      builder.andWhere('producto.descuento_porcentaje > 0');
     }
     if (filtros.idTemporada !== undefined) {
       builder.andWhere(

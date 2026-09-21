@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MaxLength,
   ValidateNested,
@@ -39,6 +40,12 @@ export class CrearProductoDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   precio: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  descuentoPorcentaje?: number;
 
   @IsOptional()
   @IsArray()

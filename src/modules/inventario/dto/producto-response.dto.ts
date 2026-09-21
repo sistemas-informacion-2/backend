@@ -26,6 +26,7 @@ export class ProductoResponseDto {
   nombre: string;
   descripcion: string | null;
   precio: number;
+  descuentoPorcentaje: number;
   activo: boolean;
   categoriaId: number;
   categoriaNombre: string;

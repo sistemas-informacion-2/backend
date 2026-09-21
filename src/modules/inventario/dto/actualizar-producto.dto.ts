@@ -1,4 +1,4 @@
-import { ArrayUnique, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min, MaxLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, Min, MaxLength } from 'class-validator';
 
 export class ActualizarProductoDto {
   @IsOptional()
@@ -18,6 +18,12 @@ export class ActualizarProductoDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   precio?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  descuentoPorcentaje?: number;
 
   @IsOptional()
   @IsBoolean()

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../../common/decorators/public.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
 import { SucursalesService } from '../services/sucursales.service.js';
 import { CrearSucursalDto } from '../dto/crear-sucursal.dto.js';
@@ -15,6 +16,13 @@ export class SucursalesController {
   @ApiOperation({ summary: 'Lista todas las sucursales con su ciudad y departamento' })
   listar(): Promise<SucursalResponseDto[]> {
     return this.sucursalesService.listar();
+  }
+
+  @Public()
+  @Get('publicas')
+  @ApiOperation({ summary: 'Sucursales activas para el pie de pagina del e-commerce' })
+  listarPublicas(): Promise<SucursalResponseDto[]> {
+    return this.sucursalesService.listarActivas();
   }
 
   @Post()

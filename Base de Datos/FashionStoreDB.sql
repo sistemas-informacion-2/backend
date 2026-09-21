@@ -203,7 +203,10 @@ CREATE TABLE PRODUCTO (
     nombre VARCHAR(150) NOT NULL,
     descripcion TEXT,
     precio DECIMAL(12,2) NOT NULL,
+    -- Porcentaje de descuento vigente (0 = sin descuento); alimenta el banner de ofertas del e-commerce.
+    descuento_porcentaje DECIMAL(5,2) NOT NULL DEFAULT 0.00,
     activo BOOLEAN DEFAULT TRUE,
+    CONSTRAINT chk_producto_descuento CHECK (descuento_porcentaje >= 0 AND descuento_porcentaje <= 100),
     CONSTRAINT fk_producto_categoria FOREIGN KEY (id_categoria) REFERENCES CATEGORIA(id)
 );
 

@@ -11,6 +11,13 @@ export class TemporadaRepository {
     return this.repo.find({ order: { fechaInicio: 'DESC' } });
   }
 
+  findAllConCategorias(): Promise<Temporada[]> {
+    return this.repo.find({
+      relations: { temporadasCategoria: { categoria: true } },
+      order: { fechaInicio: 'DESC' },
+    });
+  }
+
   findById(id: number): Promise<Temporada | null> {
     return this.repo.findOne({ where: { id } });
   }
