@@ -7,6 +7,8 @@ import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { Caja } from '../entities/caja.entity.js';
+import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
+import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { DetalleNotaVenta } from '../entities/detalle-nota-venta.entity.js';
 import { NotaVentaRepository } from '../repositories/nota-venta.repository.js';
 import { PagoRepository } from '../repositories/pago.repository.js';
@@ -59,6 +61,7 @@ export class VentasService {
 
     const id = await this.dataSource.transaction(async (manager) => {
       await this.validarCliente(manager, dto.idCliente);
+      await this.validarSucursalYAlmacen(manager, idSucursal, dto.idAlmacen);
       const caja = await this.obtenerCajaAbierta(manager, idSucursal);
       await this.validarPasarela(manager, dto.idPasarela);
 
@@ -156,6 +159,20 @@ export class VentasService {
   private async validarCliente(manager: EntityManager, idCliente: number): Promise<void> {
     const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente } });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
+  }
+
+  /** El stock solo puede salir de un almacen de la sucursal donde se vende (INVENTARIO cuelga de ALMACEN -> SUCURSAL). */
+  private async validarSucursalYAlmacen(manager: EntityManager, idSucursal: number, idAlmacen: number): Promise<void> {
+    const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+    if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
+    if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
+
+    const almacen = await manager.getRepository(Almacen).findOne({ where: { id: idAlmacen } });
+    if (!almacen) throw new NotFoundException('Almacen no encontrado');
+    if (!almacen.activo) throw new ConflictException('El almacen esta inactivo');
+    if (almacen.idSucursal !== idSucursal) {
+      throw new BadRequestException('El almacen no pertenece a la sucursal de la venta');
+    }
   }
 
   private async obtenerCajaAbierta(manager: EntityManager, idSucursal: number): Promise<Caja> {

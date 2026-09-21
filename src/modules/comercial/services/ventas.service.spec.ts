@@ -5,6 +5,8 @@ import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { Caja } from '../entities/caja.entity.js';
+import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
+import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { DetalleNotaVenta } from '../entities/detalle-nota-venta.entity.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type { NotaVenta } from '../entities/nota-venta.entity.js';
@@ -62,6 +64,8 @@ function crearService(config: {
   variante?: unknown;
   inventario?: unknown;
   ventaDetalle?: NotaVenta | null;
+  sucursal?: unknown;
+  almacen?: unknown;
 } = {}) {
   const repos = new Map<unknown, RepoStub>();
   const repo = (): RepoStub => ({ findOne: vi.fn(), create: vi.fn((x) => x), save: vi.fn((x) => Promise.resolve(x)) });
@@ -75,6 +79,11 @@ function crearService(config: {
   };
 
   repoDe(Cliente).findOne.mockResolvedValue(config.cliente ?? { idUsuario: 1 });
+  // Por defecto el almacen 2 es de la sucursal 1, la misma del cajero.
+  repoDe(Sucursal).findOne.mockResolvedValue(config.sucursal !== undefined ? config.sucursal : { id: 1, activo: true });
+  repoDe(Almacen).findOne.mockResolvedValue(
+    config.almacen !== undefined ? config.almacen : { id: 2, idSucursal: 1, activo: true },
+  );
   repoDe(Caja).findOne.mockResolvedValue(
     config.caja !== undefined ? config.caja : { id: 10, idSucursal: 1, estado: 'Abierta' },
   );
@@ -129,6 +138,29 @@ const dtoBase = {
 };
 
 describe('VentasService', () => {
+  it('rechaza vender con stock de un almacen de otra sucursal', async () => {
+    const { service, movimientoCajaRepo } = crearService({ almacen: { id: 2, idSucursal: 9, activo: true } });
+
+    await expect(service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(BadRequestException);
+    expect(movimientoCajaRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('rechaza vender desde un almacen inactivo o inexistente', async () => {
+    const inactivo = crearService({ almacen: { id: 2, idSucursal: 1, activo: false } });
+    await expect(inactivo.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(ConflictException);
+
+    const inexistente = crearService({ almacen: null });
+    await expect(inexistente.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(NotFoundException);
+  });
+
+  it('rechaza vender en una sucursal inactiva o inexistente', async () => {
+    const inactiva = crearService({ sucursal: { id: 1, activo: false } });
+    await expect(inactiva.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(ConflictException);
+
+    const inexistente = crearService({ sucursal: null });
+    await expect(inexistente.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(NotFoundException);
+  });
+
   it('rechaza la venta si la sucursal no tiene caja abierta', async () => {
     const { service, dataSource } = crearService({ caja: null });
 

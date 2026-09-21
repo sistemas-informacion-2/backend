@@ -37,7 +37,7 @@ export class Pago {
   @Column({ name: 'id_nota_venta', type: 'int', nullable: true })
   idNotaVenta: number | null;
 
-  @ManyToOne(() => NotaVenta, (nota) => nota.pagos, { onDelete: 'CASCADE' })
+  @ManyToOne(() => NotaVenta, (nota) => nota.pagos, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'id_nota_venta' })
   notaVenta: Relation<NotaVenta> | null;
 
