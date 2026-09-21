@@ -51,6 +51,7 @@ function crearService(overrides: {
     findWithFilters: vi.fn(),
     findByIdConDetalle: vi.fn(),
     findAbiertaPorSucursal: vi.fn(),
+    findCobrosEnLinea: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     save: vi.fn(),
     ...overrides.cajaRepo,

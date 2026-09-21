@@ -2,6 +2,7 @@ import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Rel
 import { PasarelaPago } from './pasarela-pago.entity.js';
 import { MovimientoCaja } from './movimiento-caja.entity.js';
 import { NotaVenta } from './nota-venta.entity.js';
+import { Reserva } from '../../electronico/entities/reserva.entity.js';
 
 export type ConceptoPago = 'PAGO_TOTAL' | 'ANTICIPO_RESERVA' | 'SALDO_LIQUIDACION' | 'REEMBOLSO';
 
@@ -20,12 +21,13 @@ export class Pago {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'id_movimiento_caja', type: 'int' })
-  idMovimientoCaja: number;
+  /** Nulo en pagos en linea, que no pasan por una caja fisica. */
+  @Column({ name: 'id_movimiento_caja', type: 'int', nullable: true })
+  idMovimientoCaja: number | null;
 
   @ManyToOne(() => MovimientoCaja, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'id_movimiento_caja' })
-  movimientoCaja: Relation<MovimientoCaja>;
+  movimientoCaja: Relation<MovimientoCaja> | null;
 
   @Column({ name: 'id_pasarela', type: 'int', nullable: true })
   idPasarela: number | null;
@@ -41,11 +43,22 @@ export class Pago {
   @JoinColumn({ name: 'id_nota_venta' })
   notaVenta: Relation<NotaVenta> | null;
 
+  @Column({ name: 'id_reserva', type: 'int', nullable: true })
+  idReserva: number | null;
+
+  @ManyToOne(() => Reserva, (reserva) => reserva.pagos, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'id_reserva' })
+  reserva: Relation<Reserva> | null;
+
   @Column({ type: 'decimal', precision: 12, scale: 2, transformer: TRANSFORMER_DECIMAL })
   monto: number;
 
-  @Column({ type: 'enum', enum: ['PAGO_TOTAL', 'ANTICIPO_RESERVA', 'SALDO_LIQUIDACION', 'REEMBOLSO'] })
+  @Column({ type: 'enum', enum: ['PAGO_TOTAL', 'ANTICIPO_RESERVA', 'SALDO_LIQUIDACION', 'REEMBOLSO'], enumName: 'concepto_pago_enum' })
   concepto: ConceptoPago;
+
+  /** Id de la transaccion en la pasarela (orden de PayPal, etc.); unico para que un cobro no se registre dos veces. */
+  @Column({ name: 'referencia_externa', type: 'varchar', length: 100, nullable: true, unique: true })
+  referenciaExterna: string | null;
 
   @Column({ name: 'fecha_pago', type: 'date' })
   fechaPago: string;

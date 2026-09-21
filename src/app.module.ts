@@ -9,7 +9,7 @@ import { OperacionesModule } from './modules/operaciones/operaciones.module.js';
 import { InventarioModule } from './modules/inventario/inventario.module.js';
 import { ComercialModule } from './modules/comercial/comercial.module.js';
 import { ElectronicoModule } from './modules/electronico/electronico.module.js';
-import { AnaliticaModule } from './modules/analitica/analitica.module.js';
+import { ReporteModule } from './modules/reporte/reporte.module.js';
 
 @Module({
   imports: [
@@ -21,7 +21,7 @@ import { AnaliticaModule } from './modules/analitica/analitica.module.js';
     InventarioModule,
     ComercialModule,
     ElectronicoModule,
-    AnaliticaModule,
+    ReporteModule,
     AccesoModule,
   ],
 })

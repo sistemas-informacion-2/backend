@@ -1,12 +1,14 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { VentasService } from './ventas.service.js';
+import { EMAIL_CONSUMIDOR_FINAL, VentasService } from './ventas.service.js';
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
+import { Usuario } from '../../acceso/entities/usuario.entity.js';
 import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { Caja } from '../entities/caja.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
+import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.entity.js';
 import { DetalleNotaVenta } from '../entities/detalle-nota-venta.entity.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type { NotaVenta } from '../entities/nota-venta.entity.js';
@@ -53,6 +55,7 @@ function ventaBase(overrides: Partial<NotaVenta> = {}): NotaVenta {
 
 interface RepoStub {
   findOne: ReturnType<typeof vi.fn>;
+  find: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
 }
@@ -62,13 +65,16 @@ function crearService(config: {
   caja?: unknown;
   pasarela?: unknown;
   variante?: unknown;
-  inventario?: unknown;
+  /** Filas de INVENTARIO de la variante en los almacenes de la sucursal. */
+  inventarios?: unknown[];
   ventaDetalle?: NotaVenta | null;
   sucursal?: unknown;
-  almacen?: unknown;
+  /** Almacenes activos de la sucursal. */
+  almacenes?: unknown[];
+  productoSucursal?: unknown;
 } = {}) {
   const repos = new Map<unknown, RepoStub>();
-  const repo = (): RepoStub => ({ findOne: vi.fn(), create: vi.fn((x) => x), save: vi.fn((x) => Promise.resolve(x)) });
+  const repo = (): RepoStub => ({ findOne: vi.fn(), find: vi.fn(), create: vi.fn((x) => x), save: vi.fn((x) => Promise.resolve(x)) });
   const repoDe = (entity: unknown): RepoStub => {
     let stub = repos.get(entity);
     if (!stub) {
@@ -79,20 +85,19 @@ function crearService(config: {
   };
 
   repoDe(Cliente).findOne.mockResolvedValue(config.cliente ?? { idUsuario: 1 });
-  // Por defecto el almacen 2 es de la sucursal 1, la misma del cajero.
+  // Por defecto la sucursal 1 (la del cajero) tiene un almacen activo.
   repoDe(Sucursal).findOne.mockResolvedValue(config.sucursal !== undefined ? config.sucursal : { id: 1, activo: true });
-  repoDe(Almacen).findOne.mockResolvedValue(
-    config.almacen !== undefined ? config.almacen : { id: 2, idSucursal: 1, activo: true },
-  );
+  repoDe(Almacen).find.mockResolvedValue(config.almacenes ?? [{ id: 2 }]);
+  repoDe(ProductoSucursal).findOne.mockResolvedValue(config.productoSucursal !== undefined ? config.productoSucursal : { idSucursal: 1, idProducto: 1, activo: true });
   repoDe(Caja).findOne.mockResolvedValue(
     config.caja !== undefined ? config.caja : { id: 10, idSucursal: 1, estado: 'Abierta' },
   );
   repoDe(PasarelaPago).findOne.mockResolvedValue(config.pasarela ?? { id: 1, disponiblePresencial: true });
   repoDe(VarianteProducto).findOne.mockResolvedValue(
-    config.variante ?? { id: 7, sku: 'SKU-1', talla: 'M', color: 'Rojo', producto: { nombre: 'Camisa', precio: 50 } },
+    config.variante ?? { id: 7, idProducto: 1, activo: true, sku: 'SKU-1', talla: 'M', color: 'Rojo', producto: { nombre: 'Camisa', precio: 50, activo: true } },
   );
-  repoDe(Inventario).findOne.mockResolvedValue(
-    config.inventario ?? { id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 10 },
+  repoDe(Inventario).find.mockResolvedValue(
+    config.inventarios ?? [{ id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 10 }],
   );
   repoDe(DetalleNotaVenta);
 
@@ -132,25 +137,60 @@ function crearService(config: {
 
 const dtoBase = {
   idCliente: 1,
-  idAlmacen: 2,
   idPasarela: 1,
   items: [{ idVarianteProducto: 7, cantidad: 2 }],
 };
 
 describe('VentasService', () => {
-  it('rechaza vender con stock de un almacen de otra sucursal', async () => {
-    const { service, movimientoCajaRepo } = crearService({ almacen: { id: 2, idSucursal: 9, activo: true } });
+  it('toma el stock de los almacenes activos de la sucursal sin que el cajero elija uno', async () => {
+    const { service, repoDe } = crearService();
 
-    await expect(service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(BadRequestException);
-    expect(movimientoCajaRepo.save).not.toHaveBeenCalled();
+    await service.crear(dtoBase, usuarioEmpleado);
+
+    expect(repoDe(Almacen).find).toHaveBeenCalledWith(expect.objectContaining({ where: { idSucursal: 1, activo: true } }));
+    const busqueda = repoDe(Inventario).find.mock.calls[0][0] as { where: { idVarianteProducto: number } };
+    expect(busqueda.where.idVarianteProducto).toBe(7);
   });
 
-  it('rechaza vender desde un almacen inactivo o inexistente', async () => {
-    const inactivo = crearService({ almacen: { id: 2, idSucursal: 1, activo: false } });
-    await expect(inactivo.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(ConflictException);
+  it('reparte la venta entre almacenes, empezando por el que mas stock tiene', async () => {
+    const chico = { id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 1 };
+    const grande = { id: 4, idAlmacen: 5, idVarianteProducto: 7, stockDisponible: 4 };
+    const { service } = crearService({ inventarios: [chico, grande], almacenes: [{ id: 2 }, { id: 5 }] });
 
-    const inexistente = crearService({ almacen: null });
-    await expect(inexistente.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(NotFoundException);
+    await service.crear({ ...dtoBase, items: [{ idVarianteProducto: 7, cantidad: 5 }] }, usuarioEmpleado);
+
+    expect(grande.stockDisponible).toBe(0);
+    expect(chico.stockDisponible).toBe(0);
+  });
+
+  it('suma las lineas repetidas de una misma variante antes de validar el stock', async () => {
+    const { service } = crearService({ inventarios: [{ id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 3 }] });
+
+    await expect(
+      service.crear(
+        {
+          ...dtoBase,
+          items: [
+            { idVarianteProducto: 7, cantidad: 2 },
+            { idVarianteProducto: 7, cantidad: 2 },
+          ],
+        },
+        usuarioEmpleado,
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rechaza vender si la sucursal no tiene almacenes activos con stock', async () => {
+    const sinAlmacenes = crearService({ almacenes: [], inventarios: [] });
+    await expect(sinAlmacenes.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(BadRequestException);
+  });
+
+  it('rechaza un producto que no esta activo en la sucursal o que se desactivo', async () => {
+    const sinActivar = crearService({ productoSucursal: null });
+    await expect(sinActivar.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(ConflictException);
+
+    const inactiva = crearService({ variante: { id: 7, idProducto: 1, activo: false, sku: 'SKU-1', talla: 'M', color: 'Rojo', producto: { nombre: 'Camisa', precio: 50, activo: true } } });
+    await expect(inactiva.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(ConflictException);
   });
 
   it('rechaza vender en una sucursal inactiva o inexistente', async () => {
@@ -169,7 +209,7 @@ describe('VentasService', () => {
   });
 
   it('rechaza la venta si el stock es insuficiente', async () => {
-    const { service } = crearService({ inventario: { id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 1 } });
+    const { service } = crearService({ inventarios: [{ id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 1 }] });
 
     await expect(service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(BadRequestException);
   });
@@ -231,4 +271,46 @@ describe('VentasService', () => {
 
     await expect(service.obtener(123)).rejects.toThrow(NotFoundException);
   });
+
+  describe('cliente opcional', () => {
+    it('sin cliente, la venta queda a nombre del consumidor final ya existente', async () => {
+      const { service, notaVentaRepo, repoDe } = crearService();
+      repoDe(Usuario).findOne.mockResolvedValue({ id: 42, email: EMAIL_CONSUMIDOR_FINAL });
+      repoDe(Cliente).findOne.mockResolvedValue({ idUsuario: 42 });
+
+      const { idCliente: _omitido, ...sinCliente } = dtoBase;
+      await service.crear(sinCliente, usuarioEmpleado);
+
+      expect(notaVentaRepo.create).toHaveBeenCalledWith(expect.objectContaining({ idCliente: 42 }), expect.anything());
+      expect(repoDe(Usuario).save).not.toHaveBeenCalled();
+    });
+
+    it('crea al consumidor final la primera vez, sin acceso posible al sistema', async () => {
+      const { service, notaVentaRepo, repoDe } = crearService();
+      repoDe(Usuario).findOne.mockResolvedValue(null);
+      repoDe(Usuario).save.mockImplementation(async (datos: Record<string, unknown>) => ({ ...datos, id: 50 }));
+      repoDe(Cliente).findOne.mockResolvedValue(null);
+
+      const { idCliente: _omitido, ...sinCliente } = dtoBase;
+      await service.crear(sinCliente, usuarioEmpleado);
+
+      const creado = repoDe(Usuario).save.mock.calls[0][0] as Record<string, unknown>;
+      expect(creado).toMatchObject({ email: EMAIL_CONSUMIDOR_FINAL, tipoUsuario: 'C', activo: false, estadoAcceso: 'SUSPENDIDO' });
+      expect(String(creado.passwordHash)).toMatch(/^\$2[aby]\$/);
+      expect(repoDe(Cliente).save).toHaveBeenCalledWith(expect.objectContaining({ idUsuario: 50 }));
+      expect(notaVentaRepo.create).toHaveBeenCalledWith(expect.objectContaining({ idCliente: 50 }), expect.anything());
+    });
+
+    it('con cliente indicado no toca al consumidor final y sigue validando que exista', async () => {
+      const { service, repoDe } = crearService();
+
+      await service.crear(dtoBase, usuarioEmpleado);
+      expect(repoDe(Usuario).findOne).not.toHaveBeenCalled();
+
+      const inexistente = crearService({ cliente: null });
+      inexistente.repoDe(Cliente).findOne.mockResolvedValue(null);
+      await expect(inexistente.service.crear(dtoBase, usuarioEmpleado)).rejects.toThrow(NotFoundException);
+    });
+  });
+
 });

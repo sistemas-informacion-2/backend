@@ -13,10 +13,12 @@ import {
 import { ItemVentaDto } from './item-venta.dto.js';
 
 export class CrearVentaDto {
+  /** Opcional: en el mostrador no se exige registrar al comprador; sin cliente la venta va a "Consumidor Final". */
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  idCliente: number;
+  idCliente?: number;
 
   /** Obligatoria para el administrador; el cajero usa la sucursal de su token. */
   @IsOptional()
@@ -24,11 +26,6 @@ export class CrearVentaDto {
   @IsInt()
   @Min(1)
   idSucursal?: number;
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  idAlmacen: number;
 
   @Type(() => Number)
   @IsInt()

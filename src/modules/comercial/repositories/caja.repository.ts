@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Caja, type EstadoCaja } from '../entities/caja.entity.js';
+import { Pago } from '../entities/pago.entity.js';
 
 @Injectable()
 export class CajaRepository {
@@ -36,6 +37,28 @@ export class CajaRepository {
       .where('caja.id_sucursal = :idSucursal', { idSucursal })
       .andWhere('caja.estado = :estado', { estado: 'Abierta' })
       .getOne();
+  }
+
+  /**
+   * Cobros por internet de la sucursal durante el turno de la caja: pagos sin movimiento de caja (no pasaron por el
+   * cajon) de compras en linea asignadas a la sucursal o de anticipos de reservas hechas en ella.
+   */
+  findCobrosEnLinea(caja: Caja): Promise<Pago[]> {
+    return this.repo.manager
+      .getRepository(Pago)
+      .createQueryBuilder('pago')
+      .leftJoinAndSelect('pago.notaVenta', 'nota')
+      .leftJoinAndSelect('pago.reserva', 'reserva')
+      .leftJoinAndSelect('pago.pasarela', 'pasarela')
+      .where('pago.id_movimiento_caja IS NULL')
+      .andWhere('pago.id_pasarela IS NOT NULL')
+      .andWhere('pago.monto > 0')
+      .andWhere("pago.concepto IN ('PAGO_TOTAL', 'ANTICIPO_RESERVA')")
+      .andWhere('(nota.id_sucursal = :idSucursal OR reserva.id_sucursal = :idSucursal)', { idSucursal: caja.idSucursal })
+      .andWhere('(pago.fecha_pago + pago.hora_pago) >= :desde', { desde: caja.fechaApertura })
+      .andWhere('(pago.fecha_pago + pago.hora_pago) <= :hasta', { hasta: caja.fechaCierre ?? new Date() })
+      .orderBy('pago.id', 'ASC')
+      .getMany();
   }
 
   create(datos: Partial<Caja>): Caja {

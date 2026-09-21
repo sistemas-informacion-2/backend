@@ -396,14 +396,18 @@ CREATE TABLE NOTA_VENTA (
 -- 6. REGISTRO DE PAGOS (AHORA REFERENCIA DE FORMA LIMPIA A VENTA Y RESERVA)
 -- =============================================================================
 
+-- id_movimiento_caja es NULL en pagos en linea (PayPal, QR, tarjeta): no pasan por una caja fisica.
+-- referencia_externa guarda el id de la transaccion en la pasarela (ej. orden de PayPal) y, al ser UNIQUE,
+-- evita registrar dos veces el mismo cobro si el cliente recarga la pagina de retorno.
 CREATE TABLE PAGO (
     id SERIAL PRIMARY KEY,
-    id_movimiento_caja INT NOT NULL,
+    id_movimiento_caja INT,
     id_pasarela INT,
     id_nota_venta INT,
     id_reserva INT,
     monto DECIMAL(12,2) NOT NULL CHECK (monto > 0),
     concepto concepto_pago_enum NOT NULL,
+    referencia_externa VARCHAR(100) UNIQUE,
     fecha_pago DATE DEFAULT CURRENT_DATE,
     hora_pago TIME DEFAULT CURRENT_TIME,
     CONSTRAINT fk_pago_movcaja FOREIGN KEY (id_movimiento_caja) REFERENCES MOVIMIENTO_CAJA(id) ON DELETE RESTRICT,

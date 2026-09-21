@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
-import { NotaVenta } from '../entities/nota-venta.entity.js';
+import { NotaVenta, type TipoNotaVenta } from '../entities/nota-venta.entity.js';
 
 interface FiltrosVentas {
   page: number;
@@ -9,6 +9,13 @@ interface FiltrosVentas {
   search?: string;
   idSucursal?: number;
   idCajero?: number;
+  idCliente?: number;
+  /** Solo notas de este tipo (p. ej. E_COMMERCE para las ventas en linea). */
+  tipoVenta?: TipoNotaVenta;
+  /** Sin notas de este tipo: las ventas presenciales no incluyen las de la tienda en linea. */
+  excluirTipoVenta?: TipoNotaVenta;
+  /** Restriccion de visibilidad del empleado: solo sus sucursales. */
+  idsSucursal?: number[];
   fechaDesde?: string;
   fechaHasta?: string;
 }
@@ -25,11 +32,16 @@ export class NotaVentaRepository {
       .leftJoinAndSelect('venta.cajero', 'cajero')
       .leftJoinAndSelect('cajero.usuario', 'cajeroUsuario')
       .leftJoinAndSelect('venta.sucursal', 'sucursal')
+      .leftJoinAndSelect('venta.pasarela', 'pasarelaVenta')
       .orderBy('venta.id', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
 
     if (query.idSucursal !== undefined) builder.andWhere('venta.id_sucursal = :idSucursal', { idSucursal: query.idSucursal });
+    if (query.tipoVenta) builder.andWhere('venta.tipo_venta = :tipoVenta', { tipoVenta: query.tipoVenta });
+    if (query.excluirTipoVenta) builder.andWhere('venta.tipo_venta <> :excluirTipoVenta', { excluirTipoVenta: query.excluirTipoVenta });
+    if (query.idsSucursal) builder.andWhere('venta.id_sucursal IN (:...idsSucursal)', { idsSucursal: query.idsSucursal });
+    if (query.idCliente !== undefined) builder.andWhere('venta.id_cliente = :idCliente', { idCliente: query.idCliente });
     if (query.idCajero !== undefined) builder.andWhere('venta.id_cajero = :idCajero', { idCajero: query.idCajero });
     if (query.fechaDesde !== undefined) builder.andWhere('venta.fecha_emision >= :fechaDesde', { fechaDesde: query.fechaDesde });
     if (query.fechaHasta !== undefined) builder.andWhere('venta.fecha_emision <= :fechaHasta', { fechaHasta: query.fechaHasta });
@@ -58,6 +70,7 @@ export class NotaVentaRepository {
       .leftJoinAndSelect('venta.cajero', 'cajero')
       .leftJoinAndSelect('cajero.usuario', 'cajeroUsuario')
       .leftJoinAndSelect('venta.sucursal', 'sucursal')
+      .leftJoinAndSelect('venta.pasarela', 'pasarelaVenta')
       .leftJoinAndSelect('venta.detalles', 'detalle')
       .leftJoinAndSelect('detalle.variante', 'variante')
       .leftJoinAndSelect('variante.producto', 'producto')

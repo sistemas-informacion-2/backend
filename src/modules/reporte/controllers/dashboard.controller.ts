@@ -5,7 +5,7 @@ import { DashboardService } from '../services/dashboard.service.js';
 import { DashboardQueryDto } from '../dto/dashboard-query.dto.js';
 import type { DashboardResumenResponseDto } from '../dto/dashboard-resumen-response.dto.js';
 
-@ApiTags('Analitica')
+@ApiTags('Reporte')
 @Controller('analitica/dashboard')
 @RequirePermission('analitica:dashboard:leer')
 export class DashboardController {

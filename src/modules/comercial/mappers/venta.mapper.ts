@@ -43,6 +43,7 @@ export function toVentaResponseDto(venta: NotaVenta): VentaResponseDto {
     idSucursal: venta.idSucursal,
     sucursalNombre: venta.sucursal?.nombre ?? '',
     idPasarela: venta.idPasarela,
+    pasarelaMetodo: venta.pasarela?.metodo ?? null,
     idMovimientoCaja: venta.idMovimientoCaja,
     tipoVenta: venta.tipoVenta,
     nroFactura: venta.nroFactura,

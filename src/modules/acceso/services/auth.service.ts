@@ -8,19 +8,27 @@ import { Usuario } from '../entities/usuario.entity.js';
 import { UsuarioRepository } from '../repositories/usuario.repository.js';
 import { SesionRepository } from '../repositories/sesion.repository.js';
 import { ClienteRepository } from '../../operaciones/repositories/cliente.repository.js';
+import { ClientesService } from '../../operaciones/services/clientes.service.js';
 import { EmpleadoSucursalRepository } from '../repositories/empleado-sucursal.repository.js';
 import { extraerPermisos, toPerfilBase } from '../mappers/usuario.mapper.js';
 import type { LoginDto } from '../dto/login.dto.js';
+import type { RegistroClienteDto } from '../dto/registro-cliente.dto.js';
 import type { AuthResponseDto, PerfilDto } from '../dto/auth-response.dto.js';
 import type { ActiveUser, JwtPayload } from '../types/jwt-payload.type.js';
 
 const MAX_INTENTOS_FALLIDOS = 5;
+/** Tope de registros por direccion IP y hora: frena la creacion masiva de cuentas desde un mismo origen. */
+const MAX_REGISTROS_POR_IP_Y_HORA = 10;
+const VENTANA_REGISTRO_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
+  private readonly registrosPorIp = new Map<string, number[]>();
+
   constructor(
     private readonly usuarioRepo: UsuarioRepository,
     private readonly clienteRepo: ClienteRepository,
+    private readonly clientesService: ClientesService,
     private readonly sesionRepo: SesionRepository,
     private readonly empleadoSucursalRepo: EmpleadoSucursalRepository,
     private readonly jwtService: JwtService,
@@ -59,6 +67,33 @@ export class AuthService {
     const sucursalId = await this.obtenerSucursalActiva(usuario);
 
     return this.emitirTokens(usuario, permisos, sucursalId, ipOrigen, userAgent);
+  }
+
+  /** Crea la cuenta de un cliente y lo deja con la sesion iniciada, para que siga con su compra sin volver a entrar. */
+  async registrarCliente(dto: RegistroClienteDto, ipOrigen: string | null, userAgent: string | null): Promise<AuthResponseDto> {
+    this.validarLimiteRegistros(ipOrigen);
+    const email = dto.email.trim().toLowerCase();
+
+    await this.clientesService.crear({
+      nombre: dto.nombre,
+      apellido: dto.apellido,
+      email,
+      telefono: dto.telefono,
+      password: dto.password,
+    });
+
+    return this.login({ email, password: dto.password }, ipOrigen, userAgent);
+  }
+
+  private validarLimiteRegistros(ip: string | null): void {
+    if (!ip) return;
+    const ahora = Date.now();
+    const recientes = (this.registrosPorIp.get(ip) ?? []).filter((momento) => ahora - momento < VENTANA_REGISTRO_MS);
+    if (recientes.length >= MAX_REGISTROS_POR_IP_Y_HORA) {
+      throw new HttpException('Demasiados registros desde esta conexion. Intenta de nuevo mas tarde', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    recientes.push(ahora);
+    this.registrosPorIp.set(ip, recientes);
   }
 
   async refresh(refreshToken: string): Promise<AuthResponseDto> {

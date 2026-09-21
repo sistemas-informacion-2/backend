@@ -29,6 +29,17 @@ export class ProductoRepository {
     return builder.orderBy('producto.id', 'DESC').getMany();
   }
 
+  /** Productos activos de la misma categoria (exacta) para "Tambien te puede interesar". */
+  findRelacionados(idCategoria: number, excluirId: number, limite: number): Promise<Producto[]> {
+    return this.crearBuilder()
+      .where('producto.id_categoria = :idCategoria', { idCategoria })
+      .andWhere('producto.id != :excluirId', { excluirId })
+      .andWhere('producto.activo = true')
+      .orderBy('producto.id', 'DESC')
+      .take(limite)
+      .getMany();
+  }
+
   /**
    * Lista paginada para el panel admin. Se pagina sobre IDs primero porque los
    * joins a imagenes/variantes (uno-a-muchos) duplicarian filas y romperian

@@ -18,11 +18,19 @@ import { MovimientoCaja } from './entities/movimiento-caja.entity.js';
 import { NotaVenta } from './entities/nota-venta.entity.js';
 import { DetalleNotaVenta } from './entities/detalle-nota-venta.entity.js';
 import { Pago } from './entities/pago.entity.js';
+import { NotaDevolucion } from './entities/nota-devolucion.entity.js';
+import { DetalleNotaDevolucion } from './entities/detalle-nota-devolucion.entity.js';
 import { PasarelaRepository } from './repositories/pasarela.repository.js';
 import { CajaRepository } from './repositories/caja.repository.js';
 import { MovimientoCajaRepository } from './repositories/movimiento-caja.repository.js';
 import { NotaVentaRepository } from './repositories/nota-venta.repository.js';
 import { PagoRepository } from './repositories/pago.repository.js';
+import { DevolucionRepository } from './repositories/devolucion.repository.js';
+import { DevolucionesService } from './services/devoluciones.service.js';
+import { VentasEnLineaController } from './controllers/ventas-en-linea.controller.js';
+import { VentasEnLineaService } from './services/ventas-en-linea.service.js';
+import { CuentaClienteController } from './controllers/cuenta-cliente.controller.js';
+import { DevolucionesController } from './controllers/devoluciones.controller.js';
 import { PasarelasService } from './services/pasarelas.service.js';
 import { CajaService } from './services/caja.service.js';
 import { ComprasService } from './services/compras.service.js';
@@ -43,6 +51,8 @@ import { PasarelaSeederService } from './seeders/pasarela-seeder.service.js';
       NotaVenta,
       DetalleNotaVenta,
       Pago,
+      NotaDevolucion,
+      DetalleNotaDevolucion,
       NotaCompra,
       DetalleNotaCompra,
       Sucursal,
@@ -57,7 +67,7 @@ import { PasarelaSeederService } from './seeders/pasarela-seeder.service.js';
       ProductoSucursal,
     ]),
   ],
-  controllers: [PasarelasController, CajasController, VentasController, ComprasController],
+  controllers: [PasarelasController, CajasController, VentasController, ComprasController, DevolucionesController, CuentaClienteController, VentasEnLineaController],
   providers: [
     PasarelasService,
     PasarelaRepository,
@@ -68,6 +78,9 @@ import { PasarelaSeederService } from './seeders/pasarela-seeder.service.js';
     ComprasService,
     CompraRepository,
     VentasService,
+    DevolucionesService,
+    VentasEnLineaService,
+    DevolucionRepository,
     NotaVentaRepository,
     PagoRepository,
   ],

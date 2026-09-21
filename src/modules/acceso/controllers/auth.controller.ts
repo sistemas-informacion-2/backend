@@ -6,6 +6,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator.j
 import { AuthService } from '../services/auth.service.js';
 import { LoginDto } from '../dto/login.dto.js';
 import { RefreshTokenDto } from '../dto/refresh-token.dto.js';
+import { RegistroClienteDto } from '../dto/registro-cliente.dto.js';
 import type { AuthResponseDto, PerfilDto } from '../dto/auth-response.dto.js';
 import type { ActiveUser } from '../types/jwt-payload.type.js';
 
@@ -21,6 +22,13 @@ export class AuthController {
     const ip = req.ip ?? null;
     const userAgent = req.headers['user-agent'] ?? null;
     return this.authService.login(dto, ip, userAgent);
+  }
+
+  @Public()
+  @Post('registro')
+  @ApiOperation({ summary: 'Autoregistro de un cliente; devuelve la sesion ya iniciada' })
+  registro(@Body() dto: RegistroClienteDto, @Req() req: Request): Promise<AuthResponseDto> {
+    return this.authService.registrarCliente(dto, req.ip ?? null, req.headers['user-agent'] ?? null);
   }
 
   @Get('me')

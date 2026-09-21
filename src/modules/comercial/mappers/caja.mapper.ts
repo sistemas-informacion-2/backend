@@ -1,6 +1,7 @@
 import type { Caja } from '../entities/caja.entity.js';
+import type { Pago } from '../entities/pago.entity.js';
 import type { MovimientoCaja } from '../entities/movimiento-caja.entity.js';
-import type { CajaResponseDto } from '../dto/caja-response.dto.js';
+import type { CajaResponseDto, CobroEnLineaResponseDto } from '../dto/caja-response.dto.js';
 import type { MovimientoCajaResponseDto } from '../dto/movimiento-caja-response.dto.js';
 
 export function toMovimientoCajaResponseDto(movimiento: MovimientoCaja): MovimientoCajaResponseDto {
@@ -15,7 +16,21 @@ export function toMovimientoCajaResponseDto(movimiento: MovimientoCaja): Movimie
   };
 }
 
-export function toCajaResponseDto(caja: Caja): CajaResponseDto {
+export function toCobroEnLineaResponseDto(pago: Pago): CobroEnLineaResponseDto {
+  const concepto =
+    pago.concepto === 'ANTICIPO_RESERVA'
+      ? `Anticipo reserva ${pago.reserva?.codigoReserva ?? ''}`
+      : `Compra en línea ${pago.notaVenta?.codigoNota ?? ''}`;
+  return {
+    id: pago.id,
+    concepto: concepto.trim(),
+    monto: Number(pago.monto),
+    metodo: pago.pasarela?.metodo ?? null,
+    fechaHora: new Date(`${pago.fechaPago}T${pago.horaPago}`),
+  };
+}
+
+export function toCajaResponseDto(caja: Caja, cobrosEnLinea: Pago[] = []): CajaResponseDto {
   const movimientos = (caja.movimientos ?? [])
     .map(toMovimientoCajaResponseDto)
     .sort((a, b) => a.id - b.id);
@@ -27,6 +42,7 @@ export function toCajaResponseDto(caja: Caja): CajaResponseDto {
     .filter((movimiento) => movimiento.tipo === 'EGRESO')
     .reduce((total, movimiento) => total + movimiento.monto, 0);
   const montoInicial = Number(caja.montoInicial);
+  const cobros = cobrosEnLinea.map(toCobroEnLineaResponseDto).sort((a, b) => a.fechaHora.getTime() - b.fechaHora.getTime());
 
   return {
     id: caja.id,
@@ -45,6 +61,8 @@ export function toCajaResponseDto(caja: Caja): CajaResponseDto {
     totalEgresos: redondear(totalEgresos),
     montoEsperado: redondear(montoInicial + totalIngresos - totalEgresos),
     movimientos,
+    totalCobrosEnLinea: redondear(cobros.reduce((total, cobro) => total + cobro.monto, 0)),
+    cobrosEnLinea: cobros,
   };
 }
 

@@ -26,18 +26,18 @@ export class CajaService {
 
   async listar(query: CajasQueryDto): Promise<CajaResponseDto[]> {
     const cajas = await this.cajaRepo.findWithFilters(query);
-    return cajas.map(toCajaResponseDto);
+    return cajas.map((caja) => toCajaResponseDto(caja));
   }
 
   async abierta(idSucursal: number): Promise<CajaResponseDto | null> {
     const caja = await this.cajaRepo.findAbiertaPorSucursal(idSucursal);
-    return caja ? toCajaResponseDto(caja) : null;
+    return caja ? toCajaResponseDto(caja, await this.cajaRepo.findCobrosEnLinea(caja)) : null;
   }
 
   async obtener(id: number): Promise<CajaResponseDto> {
     const caja = await this.cajaRepo.findByIdConDetalle(id);
     if (!caja) throw new NotFoundException('Caja no encontrada');
-    return toCajaResponseDto(caja);
+    return toCajaResponseDto(caja, await this.cajaRepo.findCobrosEnLinea(caja));
   }
 
   async abrir(dto: AbrirCajaDto, usuario: ActiveUser): Promise<CajaResponseDto> {

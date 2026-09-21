@@ -40,6 +40,6 @@ import { AsignacionSucursalRepository } from './repositories/asignacion-sucursal
     EmpleadoRepository,
     AsignacionSucursalRepository,
   ],
-  exports: [TypeOrmModule, UbicacionSeederService, ClienteRepository],
+  exports: [TypeOrmModule, UbicacionSeederService, ClienteRepository, ClientesService],
 })
 export class OperacionesModule {}

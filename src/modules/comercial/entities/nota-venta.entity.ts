@@ -10,6 +10,8 @@ import {
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { Empleado } from '../../operaciones/entities/empleado.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
+import { Carrito } from '../../electronico/entities/carrito.entity.js';
+import { Reserva } from '../../electronico/entities/reserva.entity.js';
 import { PasarelaPago } from './pasarela-pago.entity.js';
 import { MovimientoCaja } from './movimiento-caja.entity.js';
 import { DetalleNotaVenta } from './detalle-nota-venta.entity.js';
@@ -75,10 +77,26 @@ export class NotaVenta {
   @JoinColumn({ name: 'id_movimiento_caja' })
   movimientoCaja: Relation<MovimientoCaja> | null;
 
+  /** Carrito del que salió la compra e-commerce (CU14); se anula si el carrito se elimina. */
+  @Column({ name: 'id_carrito', type: 'int', nullable: true })
+  idCarrito: number | null;
+
+  @ManyToOne(() => Carrito, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'id_carrito' })
+  carrito: Relation<Carrito> | null;
+
+  /** Reserva liquidada que originó esta nota (CU23). */
+  @Column({ name: 'id_reserva', type: 'int', nullable: true })
+  idReserva: number | null;
+
+  @ManyToOne(() => Reserva, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'id_reserva' })
+  reserva: Relation<Reserva> | null;
+
   @Column({ type: 'varchar', length: 30, default: 'PRESENCIAL' })
   tipo: string;
 
-  @Column({ name: 'tipo_venta', type: 'enum', enum: ['DIRECTA_PRESENCIAL', 'ANTICIPO_RESERVA', 'PRESENCIAL_LIQUIDACION', 'E_COMMERCE'] })
+  @Column({ name: 'tipo_venta', type: 'enum', enum: ['DIRECTA_PRESENCIAL', 'ANTICIPO_RESERVA', 'PRESENCIAL_LIQUIDACION', 'E_COMMERCE'], enumName: 'tipo_nota_venta_enum' })
   tipoVenta: TipoNotaVenta;
 
   @Column({ name: 'nro_factura', type: 'varchar', length: 50, nullable: true, unique: true })

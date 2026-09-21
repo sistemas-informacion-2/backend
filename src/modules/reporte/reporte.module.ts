@@ -7,4 +7,4 @@ import { DashboardRepository } from './repositories/dashboard.repository.js';
   controllers: [DashboardController],
   providers: [DashboardService, DashboardRepository],
 })
-export class AnaliticaModule {}
+export class ReporteModule {}

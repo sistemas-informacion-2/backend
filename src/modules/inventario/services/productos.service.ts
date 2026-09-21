@@ -10,6 +10,8 @@ import { ImagenProductoRepository } from '../repositories/imagen-producto.reposi
 import { VarianteProductoRepository } from '../repositories/variante-producto.repository.js';
 import { ProductoSucursalRepository } from '../repositories/producto-sucursal.repository.js';
 import { CategoriaRepository } from '../repositories/categoria.repository.js';
+import { DisponibilidadService } from './disponibilidad.service.js';
+import { precioConDescuento } from '../utils/precio.util.js';
 import { toProductoResponseDto } from '../mappers/producto.mapper.js';
 import type { CrearProductoDto } from '../dto/crear-producto.dto.js';
 import type { ActualizarProductoDto } from '../dto/actualizar-producto.dto.js';
@@ -21,6 +23,10 @@ import type { GestionarSucursalesProductoDto } from '../dto/gestionar-sucursales
 import type { ProductosQueryDto } from '../dto/productos-query.dto.js';
 import type { ProductosPublicoQueryDto } from '../dto/productos-publico-query.dto.js';
 import type { ProductoResponseDto, ProductosPaginatedResponseDto } from '../dto/producto-response.dto.js';
+import type { ProductoDetallePublicoDto } from '../dto/producto-detalle-publico.dto.js';
+
+/** Cuantos productos se sugieren en "Tambien te puede interesar". */
+const LIMITE_RELACIONADOS = 6;
 
 @Injectable()
 export class ProductosService {
@@ -31,12 +37,50 @@ export class ProductosService {
     private readonly varianteRepo: VarianteProductoRepository,
     private readonly productoSucursalRepo: ProductoSucursalRepository,
     private readonly categoriaRepo: CategoriaRepository,
+    private readonly disponibilidad: DisponibilidadService,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
   ) {}
 
   async listarPublico(query: ProductosPublicoQueryDto): Promise<ProductoResponseDto[]> {
     const productos = await this.productoRepo.findActivos(query);
     return productos.map(toProductoResponseDto);
+  }
+
+  /** Ficha publica: solo variantes activas, cada una con el stock que se puede comprar en linea. */
+  async detallePublico(id: number): Promise<ProductoDetallePublicoDto> {
+    const producto = await this.productoRepo.findByIdConDetalle(id);
+    if (!producto || !producto.activo) throw new NotFoundException('Producto no encontrado');
+
+    const base = toProductoResponseDto(producto);
+    const variantes = base.variantes.filter((variante) => variante.activo);
+    const stock = await this.disponibilidad.stockPorVariante(variantes.map((variante) => variante.id));
+
+    return {
+      id: base.id,
+      nombre: base.nombre,
+      descripcion: base.descripcion,
+      precio: base.precio,
+      descuentoPorcentaje: base.descuentoPorcentaje,
+      precioFinal: precioConDescuento(base.precio, base.descuentoPorcentaje),
+      categoriaId: base.categoriaId,
+      categoriaNombre: base.categoriaNombre,
+      imagenes: base.imagenes,
+      variantes: variantes.map((variante) => ({
+        id: variante.id,
+        sku: variante.sku,
+        talla: variante.talla,
+        color: variante.color,
+        corte: variante.corte,
+        stockDisponible: stock.get(variante.id) ?? 0,
+      })),
+    };
+  }
+
+  async relacionados(id: number): Promise<ProductoResponseDto[]> {
+    const producto = await this.productoRepo.findById(id);
+    if (!producto || !producto.activo) throw new NotFoundException('Producto no encontrado');
+    const relacionados = await this.productoRepo.findRelacionados(producto.idCategoria, id, LIMITE_RELACIONADOS);
+    return relacionados.map(toProductoResponseDto);
   }
 
   async listar(query: ProductosQueryDto): Promise<ProductosPaginatedResponseDto> {

@@ -24,6 +24,7 @@ import { TemporadasService } from './services/temporadas.service.js';
 import { ProductosService } from './services/productos.service.js';
 import { AlmacenesService } from './services/almacenes.service.js';
 import { InventarioService } from './services/inventario.service.js';
+import { DisponibilidadService } from './services/disponibilidad.service.js';
 import { CategoriaRepository } from './repositories/categoria.repository.js';
 import { ProveedorRepository } from './repositories/proveedor.repository.js';
 import { TemporadaRepository } from './repositories/temporada.repository.js';
@@ -59,6 +60,7 @@ import { InventarioRepository } from './repositories/inventario.repository.js';
     ProductosService,
     AlmacenesService,
     InventarioService,
+    DisponibilidadService,
     CategoriaRepository,
     ProveedorRepository,
     TemporadaRepository,
@@ -70,6 +72,6 @@ import { InventarioRepository } from './repositories/inventario.repository.js';
     AlmacenRepository,
     InventarioRepository,
   ],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, DisponibilidadService],
 })
 export class InventarioModule {}

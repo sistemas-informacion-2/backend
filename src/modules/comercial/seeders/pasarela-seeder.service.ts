@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import type { AppConfig } from '../../../config/configuration.js';
 import { PasarelaPago, type IntegracionPago } from '../entities/pasarela-pago.entity.js';
 
 interface MetodoPagoBase {
@@ -29,7 +31,10 @@ const METODOS_PAGO_BASE: MetodoPagoBase[] = [
 export class PasarelaSeederService {
   private readonly logger = new Logger(PasarelaSeederService.name);
 
-  constructor(@InjectRepository(PasarelaPago) private readonly pasarelaRepo: Repository<PasarelaPago>) {}
+  constructor(
+    @InjectRepository(PasarelaPago) private readonly pasarelaRepo: Repository<PasarelaPago>,
+    private readonly config: ConfigService<AppConfig, true>,
+  ) {}
 
   async run(): Promise<void> {
     for (const base of METODOS_PAGO_BASE) {
@@ -68,5 +73,24 @@ export class PasarelaSeederService {
       await this.pasarelaRepo.save(existente);
       this.logger.log(`Metodo de pago actualizado: ${base.codigo}`);
     }
+
+    await this.activarPaypalDesdeEntorno();
+  }
+
+  /**
+   * Si el .env trae credenciales de PayPal, la primera vez habilita PayPal para el checkout en linea. La
+   * descripcion sirve de marca: una vez puesta, el administrador manda y no se vuelve a tocar el canal.
+   */
+  private async activarPaypalDesdeEntorno(): Promise<void> {
+    const { clientId, clientSecret, mode } = this.config.get('paypal', { infer: true });
+    if (!clientId || !clientSecret) return;
+
+    const paypal = await this.pasarelaRepo.findOne({ where: { codigo: 'PAYPAL' } });
+    if (!paypal || paypal.descripcion !== null) return;
+
+    paypal.descripcion = mode === 'sandbox' ? 'Paga con tu cuenta PayPal (modo de pruebas)' : 'Paga con tu cuenta PayPal';
+    if (!paypal.disponiblePresencial && !paypal.disponibleLinea) paypal.disponibleLinea = true;
+    await this.pasarelaRepo.save(paypal);
+    this.logger.log('PayPal habilitado para pagos en linea con las credenciales del .env');
   }
 }

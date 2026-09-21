@@ -32,6 +32,8 @@ export class VentaResponseDto {
   idSucursal: number;
   sucursalNombre: string;
   idPasarela: number | null;
+  /** Metodo con el que se pago (PayPal, QR, Efectivo...). */
+  pasarelaMetodo: string | null;
   idMovimientoCaja: number | null;
   tipoVenta: TipoNotaVenta;
   nroFactura: string | null;

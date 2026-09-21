@@ -13,6 +13,7 @@ import { GestionarSucursalesProductoDto } from '../dto/gestionar-sucursales-prod
 import { ProductosQueryDto } from '../dto/productos-query.dto.js';
 import { ProductosPublicoQueryDto } from '../dto/productos-publico-query.dto.js';
 import type { ProductoResponseDto, ProductosPaginatedResponseDto } from '../dto/producto-response.dto.js';
+import type { ProductoDetallePublicoDto } from '../dto/producto-detalle-publico.dto.js';
 
 @ApiTags('Inventario')
 @Controller('inventario/productos')
@@ -24,6 +25,20 @@ export class ProductosController {
   @ApiOperation({ summary: 'Catálogo público de productos activos' })
   listarPublico(@Query() query: ProductosPublicoQueryDto): Promise<ProductoResponseDto[]> {
     return this.productosService.listarPublico(query);
+  }
+
+  @Public()
+  @Get(':id/publico')
+  @ApiOperation({ summary: 'Ficha publica del producto con el stock en linea de cada variante' })
+  detallePublico(@Param('id', ParseIntPipe) id: number): Promise<ProductoDetallePublicoDto> {
+    return this.productosService.detallePublico(id);
+  }
+
+  @Public()
+  @Get(':id/relacionados')
+  @ApiOperation({ summary: 'Productos activos de la misma categoria' })
+  relacionados(@Param('id', ParseIntPipe) id: number): Promise<ProductoResponseDto[]> {
+    return this.productosService.relacionados(id);
   }
 
   @Get('todas')
