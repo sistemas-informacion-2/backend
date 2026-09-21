@@ -16,6 +16,7 @@ export function toInventarioResponseDto(inventario: Inventario): InventarioRespo
     productoNombre: variante?.producto?.nombre ?? '',
     talla: variante?.talla ?? '',
     color: variante?.color ?? '',
+    precio: Number(variante?.producto?.precio ?? 0),
     stockDisponible: inventario.stockDisponible,
     stockReservado: inventario.stockReservado,
     stockMinimo: inventario.stockMinimo,
