@@ -7,6 +7,8 @@ CREATE TYPE concepto_pago_enum AS ENUM ('PAGO_TOTAL', 'ANTICIPO_RESERVA', 'SALDO
 CREATE TYPE tipo_devolucion_enum AS ENUM ('PRODUCTO_ENTREGADO', 'CANCELACION_RESERVA');
 CREATE TYPE motivo_devolucion_enum AS ENUM ('FALLA_FABRICA', 'TALLA_INCORRECTA', 'ARREPENTIMIENTO', 'CANCELACION');
 CREATE TYPE estado_producto_devolucion_enum AS ENUM ('REINGRESO_INVENTARIO', 'MERMA_DEFECTUOSO', 'NO_APLICA');
+-- CU16: indica si el metodo de pago requiere credenciales de integracion.
+CREATE TYPE integracion_pago_enum AS ENUM ('NINGUNA', 'API');
 
 -- =============================================================================
 -- 1. SECCIÓN DE SEGURIDAD, USUARIOS Y AUDITORÍA
@@ -267,16 +269,20 @@ CREATE TABLE INVENTARIO (
 
 CREATE TABLE PASARELA_DE_PAGO (
     id SERIAL PRIMARY KEY,
+    codigo VARCHAR(30) NOT NULL UNIQUE, -- clave estable: EFECTIVO, QR, TARJETA, PAYPAL (CU16)
     metodo VARCHAR(50) NOT NULL,
     descripcion TEXT,
+    integracion integracion_pago_enum NOT NULL DEFAULT 'NINGUNA', -- CU16
     api_key_encriptada TEXT,
     comision_porcentaje DECIMAL(5,2) DEFAULT 0.00,
-    activa BOOLEAN DEFAULT TRUE
+    disponible_presencial BOOLEAN NOT NULL DEFAULT FALSE, -- habilitado para caja (CU15)
+    disponible_linea BOOLEAN NOT NULL DEFAULT FALSE -- habilitado para e-commerce (CU12/CU13)
 );
 
 CREATE TABLE CAJA (
     id SERIAL PRIMARY KEY,
     id_sucursal INT NOT NULL,
+    id_cajero INT, -- CU15: cajero que abre/opera la caja (empleado.id_usuario)
     fecha_apertura TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     fecha_cierre TIMESTAMP,
     hora_apertura TIME NOT NULL DEFAULT CURRENT_TIME,
@@ -284,7 +290,8 @@ CREATE TABLE CAJA (
     monto_inicial DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     monto_final DECIMAL(12,2),
     estado VARCHAR(20) NOT NULL DEFAULT 'Abierta',
-    CONSTRAINT fk_caja_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id)
+    CONSTRAINT fk_caja_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id),
+    CONSTRAINT fk_caja_cajero FOREIGN KEY (id_cajero) REFERENCES EMPLEADO(id_usuario)
 );
 
 CREATE TABLE MOVIMIENTO_CAJA (
