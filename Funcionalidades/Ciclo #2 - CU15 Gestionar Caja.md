@@ -103,3 +103,4 @@ caja.
 * `NOTA_COMPRA.id_movimiento_caja` (CU14) podrá usar un movimiento de tipo `EGRESO`.
 * No se registra arqueo detallado (billetes/monedas) ni historial de diferencias; el
   `monto_final` contado ya permite detectar descuadres contra el monto esperado.
+

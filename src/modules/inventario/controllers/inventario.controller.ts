@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { RequireAnyPermission } from '../../../common/decorators/require-any-permission.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
 import { InventarioService } from '../services/inventario.service.js';
 import { CrearStockDto } from '../dto/crear-stock.dto.js';
@@ -15,12 +16,14 @@ export class InventarioController {
   constructor(private readonly inventarioService: InventarioService) {}
 
   @Get()
+  @RequireAnyPermission('inventario:almacen:gestionar', 'inventario:almacen:leer')
   @ApiOperation({ summary: 'Lista existencias con filtros por almacen, sucursal o bajo minimo' })
   listar(@Query() query: InventarioQueryDto): Promise<InventarioPaginatedResponseDto> {
     return this.inventarioService.listar(query);
   }
 
   @Get(':id')
+  @RequireAnyPermission('inventario:almacen:gestionar', 'inventario:almacen:leer')
   @ApiOperation({ summary: 'Obtiene un registro de inventario por ID' })
   obtener(@Param('id', ParseIntPipe) id: number): Promise<InventarioResponseDto> {
     return this.inventarioService.obtener(id);
