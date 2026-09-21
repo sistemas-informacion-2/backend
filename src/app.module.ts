@@ -7,6 +7,8 @@ import { CommonModule } from './common/common.module.js';
 import { AccesoModule } from './modules/acceso/acceso.module.js';
 import { OperacionesModule } from './modules/operaciones/operaciones.module.js';
 import { InventarioModule } from './modules/inventario/inventario.module.js';
+import { ComercialModule } from './modules/comercial/comercial.module.js';
+import { ElectronicoModule } from './modules/electronico/electronico.module.js';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { InventarioModule } from './modules/inventario/inventario.module.js';
     CommonModule,
     OperacionesModule,
     InventarioModule,
+    ComercialModule,
+    ElectronicoModule,
     AccesoModule,
   ],
 })

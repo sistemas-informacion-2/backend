@@ -18,6 +18,9 @@ export interface AppConfig {
     adminEmail: string;
     adminPassword: string;
   };
+  payments: {
+    encryptionKey: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -39,5 +42,8 @@ export default (): AppConfig => ({
   seed: {
     adminEmail: process.env.SEED_ADMIN_EMAIL ?? 'admin@fashionstore.com',
     adminPassword: process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!',
+  },
+  payments: {
+    encryptionKey: process.env.PAGOS_ENCRYPTION_KEY ?? '',
   },
 });
