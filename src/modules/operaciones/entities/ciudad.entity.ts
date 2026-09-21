@@ -10,7 +10,7 @@ export class Ciudad {
   @Column({ name: 'id_departamento', type: 'int' })
   idDepartamento: number;
 
-  @ManyToOne(() => Departamento, (departamento) => departamento.ciudades)
+  @ManyToOne(() => Departamento, (departamento) => departamento.ciudades, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'id_departamento' })
   departamento: Relation<Departamento>;
 

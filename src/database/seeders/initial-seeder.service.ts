@@ -25,7 +25,9 @@ const PERMISOS_BASE = [
   'comercial:pasarelas:gestionar',
   'comercial:pasarelas:leer',
   'comercial:caja:gestionar',
+  'comercial:compras:gestionar',
   'electronico:notificaciones:gestionar',
+  'analitica:dashboard:leer',
 ];
 
 /**
@@ -56,7 +58,12 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
   {
     nombre: 'ENCARGADO_COMPRAS',
     descripcion: 'Gestiona proveedores, registra compras y coordina el ingreso de productos al inventario.',
-    permisos: ['inventario:proveedores:gestionar', 'inventario:productos:gestionar'],
+    permisos: [
+      'inventario:proveedores:gestionar',
+      'inventario:productos:gestionar',
+      'inventario:almacen:gestionar',
+      'comercial:compras:gestionar',
+    ],
   },
 ];
 

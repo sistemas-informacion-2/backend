@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CajaService } from './caja.service.js';
 import type { Caja } from '../entities/caja.entity.js';
 import type { MovimientoCaja } from '../entities/movimiento-caja.entity.js';
@@ -45,6 +45,7 @@ function crearService(overrides: {
   cajaRepo?: Record<string, ReturnType<typeof vi.fn>>;
   movimientoRepo?: Record<string, ReturnType<typeof vi.fn>>;
   sucursalRepo?: Record<string, ReturnType<typeof vi.fn>>;
+  empleadoSucursalRepo?: Record<string, ReturnType<typeof vi.fn>>;
 } = {}) {
   const cajaRepo = {
     findWithFilters: vi.fn(),
@@ -61,15 +62,26 @@ function crearService(overrides: {
     ...overrides.movimientoRepo,
   };
   const sucursalRepo = {
-    findOne: vi.fn().mockResolvedValue({ id: 1 }),
+    findOne: vi.fn().mockResolvedValue({ id: 1, activo: true }),
     ...overrides.sucursalRepo,
+  };
+  // Por defecto el empleado esta asignado a la sucursal de la caja.
+  const empleadoSucursalRepo = {
+    findOne: vi.fn().mockResolvedValue({ idEmpleado: 5, idSucursal: 1, activo: true }),
+    ...overrides.empleadoSucursalRepo,
   };
 
   return {
-    service: new CajaService(cajaRepo as never, movimientoRepo as never, sucursalRepo as never),
+    service: new CajaService(
+      cajaRepo as never,
+      movimientoRepo as never,
+      sucursalRepo as never,
+      empleadoSucursalRepo as never,
+    ),
     cajaRepo,
     movimientoRepo,
     sucursalRepo,
+    empleadoSucursalRepo,
   };
 }
 
@@ -132,13 +144,64 @@ describe('CajaService', () => {
     expect(cajaRepo.save).not.toHaveBeenCalled();
   });
 
+  it('rechaza abrir una caja en una sucursal inactiva', async () => {
+    const { service, cajaRepo } = crearService({
+      sucursalRepo: { findOne: vi.fn().mockResolvedValue({ id: 1, activo: false }) },
+    });
+
+    await expect(service.abrir({ idSucursal: 1, montoInicial: 50 }, empleado())).rejects.toThrow(ConflictException);
+    expect(cajaRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('rechaza que un empleado abra la caja de una sucursal a la que no esta asignado', async () => {
+    const { service, cajaRepo, empleadoSucursalRepo } = crearService({
+      empleadoSucursalRepo: { findOne: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(service.abrir({ idSucursal: 1, montoInicial: 50 }, empleado(5))).rejects.toThrow(ForbiddenException);
+    expect(empleadoSucursalRepo.findOne).toHaveBeenCalledWith({
+      where: { idEmpleado: 5, idSucursal: 1, activo: true },
+    });
+    expect(cajaRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('el administrador opera cualquier sucursal sin consultar asignaciones', async () => {
+    const caja = cajaBase({ idCajero: null });
+    const { service, empleadoSucursalRepo } = crearService({
+      cajaRepo: {
+        findAbiertaPorSucursal: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockReturnValue(caja),
+        save: vi.fn().mockResolvedValue(caja),
+        findByIdConDetalle: vi.fn().mockResolvedValue(caja),
+      },
+    });
+
+    await service.abrir({ idSucursal: 1, montoInicial: 0 }, { ...empleado(99), tipoUsuario: 'A' });
+
+    expect(empleadoSucursalRepo.findOne).not.toHaveBeenCalled();
+  });
+
+  it('rechaza que un empleado cierre o mueva la caja de otra sucursal', async () => {
+    const { service, cajaRepo, movimientoRepo } = crearService({
+      cajaRepo: { findByIdConDetalle: vi.fn().mockResolvedValue(cajaBase({ idSucursal: 2 })) },
+      empleadoSucursalRepo: { findOne: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(service.cerrar(1, {}, empleado())).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.registrarMovimiento(1, { tipo: 'EGRESO', concepto: 'Compra', monto: 10 }, empleado()),
+    ).rejects.toThrow(ForbiddenException);
+    expect(cajaRepo.save).not.toHaveBeenCalled();
+    expect(movimientoRepo.save).not.toHaveBeenCalled();
+  });
+
   it('rechaza registrar movimientos en una caja cerrada', async () => {
     const { service, movimientoRepo } = crearService({
       cajaRepo: { findByIdConDetalle: vi.fn().mockResolvedValue(cajaBase({ estado: 'Cerrada' })) },
     });
 
     await expect(
-      service.registrarMovimiento(1, { tipo: 'INGRESO', concepto: 'Venta', monto: 10 }),
+      service.registrarMovimiento(1, { tipo: 'INGRESO', concepto: 'Venta', monto: 10 }, empleado()),
     ).rejects.toThrow(ConflictException);
     expect(movimientoRepo.save).not.toHaveBeenCalled();
   });
@@ -158,7 +221,7 @@ describe('CajaService', () => {
       },
     });
 
-    await service.cerrar(1, {});
+    await service.cerrar(1, {}, empleado());
 
     expect(caja.montoFinal).toBe('120.00');
     expect(caja.estado).toBe('Cerrada');

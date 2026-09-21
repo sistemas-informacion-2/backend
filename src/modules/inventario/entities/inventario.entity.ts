@@ -16,14 +16,14 @@ export class Inventario {
   @Column({ name: 'id_almacen', type: 'int' })
   idAlmacen: number;
 
-  @ManyToOne(() => Almacen, (almacen) => almacen.inventarios, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Almacen, (almacen) => almacen.inventarios)
   @JoinColumn({ name: 'id_almacen' })
   almacen: Relation<Almacen>;
 
   @Column({ name: 'id_variante_producto', type: 'int' })
   idVarianteProducto: number;
 
-  @ManyToOne(() => VarianteProducto, { onDelete: 'CASCADE' })
+  @ManyToOne(() => VarianteProducto)
   @JoinColumn({ name: 'id_variante_producto' })
   variante: Relation<VarianteProducto>;
 

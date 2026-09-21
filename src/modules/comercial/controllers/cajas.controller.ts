@@ -53,13 +53,18 @@ export class CajasController {
   registrarMovimiento(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CrearMovimientoCajaDto,
+    @CurrentUser() usuario: ActiveUser,
   ): Promise<MovimientoCajaResponseDto> {
-    return this.cajaService.registrarMovimiento(id, dto);
+    return this.cajaService.registrarMovimiento(id, dto, usuario);
   }
 
   @Patch(':id/cerrar')
   @ApiOperation({ summary: 'Cierra una caja calculando el monto final' })
-  cerrar(@Param('id', ParseIntPipe) id: number, @Body() dto: CerrarCajaDto): Promise<CajaResponseDto> {
-    return this.cajaService.cerrar(id, dto);
+  cerrar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CerrarCajaDto,
+    @CurrentUser() usuario: ActiveUser,
+  ): Promise<CajaResponseDto> {
+    return this.cajaService.cerrar(id, dto, usuario);
   }
 }

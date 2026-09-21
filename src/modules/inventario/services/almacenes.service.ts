@@ -68,6 +68,7 @@ export class AlmacenesService {
   private async validarSucursal(idSucursal: number): Promise<void> {
     const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
+    if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
   }
 
   private async validarNombreDisponible(idSucursal: number, nombre: string, excluirId?: number): Promise<void> {

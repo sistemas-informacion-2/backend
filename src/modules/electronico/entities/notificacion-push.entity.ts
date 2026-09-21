@@ -14,7 +14,7 @@ export class NotificacionPush {
   @Column({ name: 'id_usuario', type: 'int' })
   idUsuario: number;
 
-  @ManyToOne(() => Usuario)
+  @ManyToOne(() => Usuario, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'id_usuario' })
   usuario: Relation<Usuario>;
 

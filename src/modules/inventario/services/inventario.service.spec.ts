@@ -21,6 +21,7 @@ function crearService(overrides: {
   inventarioRepo?: Record<string, ReturnType<typeof vi.fn>>;
   almacenRepo?: Record<string, ReturnType<typeof vi.fn>>;
   varianteRepo?: Record<string, ReturnType<typeof vi.fn>>;
+  productoSucursalRepo?: Record<string, ReturnType<typeof vi.fn>>;
 } = {}) {
   const inventarioRepo = {
     findPage: vi.fn(),
@@ -32,12 +33,23 @@ function crearService(overrides: {
   };
   const almacenRepo = { findOne: vi.fn(), ...overrides.almacenRepo };
   const varianteRepo = { findOne: vi.fn(), ...overrides.varianteRepo };
+  // Por defecto el producto esta activo en la sucursal del almacen.
+  const productoSucursalRepo = {
+    findOne: vi.fn().mockResolvedValue({ idProducto: 5, idSucursal: 2, activo: true }),
+    ...overrides.productoSucursalRepo,
+  };
 
   return {
-    service: new InventarioService(inventarioRepo as never, almacenRepo as never, varianteRepo as never),
+    service: new InventarioService(
+      inventarioRepo as never,
+      almacenRepo as never,
+      varianteRepo as never,
+      productoSucursalRepo as never,
+    ),
     inventarioRepo,
     almacenRepo,
     varianteRepo,
+    productoSucursalRepo,
   };
 }
 
@@ -45,8 +57,8 @@ describe('InventarioService', () => {
   it('registra una variante nueva en un almacen', async () => {
     const inventario = inventarioBase();
     const { service, inventarioRepo } = crearService({
-      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1 }) },
-      varianteRepo: { findOne: vi.fn().mockResolvedValue({ id: 10 }) },
+      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1, idSucursal: 2, activo: true }) },
+      varianteRepo: { findOne: vi.fn().mockResolvedValue({ id: 10, idProducto: 5, activo: true }) },
       inventarioRepo: {
         findByAlmacenYVariante: vi.fn().mockResolvedValue(null),
         save: vi.fn().mockResolvedValue(inventario),
@@ -63,12 +75,43 @@ describe('InventarioService', () => {
 
   it('rechaza registrar dos veces la misma variante en el mismo almacen', async () => {
     const { service } = crearService({
-      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1 }) },
-      varianteRepo: { findOne: vi.fn().mockResolvedValue({ id: 10 }) },
+      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1, idSucursal: 2, activo: true }) },
+      varianteRepo: { findOne: vi.fn().mockResolvedValue({ id: 10, idProducto: 5, activo: true }) },
       inventarioRepo: { findByAlmacenYVariante: vi.fn().mockResolvedValue(inventarioBase()) },
     });
 
     await expect(service.registrar({ idAlmacen: 1, idVarianteProducto: 10 })).rejects.toThrow(ConflictException);
+  });
+
+  it('rechaza registrar stock de un producto que no esta activo en la sucursal del almacen', async () => {
+    const { service, inventarioRepo, productoSucursalRepo } = crearService({
+      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1, idSucursal: 2, activo: true }) },
+      varianteRepo: { findOne: vi.fn().mockResolvedValue({ id: 10, idProducto: 5, activo: true }) },
+      productoSucursalRepo: { findOne: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(service.registrar({ idAlmacen: 1, idVarianteProducto: 10 })).rejects.toThrow(ConflictException);
+    expect(productoSucursalRepo.findOne).toHaveBeenCalledWith({
+      where: { idProducto: 5, idSucursal: 2, activo: true },
+    });
+    expect(inventarioRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('rechaza registrar en un almacen inactivo o con una variante inactiva', async () => {
+    const almacenInactivo = crearService({
+      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1, idSucursal: 2, activo: false }) },
+    });
+    await expect(almacenInactivo.service.registrar({ idAlmacen: 1, idVarianteProducto: 10 })).rejects.toThrow(
+      ConflictException,
+    );
+
+    const varianteInactiva = crearService({
+      almacenRepo: { findOne: vi.fn().mockResolvedValue({ id: 1, idSucursal: 2, activo: true }) },
+      varianteRepo: { findOne: vi.fn().mockResolvedValue({ id: 10, idProducto: 5, activo: false }) },
+    });
+    await expect(varianteInactiva.service.registrar({ idAlmacen: 1, idVarianteProducto: 10 })).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   it('rechaza registrar si el almacen no existe', async () => {

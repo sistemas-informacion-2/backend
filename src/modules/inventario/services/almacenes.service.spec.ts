@@ -48,17 +48,26 @@ describe('AlmacenesService', () => {
 
   it('rechaza un nombre de almacen repetido en la misma sucursal', async () => {
     const { service } = crearService({
-      sucursalRepo: { findOne: vi.fn().mockResolvedValue({ id: 2 }) },
+      sucursalRepo: { findOne: vi.fn().mockResolvedValue({ id: 2, activo: true }) },
       almacenRepo: { findBySucursalYNombre: vi.fn().mockResolvedValue(almacenBase()) },
     });
 
     await expect(service.crear({ idSucursal: 2, nombre: 'Deposito Central' })).rejects.toThrow(ConflictException);
   });
 
+  it('rechaza crear un almacen en una sucursal inactiva', async () => {
+    const { service, almacenRepo } = crearService({
+      sucursalRepo: { findOne: vi.fn().mockResolvedValue({ id: 2, activo: false }) },
+    });
+
+    await expect(service.crear({ idSucursal: 2, nombre: 'Deposito' })).rejects.toThrow(ConflictException);
+    expect(almacenRepo.save).not.toHaveBeenCalled();
+  });
+
   it('crea un almacen correctamente', async () => {
     const almacen = almacenBase();
     const { service } = crearService({
-      sucursalRepo: { findOne: vi.fn().mockResolvedValue({ id: 2 }) },
+      sucursalRepo: { findOne: vi.fn().mockResolvedValue({ id: 2, activo: true }) },
       almacenRepo: {
         findBySucursalYNombre: vi.fn().mockResolvedValue(null),
         save: vi.fn().mockResolvedValue(almacen),

@@ -1,4 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import type { Repository } from 'typeorm';
+import { Caja } from '../../comercial/entities/caja.entity.js';
 import { SucursalRepository } from '../repositories/sucursal.repository.js';
 import { CiudadRepository } from '../repositories/ciudad.repository.js';
 import { toSucursalResponseDto } from '../mappers/sucursal.mapper.js';
@@ -11,6 +14,7 @@ export class SucursalesService {
   constructor(
     private readonly sucursalRepo: SucursalRepository,
     private readonly ciudadRepo: CiudadRepository,
+    @InjectRepository(Caja) private readonly cajaRepo: Repository<Caja>,
   ) {}
 
   async listar(): Promise<SucursalResponseDto[]> {
@@ -46,6 +50,7 @@ export class SucursalesService {
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
 
     if (dto.idCiudad !== undefined) await this.validarCiudad(dto.idCiudad);
+    if (dto.activo === false && sucursal.activo) await this.validarSinCajaAbierta(id);
 
     Object.assign(sucursal, {
       ...(dto.idCiudad !== undefined && { idCiudad: dto.idCiudad }),
@@ -61,6 +66,14 @@ export class SucursalesService {
 
     const actualizada = await this.sucursalRepo.findByIdConUbicacion(id);
     return toSucursalResponseDto(actualizada!);
+  }
+
+  /** Una sucursal con caja abierta tiene dinero en curso: primero se cierra la caja, despues se desactiva. */
+  private async validarSinCajaAbierta(idSucursal: number): Promise<void> {
+    const abiertas = await this.cajaRepo.count({ where: { idSucursal, estado: 'Abierta' } });
+    if (abiertas > 0) {
+      throw new ConflictException('No se puede desactivar la sucursal mientras tenga una caja abierta');
+    }
   }
 
   private async validarCiudad(idCiudad: number): Promise<void> {

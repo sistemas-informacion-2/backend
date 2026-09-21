@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Almacen } from '../entities/almacen.entity.js';
 import { VarianteProducto } from '../entities/variante-producto.entity.js';
+import { ProductoSucursal } from '../entities/producto-sucursal.entity.js';
 import { InventarioRepository } from '../repositories/inventario.repository.js';
 import { toInventarioResponseDto } from '../mappers/inventario.mapper.js';
 import type { CrearStockDto } from '../dto/crear-stock.dto.js';
@@ -17,6 +18,7 @@ export class InventarioService {
     private readonly inventarioRepo: InventarioRepository,
     @InjectRepository(Almacen) private readonly almacenRepo: Repository<Almacen>,
     @InjectRepository(VarianteProducto) private readonly varianteRepo: Repository<VarianteProducto>,
+    @InjectRepository(ProductoSucursal) private readonly productoSucursalRepo: Repository<ProductoSucursal>,
   ) {}
 
   async listar(query: InventarioQueryDto): Promise<InventarioPaginatedResponseDto> {
@@ -41,9 +43,21 @@ export class InventarioService {
   async registrar(dto: CrearStockDto): Promise<InventarioResponseDto> {
     const almacen = await this.almacenRepo.findOne({ where: { id: dto.idAlmacen } });
     if (!almacen) throw new NotFoundException('Almacen no encontrado');
+    if (!almacen.activo) throw new ConflictException('El almacen esta inactivo');
 
     const variante = await this.varianteRepo.findOne({ where: { id: dto.idVarianteProducto } });
     if (!variante) throw new NotFoundException('Variante de producto no encontrada');
+    if (!variante.activo) throw new ConflictException('La variante esta inactiva');
+
+    // El catalogo es global, pero solo se puede tener stock de lo que la sucursal del almacen tiene activado.
+    const activoEnSucursal = await this.productoSucursalRepo.findOne({
+      where: { idProducto: variante.idProducto, idSucursal: almacen.idSucursal, activo: true },
+    });
+    if (!activoEnSucursal) {
+      throw new ConflictException(
+        'El producto no esta activo en la sucursal de este almacen; activalo primero en esa sucursal',
+      );
+    }
 
     const existente = await this.inventarioRepo.findByAlmacenYVariante(dto.idAlmacen, dto.idVarianteProducto);
     if (existente) throw new ConflictException('Esa variante ya esta registrada en el almacen');

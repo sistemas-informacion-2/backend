@@ -465,9 +465,12 @@ CREATE TABLE DETALLE_NOTA_DEVOLUCION (
 -- 7. SECCIÓN DE COMPRAS
 -- =============================================================================
 
+-- Toda compra pertenece a una sucursal: sus almacenes de destino (DETALLE_NOTA_COMPRA.id_almacen)
+-- y la caja del egreso (id_movimiento_caja) deben ser de esa misma sucursal (regla de CU15).
 CREATE TABLE NOTA_COMPRA (
     id SERIAL PRIMARY KEY,
     id_proveedor INT NOT NULL,
+    id_sucursal INT NOT NULL,
     id_movimiento_caja INT,
     nro_factura VARCHAR(50),
     fecha_emision TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -477,6 +480,7 @@ CREATE TABLE NOTA_COMPRA (
     total DECIMAL(12,2) NOT NULL,
     estado VARCHAR(30) DEFAULT 'Recibido',
     CONSTRAINT fk_notacompra_proveedor FOREIGN KEY (id_proveedor) REFERENCES PROVEEDOR(id),
+    CONSTRAINT fk_notacompra_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id),
     CONSTRAINT fk_notacompra_movcaja FOREIGN KEY (id_movimiento_caja) REFERENCES MOVIMIENTO_CAJA(id)
 );
 

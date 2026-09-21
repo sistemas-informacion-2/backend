@@ -7,7 +7,7 @@ export class Empleado {
   @PrimaryColumn({ name: 'id_usuario' })
   idUsuario: number;
 
-  @OneToOne(() => Usuario)
+  @OneToOne(() => Usuario, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'id_usuario' })
   usuario: Relation<Usuario>;
 

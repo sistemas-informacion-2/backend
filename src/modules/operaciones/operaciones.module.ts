@@ -7,6 +7,7 @@ import { EmpleadoSucursal } from './entities/empleado-sucursal.entity.js';
 import { Empleado } from './entities/empleado.entity.js';
 import { Cliente } from './entities/cliente.entity.js';
 import { Usuario } from '../acceso/entities/usuario.entity.js';
+import { Caja } from '../comercial/entities/caja.entity.js';
 import { SucursalesController } from './controllers/sucursales.controller.js';
 import { UbicacionController } from './controllers/ubicacion.controller.js';
 import { ClientesController } from './controllers/clientes.controller.js';
@@ -24,7 +25,7 @@ import { EmpleadoRepository } from './repositories/empleado.repository.js';
 import { AsignacionSucursalRepository } from './repositories/asignacion-sucursal.repository.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Departamento, Ciudad, Sucursal, EmpleadoSucursal, Empleado, Cliente, Usuario])],
+  imports: [TypeOrmModule.forFeature([Departamento, Ciudad, Sucursal, EmpleadoSucursal, Empleado, Cliente, Usuario, Caja])],
   controllers: [SucursalesController, UbicacionController, ClientesController, EmpleadosController],
   providers: [
     SucursalesService,
