@@ -8,6 +8,11 @@ export class AgregarItemCarritoDto {
   @Min(1)
   idVarianteProducto: number;
 
+  /** Sucursal elegida en el catálogo: de ahí sale el stock al pagar (CU14). Fija/actualiza la del carrito. */
+  @IsInt()
+  @Min(1)
+  idSucursal: number;
+
   @IsInt()
   @Min(1)
   @Max(CANTIDAD_MAXIMA_POR_ITEM)
@@ -50,6 +55,8 @@ export class ItemCarritoResponseDto {
 export class CarritoResponseDto {
   /** null mientras el cliente no haya agregado nada (el carrito se crea con el primer item). */
   id: number | null;
+  /** Sucursal de la que sale el stock al pagar; null en el mismo caso que `id`. */
+  idSucursal: number | null;
   items: ItemCarritoResponseDto[];
   cantidadTotal: number;
   total: number;

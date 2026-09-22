@@ -14,10 +14,11 @@ const admin: ActiveUser = { sub: 1, tipoUsuario: 'A', permisos: [], jti: 'x' };
 
 const TARJETA = { titular: 'Ana Perez', numero: '4111 1111 1111 1111', vencimiento: '12/99', cvv: '123' };
 
-function carritoBase(cantidad = 2, precio = 100, descuento = 0) {
+function carritoBase(cantidad = 2, precio = 100, descuento = 0, idSucursal = 2) {
   return {
     id: 4,
     idCliente: 7,
+    idSucursal,
     detalles: [
       {
         idVarianteProducto: 3,
@@ -35,7 +36,7 @@ function reservaBase(overrides: Record<string, unknown> = {}) {
 interface Escenario {
   reserva?: ReturnType<typeof reservaBase> | null;
   carrito?: ReturnType<typeof carritoBase> | null;
-  filasInventario?: Array<{ id: number; id_sucursal: number; stock_disponible: number }>;
+  filasInventario?: Array<{ id: number; stock_disponible: number }>;
   simulados?: boolean;
   paypalConfigurado?: boolean;
   pasarelas?: Array<{ id: number; codigo: string; metodo: string; descripcion: string | null; disponibleLinea: boolean }>;
@@ -113,7 +114,7 @@ function crearService(escenario: Escenario = {}) {
     },
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
       consultas.push({ sql, params });
-      if (sql.includes('SELECT')) return escenario.filasInventario ?? [{ id: 90, id_sucursal: 2, stock_disponible: 10 }];
+      if (sql.includes('SELECT')) return escenario.filasInventario ?? [{ id: 90, stock_disponible: 10 }];
       orden.push('descuento');
       return [];
     }),
@@ -238,23 +239,37 @@ describe('CheckoutService', () => {
     });
 
     it('avisa cuando ya no alcanza el stock, sin registrar el pago', async () => {
-      const { service, guardados } = crearService({ filasInventario: [{ id: 90, id_sucursal: 2, stock_disponible: 1 }] });
+      const { service, guardados } = crearService({ filasInventario: [{ id: 90, stock_disponible: 1 }] });
 
       await expect(service.pagarTarjeta(cliente, TARJETA)).rejects.toThrow('Ya no hay stock suficiente');
       expect(guardados.pagos).toHaveLength(0);
     });
 
-    it('reparte el descuento entre almacenes y asigna la venta a la sucursal que mas aporta', async () => {
+    it('descuenta de varios almacenes de la MISMA sucursal si hace falta, pero nunca de otra sucursal', async () => {
+      // Dos almacenes de la sucursal 2 (la del carrito): se reparte entre ellos, no con otra sucursal.
       const filas = [
-        { id: 90, id_sucursal: 2, stock_disponible: 1 },
-        { id: 91, id_sucursal: 5, stock_disponible: 4 },
+        { id: 90, stock_disponible: 1 },
+        { id: 91, stock_disponible: 4 },
       ];
-      const { service, guardados, consultas } = crearService({ filasInventario: [filas[1], filas[0]] });
+      const { service, guardados, consultas } = crearService({ carrito: carritoBase(2, 100, 0, 2), filasInventario: filas });
 
       await service.pagarTarjeta(cliente, TARJETA);
 
-      expect(consultas.filter((c) => c.sql.startsWith('UPDATE')).map((c) => c.params)).toEqual([[2, 91]]);
-      expect(guardados.notas[0]).toMatchObject({ idSucursal: 5 });
+      const consultaStock = consultas.find((c) => c.sql.includes('FOR UPDATE'));
+      expect(consultaStock?.params).toEqual([3, 2]); // idVarianteProducto, idSucursal — nunca ranking entre sucursales.
+      expect(consultas.filter((c) => c.sql.startsWith('UPDATE')).map((c) => c.params)).toEqual([[1, 90], [1, 91]]);
+      expect(guardados.notas[0]).toMatchObject({ idSucursal: 2 });
+    });
+
+    it('no cobra ni descuenta de otra sucursal si la del carrito no tiene stock suficiente', async () => {
+      const { service, guardados, consultas } = crearService({
+        carrito: carritoBase(2, 100, 0, 2),
+        filasInventario: [{ id: 90, stock_disponible: 1 }],
+      });
+
+      await expect(service.pagarTarjeta(cliente, TARJETA)).rejects.toThrow('Ya no hay stock suficiente');
+      expect(guardados.pagos).toHaveLength(0);
+      expect(consultas.filter((c) => c.sql.startsWith('UPDATE'))).toHaveLength(1); // solo el almacen que sí tenía algo, no salta a otra sucursal.
     });
   });
 

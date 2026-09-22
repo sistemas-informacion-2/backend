@@ -37,12 +37,13 @@ function toItemResponseDto(detalle: DetalleCarrito, stock: Map<number, number>):
 }
 
 export function toCarritoResponseDto(carrito: Carrito | null, stock: Map<number, number>): CarritoResponseDto {
-  if (!carrito) return { id: null, items: [], cantidadTotal: 0, total: 0, fechaActualizacion: null };
+  if (!carrito) return { id: null, idSucursal: null, items: [], cantidadTotal: 0, total: 0, fechaActualizacion: null };
 
   const items = (carrito.detalles ?? []).map((detalle) => toItemResponseDto(detalle, stock)).sort((a, b) => a.id - b.id);
 
   return {
     id: carrito.id,
+    idSucursal: carrito.idSucursal,
     items,
     cantidadTotal: items.reduce((suma, item) => suma + item.cantidad, 0),
     total: redondear(items.reduce((suma, item) => suma + item.subtotal, 0)),

@@ -23,14 +23,29 @@ import { NotificacionesService } from './services/notificaciones.service.js';
 import { CarritoService } from './services/carrito.service.js';
 import { NotificacionesController } from './controllers/notificaciones.controller.js';
 import { CarritoController } from './controllers/carrito.controller.js';
+import { ProbadorController } from './controllers/probador.controller.js';
+import { ProbadorService } from './services/probador.service.js';
+import { ProbadorModelosController } from './controllers/probador-modelos.controller.js';
+import { ProbadorModelosService } from './services/probador-modelos.service.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([NotificacionPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
     InventarioModule,
   ],
-  controllers: [NotificacionesController, CarritoController, ReservasController, CheckoutController],
-  providers: [NotificacionesService, NotificacionRepository, CarritoService, CarritoRepository, ReservasService, ReservaRepository, PaypalService, CheckoutService],
+  controllers: [NotificacionesController, CarritoController, ProbadorController, ProbadorModelosController, ReservasController, CheckoutController],
+  providers: [
+    NotificacionesService,
+    NotificacionRepository,
+    CarritoService,
+    CarritoRepository,
+    ProbadorService,
+    ProbadorModelosService,
+    ReservasService,
+    ReservaRepository,
+    PaypalService,
+    CheckoutService,
+  ],
   exports: [TypeOrmModule],
 })
 export class ElectronicoModule {}

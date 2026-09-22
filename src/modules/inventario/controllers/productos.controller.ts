@@ -29,9 +29,13 @@ export class ProductosController {
 
   @Public()
   @Get(':id/publico')
-  @ApiOperation({ summary: 'Ficha publica del producto con el stock en linea de cada variante' })
-  detallePublico(@Param('id', ParseIntPipe) id: number): Promise<ProductoDetallePublicoDto> {
-    return this.productosService.detallePublico(id);
+  @ApiOperation({ summary: 'Ficha publica del producto con el stock en linea de cada variante en una sucursal' })
+  detallePublico(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('idSucursal') idSucursal?: string,
+  ): Promise<ProductoDetallePublicoDto> {
+    const idSucursalNum = Number(idSucursal);
+    return this.productosService.detallePublico(id, Number.isInteger(idSucursalNum) && idSucursalNum > 0 ? idSucursalNum : undefined);
   }
 
   @Public()
@@ -113,7 +117,7 @@ export class ProductosController {
 
   @Delete(':id/variantes/:varianteId')
   @RequirePermission('inventario:productos:gestionar')
-  @ApiOperation({ summary: 'Desactiva una variante' })
+  @ApiOperation({ summary: 'Elimina una variante (falla si tiene stock o movimientos asociados)' })
   eliminarVariante(
     @Param('id', ParseIntPipe) id: number,
     @Param('varianteId', ParseIntPipe) varianteId: number,

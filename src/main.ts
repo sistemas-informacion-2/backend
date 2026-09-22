@@ -9,6 +9,8 @@ import type { AppConfig } from './config/configuration.js';
 import { InitialSeederService } from './database/seeders/initial-seeder.service.js';
 import { UbicacionSeederService } from './modules/operaciones/seeders/ubicacion-seeder.service.js';
 import { PasarelaSeederService } from './modules/comercial/seeders/pasarela-seeder.service.js';
+import { CategoriaSeederService } from './modules/inventario/seeders/categoria-seeder.service.js';
+import { TemporadaSeederService } from './modules/inventario/seeders/temporada-seeder.service.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -35,6 +37,10 @@ async function bootstrap() {
   await app.get(UbicacionSeederService).run();
   // Idempotente: siembra los metodos de pago base (CU16).
   await app.get(PasarelaSeederService).run();
+  // Idempotente: siembra la taxonomia de categorias de ropa con su zona para el probador virtual (CU19).
+  await app.get(CategoriaSeederService).run();
+  // Idempotente: siembra las 4 estaciones (hemisferio sur / Bolivia) para el filtro de temporadas.
+  await app.get(TemporadaSeederService).run();
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('FashionStore API')

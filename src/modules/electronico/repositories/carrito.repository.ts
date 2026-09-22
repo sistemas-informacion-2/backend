@@ -23,12 +23,17 @@ export class CarritoRepository {
     if (existente) return existente;
 
     try {
-      return await this.carritoRepo.save(this.carritoRepo.create({ idCliente, sessionId: null }));
+      return await this.carritoRepo.save(this.carritoRepo.create({ idCliente, idSucursal: null, sessionId: null }));
     } catch (error) {
       const codigo = (error as { driverError?: { code?: string } }).driverError?.code;
       if (codigo !== '23505') throw error;
       return this.carritoRepo.findOneOrFail({ where: { idCliente } });
     }
+  }
+
+  /** El carrito sigue la sucursal que el cliente tiene elegida en el catálogo: se actualiza en cada "agregar". */
+  async fijarSucursal(idCarrito: number, idSucursal: number): Promise<void> {
+    await this.carritoRepo.update({ id: idCarrito }, { idSucursal });
   }
 
   findDetalle(idCarrito: number, idDetalle: number): Promise<DetalleCarrito | null> {

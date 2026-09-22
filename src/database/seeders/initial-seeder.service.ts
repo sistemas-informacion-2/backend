@@ -32,7 +32,9 @@ const PERMISOS_BASE = [
   'electronico:ventas:leer',
   'comercial:devoluciones:gestionar',
   'electronico:notificaciones:gestionar',
+  'electronico:probador:gestionar',
   'analitica:dashboard:leer',
+  'analitica:reportes:gestionar',
 ];
 
 /**
@@ -48,7 +50,7 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
     nombre: 'ENCARGADO_SUCURSAL',
     descripcion:
       'Responsable de las operaciones de una sucursal: disponibilidad de prendas, atencion a clientes y supervision del inventario local.',
-    permisos: ['operaciones:sucursales:gestionar', 'acceso:clientes:gestionar', 'comercial:pasarelas:leer', 'comercial:caja:gestionar', 'comercial:ventas:gestionar', 'electronico:reservas:gestionar', 'comercial:devoluciones:gestionar', 'inventario:almacen:leer'],
+    permisos: ['operaciones:sucursales:gestionar', 'acceso:clientes:gestionar', 'comercial:pasarelas:leer', 'comercial:caja:gestionar', 'comercial:ventas:gestionar', 'electronico:reservas:gestionar', 'comercial:devoluciones:gestionar', 'inventario:almacen:leer', 'analitica:reportes:gestionar'],
   },
   {
     nombre: 'VENDEDOR_CAJERO',
@@ -58,7 +60,7 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
   {
     nombre: 'ENCARGADO_INVENTARIO',
     descripcion: 'Controla existencias, registra el ingreso de productos y actualiza disponibilidad por sucursal.',
-    permisos: ['inventario:productos:gestionar', 'inventario:categorias:gestionar', 'inventario:almacen:gestionar'],
+    permisos: ['inventario:productos:gestionar', 'inventario:categorias:gestionar', 'inventario:almacen:gestionar', 'electronico:probador:gestionar'],
   },
   {
     nombre: 'ENCARGADO_COMPRAS',

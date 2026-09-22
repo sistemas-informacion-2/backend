@@ -1,6 +1,15 @@
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
 import { TemporadaCategoria } from './temporada-categoria.entity.js';
 
+/**
+ * Qué parte del cuerpo usa el probador virtual (CU19) como referencia para
+ * superponer el modelo 3D de una prenda de esta categoría: SUPERIOR ancla en
+ * los hombros (poleras, blusas, abrigos...), INFERIOR ancla en la cadera
+ * (pantalones, faldas...) y COMPLETO estira el modelo entre hombros y cadera
+ * (vestidos, enterizos...). Ver `frontend/.../utils/probador-ar.ts`.
+ */
+export type ZonaProbador = 'SUPERIOR' | 'INFERIOR' | 'COMPLETO';
+
 @Entity('categoria')
 export class Categoria {
   @PrimaryGeneratedColumn()
@@ -33,6 +42,9 @@ export class Categoria {
 
   @Column({ type: 'boolean', default: true })
   activo: boolean;
+
+  @Column({ name: 'zona_probador', type: 'varchar', length: 20, default: 'SUPERIOR' })
+  zonaProbador: ZonaProbador;
 
   @OneToMany(() => TemporadaCategoria, (tc) => tc.categoria)
   temporadasCategoria: Relation<TemporadaCategoria>[];

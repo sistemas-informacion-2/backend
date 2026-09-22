@@ -35,6 +35,8 @@ import { VarianteProductoRepository } from './repositories/variante-producto.rep
 import { ProductoSucursalRepository } from './repositories/producto-sucursal.repository.js';
 import { AlmacenRepository } from './repositories/almacen.repository.js';
 import { InventarioRepository } from './repositories/inventario.repository.js';
+import { CategoriaSeederService } from './seeders/categoria-seeder.service.js';
+import { TemporadaSeederService } from './seeders/temporada-seeder.service.js';
 
 @Module({
   imports: [
@@ -71,7 +73,9 @@ import { InventarioRepository } from './repositories/inventario.repository.js';
     ProductoSucursalRepository,
     AlmacenRepository,
     InventarioRepository,
+    CategoriaSeederService,
+    TemporadaSeederService,
   ],
-  exports: [TypeOrmModule, DisponibilidadService],
+  exports: [TypeOrmModule, DisponibilidadService, CategoriaSeederService, TemporadaSeederService],
 })
 export class InventarioModule {}

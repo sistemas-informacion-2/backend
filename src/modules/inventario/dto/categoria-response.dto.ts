@@ -1,3 +1,5 @@
+import type { ZonaProbador } from '../entities/categoria.entity.js';
+
 export class TemporadaResumenDto {
   id: number;
   nombre: string;
@@ -11,6 +13,7 @@ export class CategoriaResponseDto {
   imagenUrl: string | null;
   activo: boolean;
   categoriaPadreId: number | null;
+  zonaProbador: ZonaProbador;
   temporadas: TemporadaResumenDto[];
   hijos: CategoriaResponseDto[];
 }

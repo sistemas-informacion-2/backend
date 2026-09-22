@@ -188,6 +188,9 @@ CREATE TABLE CATEGORIA (
     descripcion TEXT,
     imagen_url VARCHAR(500), -- imagen de la categoria, la pide CU08 explicitamente
     activo BOOLEAN DEFAULT TRUE,
+    -- SUPERIOR|INFERIOR|COMPLETO: que parte del cuerpo usa el probador virtual
+    -- (CU19) para anclar el modelo 3D de una prenda de esta categoria.
+    zona_probador VARCHAR(20) NOT NULL DEFAULT 'SUPERIOR',
     CONSTRAINT fk_categoria_padre FOREIGN KEY (id_categoria_padre) REFERENCES CATEGORIA(id) ON DELETE CASCADE
 );
 
@@ -315,10 +318,13 @@ CREATE TABLE MOVIMIENTO_CAJA (
 CREATE TABLE CARRITO (
     id SERIAL PRIMARY KEY,
     id_cliente INT NOT NULL UNIQUE,
+    -- Sucursal elegida en el catalogo (CU08): de ahi sale el stock al pagar (CU14).
+    id_sucursal INT,
     session_id VARCHAR(100),
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_carrito_cliente FOREIGN KEY (id_cliente) REFERENCES CLIENTE(id_usuario) ON DELETE CASCADE
+    CONSTRAINT fk_carrito_cliente FOREIGN KEY (id_cliente) REFERENCES CLIENTE(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT fk_carrito_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id)
 );
 
 CREATE TABLE DETALLE_CARRITO (
@@ -500,4 +506,21 @@ CREATE TABLE DETALLE_NOTA_COMPRA (
     CONSTRAINT fk_detcompra_notacompra FOREIGN KEY (id_nota_compra) REFERENCES NOTA_COMPRA(id) ON DELETE CASCADE,
     CONSTRAINT fk_detcompra_variante FOREIGN KEY (id_variante_producto) REFERENCES VARIANTE_PRODUCTO(id),
     CONSTRAINT fk_detcompra_almacen FOREIGN KEY (id_almacen) REFERENCES ALMACEN(id)
+);
+
+-- =============================================================================
+-- 8. SECCIÓN DE REPORTES
+-- =============================================================================
+
+-- Plantilla guardada de un reporte dinamico (CU18): guarda la config completa
+-- del Report Builder en `config` (jsonb) para poder reaplicarla con un clic.
+-- La plantilla pertenece al usuario que la creo.
+CREATE TABLE REPORTE_PLANTILLA (
+    id SERIAL PRIMARY KEY,
+    id_usuario INT NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    config JSONB NOT NULL,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_reporteplantilla_usuario FOREIGN KEY (id_usuario) REFERENCES USUARIO(id) ON DELETE CASCADE
 );

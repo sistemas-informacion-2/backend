@@ -32,7 +32,7 @@ import { RolRepository } from './repositories/rol.repository.js';
 import { RolUsuarioRepository } from './repositories/rol-usuario.repository.js';
 import { RolPermisoRepository } from './repositories/rol-permiso.repository.js';
 import { PermisoRepository } from './repositories/permiso.repository.js';
-import { JwtStrategy } from './jwt.strategy.js';
+import { JwtStrategy } from './services/jwt.strategy.js';
 
 @Module({
   imports: [

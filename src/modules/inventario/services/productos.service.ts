@@ -28,6 +28,14 @@ import type { ProductoDetallePublicoDto } from '../dto/producto-detalle-publico.
 /** Cuantos productos se sugieren en "Tambien te puede interesar". */
 const LIMITE_RELACIONADOS = 6;
 
+function esViolacionDeLlaveForanea(error: unknown): boolean {
+  const conDetalle = error as { driverError?: { code?: string; routine?: string }; message?: string };
+  if (conDetalle.driverError?.code === '23503' || conDetalle.driverError?.routine === 'ri_ReportViolation') {
+    return true;
+  }
+  return /violates foreign key constraint|foreign key constraint/i.test(conDetalle.message ?? '');
+}
+
 @Injectable()
 export class ProductosService {
   constructor(
@@ -46,14 +54,19 @@ export class ProductosService {
     return productos.map(toProductoResponseDto);
   }
 
-  /** Ficha publica: solo variantes activas, cada una con el stock que se puede comprar en linea. */
-  async detallePublico(id: number): Promise<ProductoDetallePublicoDto> {
+  /**
+   * Ficha publica: solo variantes activas, cada una con el stock que se puede
+   * comprar en linea. Con `idSucursal` (la que el cliente tiene elegida en el
+   * catálogo) el stock es el de esa sucursal puntual, no la suma de todas —
+   * así la ficha nunca promete unidades que en realidad están en otra ciudad.
+   */
+  async detallePublico(id: number, idSucursal?: number): Promise<ProductoDetallePublicoDto> {
     const producto = await this.productoRepo.findByIdConDetalle(id);
     if (!producto || !producto.activo) throw new NotFoundException('Producto no encontrado');
 
     const base = toProductoResponseDto(producto);
     const variantes = base.variantes.filter((variante) => variante.activo);
-    const stock = await this.disponibilidad.stockPorVariante(variantes.map((variante) => variante.id));
+    const stock = await this.disponibilidad.stockPorVariante(variantes.map((variante) => variante.id), idSucursal);
 
     return {
       id: base.id,
@@ -246,8 +259,16 @@ export class ProductosService {
 
   async eliminarVariante(idProducto: number, idVariante: number): Promise<ProductoResponseDto> {
     const variante = await this.obtenerVarianteOFallar(idProducto, idVariante);
-    variante.activo = false;
-    await this.varianteRepo.save(variante);
+    try {
+      await this.varianteRepo.eliminar(variante.id);
+    } catch (error) {
+      if (esViolacionDeLlaveForanea(error)) {
+        throw new ConflictException(
+          'La variante tiene stock o movimientos asociados y no puede eliminarse. Desactívala en su lugar.',
+        );
+      }
+      throw error;
+    }
     return this.obtener(idProducto);
   }
 

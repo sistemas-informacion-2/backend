@@ -18,9 +18,11 @@ function varianteBase(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function carritoBase(detalles: unknown[] = []) {
-  return { id: 3, idCliente: 9, fechaActualizacion: new Date('2026-09-21T10:00:00Z'), detalles };
+function carritoBase(detalles: unknown[] = [], idSucursal: number | null = 2) {
+  return { id: 3, idCliente: 9, idSucursal, fechaActualizacion: new Date('2026-09-21T10:00:00Z'), detalles };
 }
+
+const SUCURSAL = { id: 2, nombre: 'Sucursal Centro', activo: true };
 
 function crearService(
   overrides: {
@@ -28,12 +30,14 @@ function crearService(
     stock?: number;
     carrito?: unknown;
     existente?: unknown;
+    sucursal?: unknown;
   } = {},
 ) {
   const carrito = 'carrito' in overrides ? overrides.carrito : carritoBase();
   const carritoRepo = {
     findByCliente: vi.fn().mockResolvedValue(carrito),
-    obtenerOCrear: vi.fn().mockResolvedValue({ id: 3, idCliente: 9 }),
+    obtenerOCrear: vi.fn().mockResolvedValue({ id: 3, idCliente: 9, idSucursal: 2 }),
+    fijarSucursal: vi.fn().mockResolvedValue(undefined),
     findDetalle: vi.fn().mockResolvedValue(overrides.existente ?? null),
     findDetallePorVariante: vi.fn().mockResolvedValue(overrides.existente ?? null),
     createDetalle: vi.fn((datos) => ({ ...datos })),
@@ -49,11 +53,15 @@ function crearService(
   const varianteRepo = {
     findOne: vi.fn().mockResolvedValue('variante' in overrides ? overrides.variante : varianteBase()),
   };
+  const sucursalRepo = {
+    findOne: vi.fn().mockResolvedValue('sucursal' in overrides ? overrides.sucursal : SUCURSAL),
+  };
 
   return {
-    service: new CarritoService(carritoRepo as never, disponibilidad as never, varianteRepo as never),
+    service: new CarritoService(carritoRepo as never, disponibilidad as never, varianteRepo as never, sucursalRepo as never),
     carritoRepo,
     disponibilidad,
+    sucursalRepo,
   };
 }
 
@@ -62,9 +70,9 @@ describe('CarritoService', () => {
     const { service } = crearService();
 
     await expect(service.obtener({ ...cliente, tipoUsuario: 'A' })).rejects.toThrow(ForbiddenException);
-    await expect(service.agregarItem({ ...cliente, tipoUsuario: 'E' }, { idVarianteProducto: 7, cantidad: 1 })).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      service.agregarItem({ ...cliente, tipoUsuario: 'E' }, { idVarianteProducto: 7, idSucursal: 2, cantidad: 1 }),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('un cliente sin carrito ve uno vacio y no se crea nada', async () => {
@@ -72,14 +80,24 @@ describe('CarritoService', () => {
 
     const respuesta = await service.obtener(cliente);
 
-    expect(respuesta).toEqual({ id: null, items: [], cantidadTotal: 0, total: 0, fechaActualizacion: null });
+    expect(respuesta).toEqual({ id: null, idSucursal: null, items: [], cantidadTotal: 0, total: 0, fechaActualizacion: null });
     expect(carritoRepo.obtenerOCrear).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una sucursal inexistente o inactiva', async () => {
+    const { service } = crearService({ sucursal: null });
+    await expect(service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 99, cantidad: 1 })).rejects.toThrow(BadRequestException);
+
+    const inactiva = crearService({ sucursal: { ...SUCURSAL, activo: false } });
+    await expect(inactiva.service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 1 })).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('agrega una variante nueva con el precio con descuento y el subtotal', async () => {
     const { service, carritoRepo } = crearService();
 
-    await service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 3, notasEspeciales: ' regalo ' });
+    await service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 3, notasEspeciales: ' regalo ' });
 
     // 100 con 20% de descuento = 80.00; 3 x 80 = 240.00
     expect(carritoRepo.saveDetalle).toHaveBeenCalledWith(
@@ -92,7 +110,7 @@ describe('CarritoService', () => {
     const existente = { id: 11, idCarrito: 3, idVarianteProducto: 7, cantidad: 2, precioUnitario: '80.00', subtotal: '160.00', notasEspeciales: null };
     const { service, carritoRepo } = crearService({ existente });
 
-    await service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 2 });
+    await service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 2 });
 
     expect(carritoRepo.createDetalle).not.toHaveBeenCalled();
     expect(carritoRepo.saveDetalle).toHaveBeenCalledWith(expect.objectContaining({ id: 11, cantidad: 4, subtotal: '320.00' }));
@@ -102,26 +120,26 @@ describe('CarritoService', () => {
     const existente = { id: 11, idCarrito: 3, idVarianteProducto: 7, cantidad: 2 };
     const { service, carritoRepo } = crearService({ existente, stock: 3 });
 
-    await expect(service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 2 })).rejects.toThrow(ConflictException);
+    await expect(service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 2 })).rejects.toThrow(ConflictException);
     expect(carritoRepo.saveDetalle).not.toHaveBeenCalled();
   });
 
   it('rechaza una variante agotada, inactiva o de un producto inactivo', async () => {
     const agotada = crearService({ stock: 0 });
-    await expect(agotada.service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 1 })).rejects.toThrow(ConflictException);
+    await expect(agotada.service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 1 })).rejects.toThrow(ConflictException);
 
     const inactiva = crearService({ variante: varianteBase({ activo: false }) });
-    await expect(inactiva.service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 1 })).rejects.toThrow(NotFoundException);
+    await expect(inactiva.service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 1 })).rejects.toThrow(NotFoundException);
 
     const productoInactivo = crearService({ variante: varianteBase({ producto: { ...varianteBase().producto, activo: false } }) });
-    await expect(productoInactivo.service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 1 })).rejects.toThrow(NotFoundException);
+    await expect(productoInactivo.service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 1 })).rejects.toThrow(NotFoundException);
   });
 
   it('rechaza pasar del maximo por variante aunque haya stock', async () => {
     const existente = { id: 11, idCarrito: 3, idVarianteProducto: 7, cantidad: 99 };
     const { service } = crearService({ existente, stock: 500 });
 
-    await expect(service.agregarItem(cliente, { idVarianteProducto: 7, cantidad: 2 })).rejects.toThrow(BadRequestException);
+    await expect(service.agregarItem(cliente, { idVarianteProducto: 7, idSucursal: 2, cantidad: 2 })).rejects.toThrow(BadRequestException);
   });
 
   it('fija la cantidad de un item validando el stock', async () => {

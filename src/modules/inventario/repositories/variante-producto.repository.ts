@@ -27,4 +27,8 @@ export class VarianteProductoRepository {
   saveMuchas(variantes: VarianteProducto[], manager: EntityManager = this.repo.manager): Promise<VarianteProducto[]> {
     return manager.getRepository(VarianteProducto).save(variantes);
   }
+
+  eliminar(id: number, manager: EntityManager = this.repo.manager): Promise<void> {
+    return manager.getRepository(VarianteProducto).delete(id).then(() => undefined);
+  }
 }

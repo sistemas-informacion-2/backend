@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
+import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { DisponibilidadService } from '../../inventario/services/disponibilidad.service.js';
 import { precioConDescuento } from '../../inventario/utils/precio.util.js';
@@ -24,6 +25,7 @@ export class CarritoService {
     private readonly carritoRepo: CarritoRepository,
     private readonly disponibilidad: DisponibilidadService,
     @InjectRepository(VarianteProducto) private readonly varianteRepo: Repository<VarianteProducto>,
+    @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
   ) {}
 
   async obtener(usuario: ActiveUser): Promise<CarritoResponseDto> {
@@ -34,10 +36,17 @@ export class CarritoService {
   /** Si la variante ya esta en el carrito, suma la cantidad; si no, la inserta (CU14). */
   async agregarItem(usuario: ActiveUser, dto: AgregarItemCarritoDto): Promise<CarritoResponseDto> {
     const idCliente = this.idCliente(usuario);
+    await this.validarSucursal(dto.idSucursal);
     const variante = await this.buscarVarianteVendible(dto.idVarianteProducto);
-    const stock = await this.stockDe(variante.id);
+    const stock = await this.stockDe(variante.id, dto.idSucursal);
 
     const carrito = await this.carritoRepo.obtenerOCrear(idCliente);
+    // El carrito sigue a la sucursal que el cliente tiene elegida ahora en el catálogo, aunque
+    // ya tuviera items de una visita anterior con otra sucursal puesta.
+    if (carrito.idSucursal !== dto.idSucursal) {
+      await this.carritoRepo.fijarSucursal(carrito.id, dto.idSucursal);
+      carrito.idSucursal = dto.idSucursal;
+    }
     const existente = await this.carritoRepo.findDetallePorVariante(carrito.id, variante.id);
     const cantidad = (existente?.cantidad ?? 0) + dto.cantidad;
     this.validarCantidad(cantidad, stock);
@@ -73,7 +82,7 @@ export class CarritoService {
     if (!carrito || !detalle) throw new NotFoundException('Item no encontrado en tu carrito');
 
     const variante = await this.buscarVarianteVendible(detalle.idVarianteProducto);
-    this.validarCantidad(dto.cantidad, await this.stockDe(variante.id));
+    this.validarCantidad(dto.cantidad, await this.stockDe(variante.id, carrito.idSucursal));
 
     const precio = precioConDescuento(variante.producto.precio, variante.producto.descuentoPorcentaje);
     detalle.cantidad = dto.cantidad;
@@ -107,7 +116,7 @@ export class CarritoService {
 
   private async armar(carrito: Awaited<ReturnType<CarritoRepository['findByCliente']>>): Promise<CarritoResponseDto> {
     const ids = (carrito?.detalles ?? []).map((detalle) => detalle.idVarianteProducto);
-    return toCarritoResponseDto(carrito, await this.disponibilidad.stockPorVariante(ids));
+    return toCarritoResponseDto(carrito, await this.disponibilidad.stockPorVariante(ids, carrito?.idSucursal ?? undefined));
   }
 
   private idCliente(usuario: ActiveUser): number {
@@ -123,8 +132,13 @@ export class CarritoService {
     return variante;
   }
 
-  private async stockDe(idVariante: number): Promise<number> {
-    return (await this.disponibilidad.stockPorVariante([idVariante])).get(idVariante) ?? 0;
+  private async validarSucursal(idSucursal: number): Promise<void> {
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
+    if (!sucursal || !sucursal.activo) throw new BadRequestException('La sucursal elegida no existe o ya no está activa');
+  }
+
+  private async stockDe(idVariante: number, idSucursal: number | null): Promise<number> {
+    return (await this.disponibilidad.stockPorVariante([idVariante], idSucursal ?? undefined)).get(idVariante) ?? 0;
   }
 
   private validarCantidad(cantidad: number, stock: number): void {

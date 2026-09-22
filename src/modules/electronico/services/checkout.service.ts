@@ -75,6 +75,8 @@ interface LineaCompra {
 
 interface ResumenCarrito {
   idCarrito: number;
+  /** Sucursal elegida en el catálogo (CU08): de ahí sale todo el stock de esta compra, sin repartir entre varias. */
+  idSucursal: number;
   lineas: LineaCompra[];
   total: number;
 }
@@ -325,13 +327,12 @@ export class CheckoutService {
     const resumen = await this.resumenCarrito(manager, idCliente);
     opciones.validar?.(resumen.total);
 
-    // El catalogo es global y el stock vive en las sucursales: sale de los almacenes con mas existencias y
-    // la nota se asigna a la sucursal que mas unidades aporta.
-    const unidadesPorSucursal = new Map<number, number>();
+    // El stock sale unicamente de la sucursal que el cliente tenia elegida en el catalogo al armar
+    // el carrito: nunca de otra, aunque esa otra tenga mas unidades (por eso ya no se reparte ni se
+    // "adivina" la sucursal mas conveniente — se evita despachar desde una ciudad que el cliente ni vio).
     for (const linea of resumen.lineas) {
-      await this.descontarStock(manager, linea, unidadesPorSucursal);
+      await this.descontarStock(manager, linea, resumen.idSucursal);
     }
-    const idSucursal = [...unidadesPorSucursal.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
 
     const ahora = new Date();
     const notaRepo = manager.getRepository(NotaVenta);
@@ -340,7 +341,7 @@ export class CheckoutService {
         codigoNota: `TMP-${randomUUID().replace(/-/g, '').slice(0, 16)}`,
         idCliente,
         idCajero: null,
-        idSucursal,
+        idSucursal: resumen.idSucursal,
         idPasarela: pasarela.id,
         idMovimientoCaja: null,
         idCarrito: resumen.idCarrito,
@@ -446,9 +447,14 @@ export class CheckoutService {
     return `R${idCliente}-${idReserva}-`;
   }
 
-  private async descontarStock(manager: EntityManager, linea: LineaCompra, unidadesPorSucursal: Map<number, number>): Promise<void> {
-    const filas = await manager.query<Array<{ id: number; id_sucursal: number; stock_disponible: number }>>(
-      `SELECT i.id, a.id_sucursal, i.stock_disponible
+  /**
+   * Descuenta SOLO de los almacenes de `idSucursal` (puede tener más de uno,
+   * pero nunca de otra sucursal): la que el cliente eligió en el catálogo. Si
+   * ahí no alcanza, no se reparte con otra sucursal — se avisa y no se cobra.
+   */
+  private async descontarStock(manager: EntityManager, linea: LineaCompra, idSucursal: number): Promise<void> {
+    const filas = await manager.query<Array<{ id: number; stock_disponible: number }>>(
+      `SELECT i.id, i.stock_disponible
          FROM inventario i
          JOIN almacen a ON a.id = i.id_almacen
          JOIN sucursal s ON s.id = a.id_sucursal
@@ -456,12 +462,13 @@ export class CheckoutService {
          JOIN producto_sucursal ps
            ON ps.id_producto = v.id_producto AND ps.id_sucursal = a.id_sucursal AND ps.activo = true
         WHERE i.id_variante_producto = $1
+          AND a.id_sucursal = $2
           AND a.activo = true
           AND s.activo = true
           AND i.stock_disponible > 0
         ORDER BY i.stock_disponible DESC, i.id ASC
           FOR UPDATE OF i`,
-      [linea.idVarianteProducto],
+      [linea.idVarianteProducto, idSucursal],
     );
 
     let restante = linea.cantidad;
@@ -469,11 +476,14 @@ export class CheckoutService {
       if (restante === 0) break;
       const tomar = Math.min(fila.stock_disponible, restante);
       await manager.query('UPDATE inventario SET stock_disponible = stock_disponible - $1 WHERE id = $2', [tomar, fila.id]);
-      unidadesPorSucursal.set(fila.id_sucursal, (unidadesPorSucursal.get(fila.id_sucursal) ?? 0) + tomar);
       restante -= tomar;
     }
 
-    if (restante > 0) throw new ConflictException(`Ya no hay stock suficiente de ${linea.descripcion}. No se te cobro nada; ajusta tu carrito`);
+    if (restante > 0) {
+      throw new ConflictException(
+        `Ya no hay stock suficiente de ${linea.descripcion} en tu sucursal. No se te cobró nada; ajusta tu carrito o cambia de sucursal`,
+      );
+    }
   }
 
   private async resumenCarrito(manager: EntityManager, idCliente: number): Promise<ResumenCarrito> {
@@ -482,6 +492,9 @@ export class CheckoutService {
       relations: { detalles: { variante: { producto: true } } },
     });
     if (!carrito || carrito.detalles.length === 0) throw new BadRequestException('Tu carrito esta vacio');
+    if (!carrito.idSucursal) {
+      throw new BadRequestException('Tu carrito no tiene una sucursal asignada; vuelve al catálogo, elige tu sucursal y agrega los productos de nuevo');
+    }
 
     const lineas = [...carrito.detalles]
       .sort((a, b) => a.idVarianteProducto - b.idVarianteProducto)
@@ -501,12 +514,20 @@ export class CheckoutService {
         };
       });
 
-    return { idCarrito: carrito.id, lineas, total: redondear(lineas.reduce((suma, linea) => suma + linea.subtotal, 0)) };
+    return {
+      idCarrito: carrito.id,
+      idSucursal: carrito.idSucursal,
+      lineas,
+      total: redondear(lineas.reduce((suma, linea) => suma + linea.subtotal, 0)),
+    };
   }
 
   /** Aviso amable antes de mandar al cliente a pagar; el descuento real y definitivo ocurre al finalizar. */
   private async validarStockDisponible(resumen: ResumenCarrito): Promise<void> {
-    const stock = await this.disponibilidad.stockPorVariante(resumen.lineas.map((linea) => linea.idVarianteProducto));
+    const stock = await this.disponibilidad.stockPorVariante(
+      resumen.lineas.map((linea) => linea.idVarianteProducto),
+      resumen.idSucursal,
+    );
     for (const linea of resumen.lineas) {
       const disponible = stock.get(linea.idVarianteProducto) ?? 0;
       if (disponible < linea.cantidad) {
