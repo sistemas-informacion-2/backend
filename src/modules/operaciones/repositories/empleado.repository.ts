@@ -15,6 +15,8 @@ export class EmpleadoRepository {
       .getRepository(Empleado)
       .createQueryBuilder('empleado')
       .leftJoinAndSelect('empleado.usuario', 'usuario')
+      .leftJoinAndSelect('empleado.asignacionesSucursal', 'asignacion')
+      .leftJoinAndSelect('asignacion.sucursal', 'sucursal')
       .where('empleado.id_usuario = :idUsuario', { idUsuario })
       .getOne();
   }
@@ -24,6 +26,7 @@ export class EmpleadoRepository {
       page: number;
       limit: number;
       search?: string;
+      idSucursal?: number;
       activo?: boolean;
     },
     manager: EntityManager = this.repo.manager,
@@ -32,6 +35,8 @@ export class EmpleadoRepository {
       .getRepository(Empleado)
       .createQueryBuilder('empleado')
       .leftJoinAndSelect('empleado.usuario', 'usuario')
+      .leftJoinAndSelect('empleado.asignacionesSucursal', 'asignacion')
+      .leftJoinAndSelect('asignacion.sucursal', 'sucursal')
       .where('usuario.tipo_usuario = :tipoUsuario', { tipoUsuario: 'E' })
       .orderBy('usuario.id', 'DESC')
       .skip((query.page - 1) * query.limit)
@@ -47,6 +52,12 @@ export class EmpleadoRepository {
             .orWhere('LOWER(usuario.email) LIKE :search', { search })
             .orWhere('LOWER(empleado.codigo_empleado) LIKE :search', { search });
         }),
+      );
+    }
+    if (query.idSucursal !== undefined) {
+      builder.andWhere(
+        `empleado.id_usuario IN (SELECT es.id_empleado FROM empleado_sucursal es WHERE es.id_sucursal = :idSucursal AND es.activo = true)`,
+        { idSucursal: query.idSucursal },
       );
     }
     if (query.activo !== undefined) builder.andWhere('usuario.activo = :activo', { activo: query.activo });

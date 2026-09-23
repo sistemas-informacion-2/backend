@@ -1,5 +1,11 @@
 import type { EstadoAcceso } from '../../acceso/entities/usuario.entity.js';
 
+export class SucursalAsignadaResponseDto {
+  id: number;
+  nombre: string;
+  activo: boolean;
+}
+
 export class EmpleadoResponseDto {
   id: number;
   nombre: string;
@@ -13,6 +19,7 @@ export class EmpleadoResponseDto {
   salario: number;
   fechaContratacion: string;
   fechaFinalizacion: string | null;
+  sucursales: SucursalAsignadaResponseDto[];
 }
 
 export class EmpleadosPaginatedResponseDto {

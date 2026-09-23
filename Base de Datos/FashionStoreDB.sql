@@ -7,6 +7,8 @@ CREATE TYPE concepto_pago_enum AS ENUM ('PAGO_TOTAL', 'ANTICIPO_RESERVA', 'SALDO
 CREATE TYPE tipo_devolucion_enum AS ENUM ('PRODUCTO_ENTREGADO', 'CANCELACION_RESERVA');
 CREATE TYPE motivo_devolucion_enum AS ENUM ('FALLA_FABRICA', 'TALLA_INCORRECTA', 'ARREPENTIMIENTO', 'CANCELACION');
 CREATE TYPE estado_producto_devolucion_enum AS ENUM ('REINGRESO_INVENTARIO', 'MERMA_DEFECTUOSO', 'NO_APLICA');
+-- CU16: indica si el metodo de pago requiere credenciales de integracion.
+CREATE TYPE integracion_pago_enum AS ENUM ('NINGUNA', 'API');
 
 -- =============================================================================
 -- 1. SECCIÓN DE SEGURIDAD, USUARIOS Y AUDITORÍA
@@ -98,6 +100,7 @@ CREATE TABLE BITACORA (
     accion VARCHAR(100) NOT NULL,
     tabla_afectada VARCHAR(100) NOT NULL,
     ip_origen VARCHAR(45),
+    user_agent TEXT,
     datos_anteriores JSONB,
     datos_nuevos JSONB,
     fecha_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -181,8 +184,13 @@ CREATE TABLE CATEGORIA (
     id SERIAL PRIMARY KEY,
     id_categoria_padre INT,
     nombre VARCHAR(100) NOT NULL,
+    slug VARCHAR(120) NOT NULL UNIQUE, -- URLs limpias para la barra de categorias del e-commerce (CU08)
     descripcion TEXT,
+    imagen_url VARCHAR(500), -- imagen de la categoria, la pide CU08 explicitamente
     activo BOOLEAN DEFAULT TRUE,
+    -- SUPERIOR|INFERIOR|COMPLETO: que parte del cuerpo usa el probador virtual
+    -- (CU19) para anclar el modelo 3D de una prenda de esta categoria.
+    zona_probador VARCHAR(20) NOT NULL DEFAULT 'SUPERIOR',
     CONSTRAINT fk_categoria_padre FOREIGN KEY (id_categoria_padre) REFERENCES CATEGORIA(id) ON DELETE CASCADE
 );
 
@@ -197,13 +205,25 @@ CREATE TABLE TEMPORADA_CATEGORIA (
 CREATE TABLE PRODUCTO (
     id SERIAL PRIMARY KEY,
     id_categoria INT NOT NULL,
-    id_sucursal INT,
     nombre VARCHAR(150) NOT NULL,
     descripcion TEXT,
     precio DECIMAL(12,2) NOT NULL,
+    -- Porcentaje de descuento vigente (0 = sin descuento); alimenta el banner de ofertas del e-commerce.
+    descuento_porcentaje DECIMAL(5,2) NOT NULL DEFAULT 0.00,
     activo BOOLEAN DEFAULT TRUE,
-    CONSTRAINT fk_producto_categoria FOREIGN KEY (id_categoria) REFERENCES CATEGORIA(id),
-    CONSTRAINT fk_producto_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id) ON DELETE SET NULL
+    CONSTRAINT chk_producto_descuento CHECK (descuento_porcentaje >= 0 AND descuento_porcentaje <= 100),
+    CONSTRAINT fk_producto_categoria FOREIGN KEY (id_categoria) REFERENCES CATEGORIA(id)
+);
+
+-- Catalogo global: el producto se crea una sola vez y cada sucursal decide si
+-- lo activa, sin duplicar la fila de PRODUCTO ni su SKU por sucursal.
+CREATE TABLE PRODUCTO_SUCURSAL (
+    id_producto INT NOT NULL,
+    id_sucursal INT NOT NULL,
+    activo BOOLEAN DEFAULT TRUE,
+    PRIMARY KEY (id_producto, id_sucursal),
+    CONSTRAINT fk_prodsuc_producto FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id) ON DELETE CASCADE,
+    CONSTRAINT fk_prodsuc_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IMAGEN_PRODUCTO (
@@ -222,7 +242,6 @@ CREATE TABLE VARIANTE_PRODUCTO (
     talla VARCHAR(20) NOT NULL,
     color VARCHAR(50) NOT NULL,
     corte VARCHAR(50) NOT NULL,
-    codigo_hex_color VARCHAR(10),
     modelo_3d_url VARCHAR(500),
     activo BOOLEAN DEFAULT TRUE,
     CONSTRAINT fk_variante_producto FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id) ON DELETE CASCADE
@@ -256,16 +275,20 @@ CREATE TABLE INVENTARIO (
 
 CREATE TABLE PASARELA_DE_PAGO (
     id SERIAL PRIMARY KEY,
+    codigo VARCHAR(30) NOT NULL UNIQUE, -- clave estable: EFECTIVO, QR, TARJETA, PAYPAL (CU16)
     metodo VARCHAR(50) NOT NULL,
     descripcion TEXT,
+    integracion integracion_pago_enum NOT NULL DEFAULT 'NINGUNA', -- CU16
     api_key_encriptada TEXT,
     comision_porcentaje DECIMAL(5,2) DEFAULT 0.00,
-    activa BOOLEAN DEFAULT TRUE
+    disponible_presencial BOOLEAN NOT NULL DEFAULT FALSE, -- habilitado para caja (CU15)
+    disponible_linea BOOLEAN NOT NULL DEFAULT FALSE -- habilitado para e-commerce (CU12/CU13)
 );
 
 CREATE TABLE CAJA (
     id SERIAL PRIMARY KEY,
     id_sucursal INT NOT NULL,
+    id_cajero INT, -- CU15: cajero que abre/opera la caja (empleado.id_usuario)
     fecha_apertura TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     fecha_cierre TIMESTAMP,
     hora_apertura TIME NOT NULL DEFAULT CURRENT_TIME,
@@ -273,7 +296,8 @@ CREATE TABLE CAJA (
     monto_inicial DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     monto_final DECIMAL(12,2),
     estado VARCHAR(20) NOT NULL DEFAULT 'Abierta',
-    CONSTRAINT fk_caja_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id)
+    CONSTRAINT fk_caja_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id),
+    CONSTRAINT fk_caja_cajero FOREIGN KEY (id_cajero) REFERENCES EMPLEADO(id_usuario)
 );
 
 CREATE TABLE MOVIMIENTO_CAJA (
@@ -294,10 +318,13 @@ CREATE TABLE MOVIMIENTO_CAJA (
 CREATE TABLE CARRITO (
     id SERIAL PRIMARY KEY,
     id_cliente INT NOT NULL UNIQUE,
+    -- Sucursal elegida en el catalogo (CU08): de ahi sale el stock al pagar (CU14).
+    id_sucursal INT,
     session_id VARCHAR(100),
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_carrito_cliente FOREIGN KEY (id_cliente) REFERENCES CLIENTE(id_usuario) ON DELETE CASCADE
+    CONSTRAINT fk_carrito_cliente FOREIGN KEY (id_cliente) REFERENCES CLIENTE(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT fk_carrito_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id)
 );
 
 CREATE TABLE DETALLE_CARRITO (
@@ -375,14 +402,18 @@ CREATE TABLE NOTA_VENTA (
 -- 6. REGISTRO DE PAGOS (AHORA REFERENCIA DE FORMA LIMPIA A VENTA Y RESERVA)
 -- =============================================================================
 
+-- id_movimiento_caja es NULL en pagos en linea (PayPal, QR, tarjeta): no pasan por una caja fisica.
+-- referencia_externa guarda el id de la transaccion en la pasarela (ej. orden de PayPal) y, al ser UNIQUE,
+-- evita registrar dos veces el mismo cobro si el cliente recarga la pagina de retorno.
 CREATE TABLE PAGO (
     id SERIAL PRIMARY KEY,
-    id_movimiento_caja INT NOT NULL,
+    id_movimiento_caja INT,
     id_pasarela INT,
     id_nota_venta INT,
     id_reserva INT,
     monto DECIMAL(12,2) NOT NULL CHECK (monto > 0),
     concepto concepto_pago_enum NOT NULL,
+    referencia_externa VARCHAR(100) UNIQUE,
     fecha_pago DATE DEFAULT CURRENT_DATE,
     hora_pago TIME DEFAULT CURRENT_TIME,
     CONSTRAINT fk_pago_movcaja FOREIGN KEY (id_movimiento_caja) REFERENCES MOVIMIENTO_CAJA(id) ON DELETE RESTRICT,
@@ -444,9 +475,12 @@ CREATE TABLE DETALLE_NOTA_DEVOLUCION (
 -- 7. SECCIÓN DE COMPRAS
 -- =============================================================================
 
+-- Toda compra pertenece a una sucursal: sus almacenes de destino (DETALLE_NOTA_COMPRA.id_almacen)
+-- y la caja del egreso (id_movimiento_caja) deben ser de esa misma sucursal (regla de CU15).
 CREATE TABLE NOTA_COMPRA (
     id SERIAL PRIMARY KEY,
     id_proveedor INT NOT NULL,
+    id_sucursal INT NOT NULL,
     id_movimiento_caja INT,
     nro_factura VARCHAR(50),
     fecha_emision TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -456,6 +490,7 @@ CREATE TABLE NOTA_COMPRA (
     total DECIMAL(12,2) NOT NULL,
     estado VARCHAR(30) DEFAULT 'Recibido',
     CONSTRAINT fk_notacompra_proveedor FOREIGN KEY (id_proveedor) REFERENCES PROVEEDOR(id),
+    CONSTRAINT fk_notacompra_sucursal FOREIGN KEY (id_sucursal) REFERENCES SUCURSAL(id),
     CONSTRAINT fk_notacompra_movcaja FOREIGN KEY (id_movimiento_caja) REFERENCES MOVIMIENTO_CAJA(id)
 );
 
@@ -471,4 +506,21 @@ CREATE TABLE DETALLE_NOTA_COMPRA (
     CONSTRAINT fk_detcompra_notacompra FOREIGN KEY (id_nota_compra) REFERENCES NOTA_COMPRA(id) ON DELETE CASCADE,
     CONSTRAINT fk_detcompra_variante FOREIGN KEY (id_variante_producto) REFERENCES VARIANTE_PRODUCTO(id),
     CONSTRAINT fk_detcompra_almacen FOREIGN KEY (id_almacen) REFERENCES ALMACEN(id)
+);
+
+-- =============================================================================
+-- 8. SECCIÓN DE REPORTES
+-- =============================================================================
+
+-- Plantilla guardada de un reporte dinamico (CU18): guarda la config completa
+-- del Report Builder en `config` (jsonb) para poder reaplicarla con un clic.
+-- La plantilla pertenece al usuario que la creo.
+CREATE TABLE REPORTE_PLANTILLA (
+    id SERIAL PRIMARY KEY,
+    id_usuario INT NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    config JSONB NOT NULL,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_reporteplantilla_usuario FOREIGN KEY (id_usuario) REFERENCES USUARIO(id) ON DELETE CASCADE
 );

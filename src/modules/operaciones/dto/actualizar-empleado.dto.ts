@@ -1,9 +1,12 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -50,6 +53,13 @@ export class ActualizarEmpleadoDto {
   @IsOptional()
   @IsDateString()
   fechaFinalizacion?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  sucursalIds?: number[];
 
   @IsOptional()
   @IsBoolean()

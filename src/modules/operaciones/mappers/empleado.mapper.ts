@@ -16,5 +16,12 @@ export function toEmpleadoResponse(empleado: Empleado): EmpleadoResponseDto {
     salario: Number(empleado.salario),
     fechaContratacion: empleado.fechaContratacion,
     fechaFinalizacion: empleado.fechaFinalizacion,
+    sucursales: (empleado.asignacionesSucursal ?? [])
+      .filter((asignacion) => !!asignacion.sucursal)
+      .map((asignacion) => ({
+        id: asignacion.idSucursal,
+        nombre: asignacion.sucursal.nombre,
+        activo: asignacion.activo,
+      })),
   };
 }

@@ -1,8 +1,11 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayUnique,
+  IsArray,
   IsDateString,
   IsEmail,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -42,4 +45,12 @@ export class CrearEmpleadoDto {
 
   @IsDateString()
   fechaContratacion: string;
+
+  /** Sucursales donde queda asignado desde el alta; puede definirse/ajustarse despues. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  sucursalIds?: number[];
 }

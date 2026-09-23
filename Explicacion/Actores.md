@@ -1,0 +1,6 @@
+Administrador: Usuario encargado de la administración general del sistema global, gestionando usuarios, roles, productos, sucursales, proveedores y la consulta de reportes estratégicos.
+Encargado de sucursal: Personal responsable de las operaciones relacionadas con una determinada sucursal, encargado de verificar la disponibilidad de prendas, atender clientes y supervisar el inventario local.
+Vendedor/Cajero: Personal encargado de atender las ventas realizadas presencialmente, registrar las ventas en punto de caja, procesar pagos y gestionar las prendas adquiridas por los clientes.
+Encargado de inventario: Usuario responsable del control de las existencias de productos, registrando el ingreso de productos, controlando existencias y actualizando la disponibilidad por sucursal.
+Encargado de compras: Personal responsable del abastecimiento de productos, encargado de gestionar proveedores, registrar compras y coordinar el ingreso de productos al inventario.
+Cliente: Persona que utiliza las plataformas web o móvil para consultar el catálogo, verificar disponibilidad, utilizar el probador virtual con Inteligencia Artificial y efectuar compras de prendas de vestir.

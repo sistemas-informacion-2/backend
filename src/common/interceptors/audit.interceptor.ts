@@ -5,7 +5,16 @@ import { BitacoraRepository } from '../../modules/acceso/repositories/bitacora.r
 import type { ActiveUser } from '../../modules/acceso/types/jwt-payload.type.js';
 
 const METODOS_AUDITABLES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const CAMPOS_SENSIBLES = ['password', 'passwordActual', 'nuevaPassword', 'passwordHash', 'refreshToken'];
+const CAMPOS_SENSIBLES = [
+  'password',
+  'passwordActual',
+  'nuevaPassword',
+  'passwordHash',
+  'refreshToken',
+  'apiKey',
+  'apiSecret',
+  'clientSecret',
+];
 
 /**
  * Registra en BITACORA cada request que muta datos (POST/PUT/PATCH/DELETE).
@@ -33,6 +42,7 @@ export class AuditInterceptor implements NestInterceptor {
             accion: `${request.method} ${request.originalUrl}`,
             tablaAfectada: this.extraerRecurso(request.originalUrl),
             ipOrigen: request.ip ?? null,
+            userAgent: request.headers['user-agent'] ?? null,
             datosNuevos: this.sanitizar(request.body),
           })
           .catch(() => undefined); // la auditoría nunca debe romper la respuesta al cliente

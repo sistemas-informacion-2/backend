@@ -7,18 +7,11 @@ import { RolPermiso } from '../entities/rol-permiso.entity.js';
 export class RolPermisoRepository {
   constructor(@InjectRepository(RolPermiso) private readonly repo: Repository<RolPermiso>) {}
 
-  findActiveByRole(idRol: number, manager: EntityManager = this.repo.manager): Promise<RolPermiso[]> {
-    return manager
-      .getRepository(RolPermiso)
-      .createQueryBuilder('rolPermiso')
-      .leftJoinAndSelect('rolPermiso.permiso', 'permiso')
-      .where('rolPermiso.id_rol = :idRol', { idRol })
-      .andWhere('rolPermiso.activo = :activo', { activo: true })
-      .andWhere('permiso.activo = :permisoActivo', { permisoActivo: true })
-      .getMany();
-  }
-
-  async reemplazarPermisos(idRol: number, idsPermiso: number[], manager: EntityManager = this.repo.manager): Promise<void> {
+  async reemplazarPermisos(
+    idRol: number,
+    idsPermiso: number[],
+    manager: EntityManager = this.repo.manager,
+  ): Promise<void> {
     const repository = manager.getRepository(RolPermiso);
     const existentes = await repository.find({ where: { idRol } });
     const deseados = new Set(idsPermiso);
@@ -35,5 +28,16 @@ export class RolPermisoRepository {
 
     if (existentes.length > 0) await repository.save(existentes);
     if (nuevos.length > 0) await repository.save(nuevos);
+  }
+
+  findActiveByRole(idRol: number, manager: EntityManager = this.repo.manager): Promise<RolPermiso[]> {
+    return manager
+      .getRepository(RolPermiso)
+      .createQueryBuilder('rolPermiso')
+      .leftJoinAndSelect('rolPermiso.permiso', 'permiso')
+      .where('rolPermiso.id_rol = :idRol', { idRol })
+      .andWhere('rolPermiso.activo = :activo', { activo: true })
+      .andWhere('permiso.activo = :permisoActivo', { permisoActivo: true })
+      .getMany();
   }
 }

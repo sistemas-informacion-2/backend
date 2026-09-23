@@ -1,9 +1,9 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class ActualizarRolDto {
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
+  @MinLength(1)
   @MaxLength(50)
   nombre?: string;
 

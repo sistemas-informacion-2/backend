@@ -16,23 +16,27 @@ import { UsuariosController } from './controllers/usuarios.controller.js';
 import { RolesController } from './controllers/roles.controller.js';
 import { PermisosController } from './controllers/permisos.controller.js';
 import { PerfilController } from './controllers/perfil.controller.js';
+import { BitacoraController } from './controllers/bitacora.controller.js';
+import { Bitacora } from './entities/bitacora.entity.js';
 import { AuthService } from './services/auth.service.js';
 import { UsuariosService } from './services/usuarios.service.js';
 import { RolesService } from './services/roles.service.js';
 import { PermisosService } from './services/permisos.service.js';
 import { PerfilService } from './services/perfil.service.js';
+import { BitacoraService } from './services/bitacora.service.js';
+import { BitacoraRepository } from './repositories/bitacora.repository.js';
 import { UsuarioRepository } from './repositories/usuario.repository.js';
 import { SesionRepository } from './repositories/sesion.repository.js';
 import { EmpleadoSucursalRepository } from './repositories/empleado-sucursal.repository.js';
 import { RolRepository } from './repositories/rol.repository.js';
 import { RolUsuarioRepository } from './repositories/rol-usuario.repository.js';
-import { PermisoRepository } from './repositories/permiso.repository.js';
 import { RolPermisoRepository } from './repositories/rol-permiso.repository.js';
-import { JwtStrategy } from './jwt.strategy.js';
+import { PermisoRepository } from './repositories/permiso.repository.js';
+import { JwtStrategy } from './services/jwt.strategy.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Usuario, Rol, Permiso, RolPermiso, RolUsuario, Sesion]),
+    TypeOrmModule.forFeature([Usuario, Rol, Permiso, RolPermiso, RolUsuario, Sesion, Bitacora]),
     OperacionesModule,
     PassportModule,
     JwtModule.registerAsync({
@@ -46,21 +50,23 @@ import { JwtStrategy } from './jwt.strategy.js';
       }),
     }),
   ],
-  controllers: [AuthController, UsuariosController, RolesController, PermisosController, PerfilController],
+  controllers: [AuthController, UsuariosController, RolesController, PermisosController, PerfilController, BitacoraController],
   providers: [
     AuthService,
     UsuariosService,
     RolesService,
     PermisosService,
     PerfilService,
+    BitacoraService,
+    BitacoraRepository,
     JwtStrategy,
     UsuarioRepository,
     SesionRepository,
     EmpleadoSucursalRepository,
     RolRepository,
     RolUsuarioRepository,
-    PermisoRepository,
     RolPermisoRepository,
+    PermisoRepository,
   ],
   exports: [TypeOrmModule],
 })

@@ -1,7 +1,7 @@
 import type { Permiso } from '../entities/permiso.entity.js';
 import type { Rol } from '../entities/rol.entity.js';
 import type { PermisoAgrupadoResponseDto } from '../dto/permiso-response.dto.js';
-import type { PermisoResponseDto, RolResponseDto } from '../dto/rol-response.dto.js';
+import type { PermisoGrupoResponseDto, PermisoResponseDto, RolResponseDto } from '../dto/rol-response.dto.js';
 
 export function toPermisoResponse(permiso: Permiso): PermisoResponseDto {
   return {
@@ -31,16 +31,31 @@ export function toPermisosAgrupados(permisos: Permiso[]): PermisoAgrupadoRespons
   return Array.from(grupos.values()).sort((a, b) => a.modulo.localeCompare(b.modulo));
 }
 
-export function toRolResponse(rol: Rol): RolResponseDto {
+export function toRolResponse(rol: Rol, cantidadUsuarios = 0): RolResponseDto {
   return {
     id: rol.id,
     nombre: rol.nombre,
     descripcion: rol.descripcion,
     activo: rol.activo,
     fechaCreacion: rol.fechaCreacion,
-    cantidadUsuarios: (rol.rolesUsuario ?? []).filter((relacion) => relacion.activo && relacion.usuario?.activo).length,
+    cantidadUsuarios:
+      cantidadUsuarios ||
+      (rol.rolesUsuario ?? []).filter((relacion) => relacion.activo && relacion.usuario?.activo).length,
     permisos: (rol.rolesPermiso ?? [])
       .filter((relacion) => relacion.activo && relacion.permiso?.activo)
       .map((relacion) => toPermisoResponse(relacion.permiso)),
   };
+}
+
+export function agruparPermisos(permisos: Permiso[]): PermisoGrupoResponseDto[] {
+  const grupos = new Map<string, PermisoResponseDto[]>();
+  for (const permiso of permisos) {
+    const respuesta = toPermisoResponse(permiso);
+    const lista = grupos.get(respuesta.modulo) ?? [];
+    lista.push(respuesta);
+    grupos.set(respuesta.modulo, lista);
+  }
+  return Array.from(grupos.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([modulo, permisosGrupo]) => ({ modulo, permisos: permisosGrupo }));
 }

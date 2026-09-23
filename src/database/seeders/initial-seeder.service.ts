@@ -21,6 +21,57 @@ const PERMISOS_BASE = [
   'inventario:productos:gestionar',
   'inventario:proveedores:gestionar',
   'inventario:temporadas:gestionar',
+  'inventario:almacen:gestionar',
+  'inventario:almacen:leer',
+  'comercial:pasarelas:gestionar',
+  'comercial:pasarelas:leer',
+  'comercial:caja:gestionar',
+  'comercial:compras:gestionar',
+  'comercial:ventas:gestionar',
+  'electronico:reservas:gestionar',
+  'electronico:ventas:leer',
+  'comercial:devoluciones:gestionar',
+  'electronico:notificaciones:gestionar',
+  'electronico:probador:gestionar',
+  'analitica:dashboard:leer',
+  'analitica:reportes:gestionar',
+];
+
+/**
+ * Roles operativos descritos en Explicacion/Actores.md (todos menos
+ * Administrador, que ya tiene su propio flujo, y Cliente, que no es un rol
+ * interno). Los permisos asignados son los mas cercanos ya implementados;
+ * varios CUs que describen mejor a estos actores (Ventas, Caja,
+ * Inventario/Almacen) todavia no existen, asi que estos sets deben
+ * revisarse cuando esos modulos se construyan.
+ */
+const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[] }> = [
+  {
+    nombre: 'ENCARGADO_SUCURSAL',
+    descripcion:
+      'Responsable de las operaciones de una sucursal: disponibilidad de prendas, atencion a clientes y supervision del inventario local.',
+    permisos: ['operaciones:sucursales:gestionar', 'acceso:clientes:gestionar', 'comercial:pasarelas:leer', 'comercial:caja:gestionar', 'comercial:ventas:gestionar', 'electronico:reservas:gestionar', 'comercial:devoluciones:gestionar', 'inventario:almacen:leer', 'analitica:reportes:gestionar'],
+  },
+  {
+    nombre: 'VENDEDOR_CAJERO',
+    descripcion: 'Atiende ventas presenciales y gestiona los datos de clientes en el punto de venta.',
+    permisos: ['acceso:clientes:gestionar', 'comercial:pasarelas:leer', 'comercial:caja:gestionar', 'comercial:ventas:gestionar', 'electronico:reservas:gestionar', 'comercial:devoluciones:gestionar', 'inventario:almacen:leer'],
+  },
+  {
+    nombre: 'ENCARGADO_INVENTARIO',
+    descripcion: 'Controla existencias, registra el ingreso de productos y actualiza disponibilidad por sucursal.',
+    permisos: ['inventario:productos:gestionar', 'inventario:categorias:gestionar', 'inventario:almacen:gestionar', 'electronico:probador:gestionar'],
+  },
+  {
+    nombre: 'ENCARGADO_COMPRAS',
+    descripcion: 'Gestiona proveedores, registra compras y coordina el ingreso de productos al inventario.',
+    permisos: [
+      'inventario:proveedores:gestionar',
+      'inventario:productos:gestionar',
+      'inventario:almacen:gestionar',
+      'comercial:compras:gestionar',
+    ],
+  },
 ];
 
 /**
@@ -67,6 +118,24 @@ export class InitialSeederService {
       });
       if (!existe) {
         await this.rolPermisoRepo.save(this.rolPermisoRepo.create({ idRol: rolAdmin.id, idPermiso: permiso.id }));
+      }
+    }
+
+    const permisosPorAccion = new Map(permisos.map((permiso) => [permiso.accion, permiso]));
+    for (const rolBase of ROLES_BASE) {
+      let rol = await this.rolRepo.findOne({ where: { nombre: rolBase.nombre } });
+      if (!rol) {
+        rol = await this.rolRepo.save(this.rolRepo.create({ nombre: rolBase.nombre, descripcion: rolBase.descripcion }));
+        this.logger.log(`Rol creado: ${rolBase.nombre}`);
+      }
+
+      for (const accion of rolBase.permisos) {
+        const permiso = permisosPorAccion.get(accion);
+        if (!permiso) continue;
+        const existe = await this.rolPermisoRepo.findOne({ where: { idRol: rol.id, idPermiso: permiso.id } });
+        if (!existe) {
+          await this.rolPermisoRepo.save(this.rolPermisoRepo.create({ idRol: rol.id, idPermiso: permiso.id }));
+        }
       }
     }
 

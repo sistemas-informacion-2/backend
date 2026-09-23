@@ -1,12 +1,16 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, type EntityManager } from 'typeorm';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, type EntityManager, type Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { EmpleadoRepository } from '../repositories/empleado.repository.js';
+import { AsignacionSucursalRepository } from '../repositories/asignacion-sucursal.repository.js';
 import { Usuario } from '../../acceso/entities/usuario.entity.js';
+import { Sucursal } from '../entities/sucursal.entity.js';
 import { toEmpleadoResponse } from '../mappers/empleado.mapper.js';
 import type { CrearEmpleadoDto } from '../dto/crear-empleado.dto.js';
 import type { ActualizarEmpleadoDto } from '../dto/actualizar-empleado.dto.js';
 import type { EmpleadosQueryDto } from '../dto/empleados-query.dto.js';
+import type { GestionarSucursalesEmpleadoDto } from '../dto/gestionar-sucursales-empleado.dto.js';
 import type { EmpleadoResponseDto, EmpleadosPaginatedResponseDto } from '../dto/empleado-response.dto.js';
 
 @Injectable()
@@ -14,6 +18,8 @@ export class EmpleadosService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly empleadoRepo: EmpleadoRepository,
+    private readonly asignacionSucursalRepo: AsignacionSucursalRepository,
+    @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
   ) {}
 
   async listar(query: EmpleadosQueryDto): Promise<EmpleadosPaginatedResponseDto> {
@@ -37,6 +43,7 @@ export class EmpleadosService {
 
   async crear(dto: CrearEmpleadoDto): Promise<EmpleadoResponseDto> {
     const email = this.normalizarEmail(dto.email);
+    if (dto.sucursalIds !== undefined) await this.validarSucursales(dto.sucursalIds);
 
     return this.dataSource.transaction(async (manager) => {
       await this.validarEmailDisponible(email, undefined, manager);
@@ -69,8 +76,20 @@ export class EmpleadosService {
       );
       await this.empleadoRepo.save(empleado, manager);
 
+      if (dto.sucursalIds !== undefined) {
+        await this.asignacionSucursalRepo.reemplazarAsignaciones(usuario.id, dto.sucursalIds, manager);
+      }
+
       return this.obtenerRespuestaEnTransaccion(usuario.id, manager);
     });
+  }
+
+  async gestionarSucursales(id: number, dto: GestionarSucursalesEmpleadoDto): Promise<EmpleadoResponseDto> {
+    const empleado = await this.empleadoRepo.findByUsuarioIdConDatos(id);
+    if (!empleado) throw new NotFoundException('Empleado no encontrado');
+    await this.validarSucursales(dto.sucursalIds);
+    await this.asignacionSucursalRepo.reemplazarAsignaciones(id, dto.sucursalIds);
+    return this.obtenerPorId(id);
   }
 
   async actualizar(id: number, dto: ActualizarEmpleadoDto): Promise<EmpleadoResponseDto> {
@@ -98,6 +117,11 @@ export class EmpleadosService {
       await manager.getRepository(Usuario).save(usuario);
       await this.empleadoRepo.save(empleado, manager);
 
+      if (dto.sucursalIds !== undefined) {
+        await this.validarSucursales(dto.sucursalIds, manager);
+        await this.asignacionSucursalRepo.reemplazarAsignaciones(id, dto.sucursalIds, manager);
+      }
+
       return this.obtenerRespuestaEnTransaccion(id, manager);
     });
   }
@@ -110,6 +134,14 @@ export class EmpleadosService {
     const existente = await manager.getRepository(Usuario).findOne({ where: { email } });
     if (existente && existente.id !== idExcluir) {
       throw new ConflictException('El email ya está registrado');
+    }
+  }
+
+  private async validarSucursales(idsSucursal: number[], manager?: EntityManager): Promise<void> {
+    if (idsSucursal.length === 0) return;
+    const sucursales = await (manager ?? this.sucursalRepo.manager).getRepository(Sucursal).find({ where: { id: In(idsSucursal) } });
+    if (sucursales.length !== new Set(idsSucursal).size) {
+      throw new BadRequestException('Una o más sucursales indicadas no existen');
     }
   }
 

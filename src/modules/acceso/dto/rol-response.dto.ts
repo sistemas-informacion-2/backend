@@ -1,4 +1,4 @@
-export class PermisoResponseDto {
+export interface PermisoResponseDto {
   id: number;
   accion: string;
   descripcion: string | null;
@@ -6,7 +6,12 @@ export class PermisoResponseDto {
   activo: boolean;
 }
 
-export class RolResponseDto {
+export interface PermisoGrupoResponseDto {
+  modulo: string;
+  permisos: PermisoResponseDto[];
+}
+
+export interface RolResponseDto {
   id: number;
   nombre: string;
   descripcion: string | null;

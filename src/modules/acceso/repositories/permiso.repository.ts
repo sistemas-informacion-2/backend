@@ -7,8 +7,12 @@ import { Permiso } from '../entities/permiso.entity.js';
 export class PermisoRepository {
   constructor(@InjectRepository(Permiso) private readonly repo: Repository<Permiso>) {}
 
-  findActive(manager: EntityManager = this.repo.manager): Promise<Permiso[]> {
+  findAllActivos(manager: EntityManager = this.repo.manager): Promise<Permiso[]> {
     return manager.getRepository(Permiso).find({ where: { activo: true }, order: { accion: 'ASC' } });
+  }
+
+  findActive(manager: EntityManager = this.repo.manager): Promise<Permiso[]> {
+    return this.findAllActivos(manager);
   }
 
   findActiveByIds(ids: number[], manager: EntityManager = this.repo.manager): Promise<Permiso[]> {
