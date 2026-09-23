@@ -16,6 +16,7 @@ import { Reserva } from '../entities/reserva.entity.js';
 import { DetalleCarrito } from '../entities/detalle-carrito.entity.js';
 import { NotificacionPush } from '../entities/notificacion-push.entity.js';
 import { PaypalService } from './paypal.service.js';
+import { NotificacionesService } from './notificaciones.service.js';
 import type {
   CodigoMetodoOnline,
   CompraOnlineResponseDto,
@@ -88,6 +89,12 @@ interface OpcionesFinalizar {
   cobrar?: () => Promise<unknown>;
 }
 
+interface ResultadoFinalizar {
+  compra: CompraOnlineResponseDto;
+  /** Notificacion "Compra confirmada" que se avisa por push despues del commit; null en anticipos. */
+  notificacion: NotificacionPush | null;
+}
+
 interface PayloadQr {
   c: number;
   t: number;
@@ -112,6 +119,7 @@ export class CheckoutService {
     private readonly paypal: PaypalService,
     private readonly disponibilidad: DisponibilidadService,
     private readonly config: ConfigService<AppConfig, true>,
+    private readonly notificaciones: NotificacionesService,
   ) {}
 
   /** Metodos habilitados para pagar en linea (CU17) que este servidor sabe procesar. */
@@ -245,11 +253,14 @@ export class CheckoutService {
     idReserva?: number,
   ): Promise<CompraOnlineResponseDto> {
     try {
-      return await this.dataSource.transaction((manager) =>
+      const { compra, notificacion } = await this.dataSource.transaction<ResultadoFinalizar>(async (manager) =>
         idReserva === undefined
           ? this.registrarCompra(manager, idCliente, pasarela, referencia, opciones)
-          : this.registrarAnticipo(manager, idCliente, idReserva, pasarela, referencia, opciones),
+          : { compra: await this.registrarAnticipo(manager, idCliente, idReserva, pasarela, referencia, opciones), notificacion: null },
       );
+      // Solo despues del commit: si el cobro fallaba, la transaccion se revertia y no habia compra que avisar.
+      if (notificacion) this.notificaciones.notificarPorPush([notificacion]);
+      return compra;
     } catch (error) {
       if (esViolacionUnica(error)) {
         const previa = await this.compraPorReferencia(referencia, idCliente);
@@ -323,7 +334,7 @@ export class CheckoutService {
     pasarela: PasarelaPago,
     referencia: string,
     opciones: OpcionesFinalizar,
-  ): Promise<CompraOnlineResponseDto> {
+  ): Promise<ResultadoFinalizar> {
     const resumen = await this.resumenCarrito(manager, idCliente);
     opciones.validar?.(resumen.total);
 
@@ -397,7 +408,7 @@ export class CheckoutService {
     await manager.getRepository(Carrito).update({ id: resumen.idCarrito }, { fechaActualizacion: ahora });
 
     const notificacionRepo = manager.getRepository(NotificacionPush);
-    await notificacionRepo.save(
+    const notificacion = await notificacionRepo.save(
       notificacionRepo.create({
         idUsuario: idCliente,
         titulo: 'Compra confirmada',
@@ -409,13 +420,16 @@ export class CheckoutService {
     if (opciones.cobrar) await opciones.cobrar();
 
     return {
-      tipo: 'COMPRA',
-      idNotaVenta: nota.id,
-      codigoNota: nota.codigoNota,
-      idReserva: null,
-      codigoReserva: null,
-      montoTotal: resumen.total,
-      metodo: pasarela.metodo,
+      compra: {
+        tipo: 'COMPRA',
+        idNotaVenta: nota.id,
+        codigoNota: nota.codigoNota,
+        idReserva: null,
+        codigoReserva: null,
+        montoTotal: resumen.total,
+        metodo: pasarela.metodo,
+      },
+      notificacion,
     };
   }
 

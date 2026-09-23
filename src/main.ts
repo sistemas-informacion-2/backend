@@ -20,6 +20,12 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const server = app.getHttpAdapter().getInstance();
+  // Azure App Service termina TLS en su front end y reenvia la peticion por
+  // HTTP. Confiar en ese unico salto hace que request.protocol lea
+  // X-Forwarded-Proto (URLs https de uploads) y que request.ip sea la IP real
+  // del cliente en la bitacora. "1" y no "true": con "true" cualquier cliente
+  // podria falsear su IP enviando su propio X-Forwarded-For.
+  server.set('trust proxy', 1);
   server.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   // Node cierra las conexiones keep-alive a los 5s por defecto; si el navegador
   // reutiliza una conexion ya cerrada, la primera peticion tras inactividad

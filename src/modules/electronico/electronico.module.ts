@@ -27,16 +27,21 @@ import { ProbadorController } from './controllers/probador.controller.js';
 import { ProbadorService } from './services/probador.service.js';
 import { ProbadorModelosController } from './controllers/probador-modelos.controller.js';
 import { ProbadorModelosService } from './services/probador-modelos.service.js';
+import { DispositivoPush } from './entities/dispositivo-push.entity.js';
+import { DispositivoPushRepository } from './repositories/dispositivo-push.repository.js';
+import { PushService } from './services/push.service.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([NotificacionPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
+    TypeOrmModule.forFeature([NotificacionPush, DispositivoPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
     InventarioModule,
   ],
   controllers: [NotificacionesController, CarritoController, ProbadorController, ProbadorModelosController, ReservasController, CheckoutController],
   providers: [
     NotificacionesService,
     NotificacionRepository,
+    DispositivoPushRepository,
+    PushService,
     CarritoService,
     CarritoRepository,
     ProbadorService,

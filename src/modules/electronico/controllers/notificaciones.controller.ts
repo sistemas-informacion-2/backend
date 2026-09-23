@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
 import { NotificacionesService } from '../services/notificaciones.service.js';
 import { CrearNotificacionDto } from '../dto/crear-notificacion.dto.js';
 import { NotificacionesQueryDto } from '../dto/notificaciones-query.dto.js';
+import { BajaDispositivoPushDto, RegistrarDispositivoPushDto } from '../dto/dispositivo-push.dto.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type {
   DestinatarioResponseDto,
@@ -60,6 +61,20 @@ export class NotificacionesController {
     @Param('id', ParseIntPipe) id: number,
   ): Promise<NotificacionResponseDto> {
     return this.notificacionesService.marcarLeido(user.sub, id);
+  }
+
+  @Post('dispositivos')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Registra el celular del usuario autenticado para recibir notificaciones push' })
+  async registrarDispositivo(@CurrentUser() user: ActiveUser, @Body() dto: RegistrarDispositivoPushDto): Promise<void> {
+    await this.notificacionesService.registrarDispositivo(user.sub, dto);
+  }
+
+  @Delete('dispositivos')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Da de baja el celular del usuario autenticado (al cerrar sesion)' })
+  async darDeBajaDispositivo(@CurrentUser() user: ActiveUser, @Body() dto: BajaDispositivoPushDto): Promise<void> {
+    await this.notificacionesService.darDeBajaDispositivo(user.sub, dto.token);
   }
 
   @Post()

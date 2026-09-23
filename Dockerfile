@@ -47,6 +47,11 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 
+# Se crea con dueno node:node ANTES del USER node para que, cuando Docker
+# cree el volumen "uploads" por primera vez, siembre esos permisos en el
+# volumen (solo ocurre en la primera creacion, no en montajes posteriores).
+RUN mkdir -p uploads/modelos && chown -R node:node uploads
+
 USER node
 EXPOSE 3000
 

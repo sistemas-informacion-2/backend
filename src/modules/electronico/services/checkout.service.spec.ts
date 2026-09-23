@@ -142,8 +142,9 @@ function crearService(escenario: Escenario = {}) {
   const disponibilidad = { stockPorVariante: vi.fn().mockResolvedValue(new Map([[3, 10]])) };
   const cfg: Record<string, unknown> = { frontendUrl: 'http://localhost:5173', 'payments.simulated': escenario.simulados ?? true, 'jwt.secret': 'secreto-de-prueba' };
   const config = { get: (clave: string) => cfg[clave] };
-  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, paypal as never, disponibilidad as never, config as never);
-  return { service, paypal, guardados, orden, consultas, manager, repos, disponibilidad };
+  const notificaciones = { notificarPorPush: vi.fn() };
+  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, paypal as never, disponibilidad as never, config as never, notificaciones as never);
+  return { service, paypal, guardados, orden, consultas, manager, repos, disponibilidad, notificaciones };
 }
 
 describe('luhnValido', () => {
@@ -494,4 +495,56 @@ describe('CheckoutService', () => {
     });
   });
 
+  describe('push de compra confirmada', () => {
+    it('una compra nueva avisa por push con la notificacion guardada', async () => {
+      const { service, notificaciones } = crearService();
+
+      await service.pagarTarjeta(cliente, TARJETA);
+
+      expect(notificaciones.notificarPorPush).toHaveBeenCalledTimes(1);
+      expect(notificaciones.notificarPorPush).toHaveBeenCalledWith([
+        expect.objectContaining({ idUsuario: 7, titulo: 'Compra confirmada' }),
+      ]);
+    });
+
+    it('con PayPal el push sale despues de cobrar, fuera de la transaccion', async () => {
+      const { service, paypal, notificaciones } = crearService();
+
+      await service.capturarPaypal(cliente, 'ORD-1');
+
+      expect(notificaciones.notificarPorPush).toHaveBeenCalledTimes(1);
+      expect(paypal.capturar.mock.invocationCallOrder[0]).toBeLessThan(notificaciones.notificarPorPush.mock.invocationCallOrder[0]);
+    });
+
+    it('si PayPal no cobra, no hay push', async () => {
+      const { service, paypal, notificaciones } = crearService();
+      paypal.capturar.mockRejectedValue(new Error('PayPal rechazo'));
+
+      await expect(service.capturarPaypal(cliente, 'ORD-1')).rejects.toThrow('PayPal rechazo');
+
+      expect(notificaciones.notificarPorPush).not.toHaveBeenCalled();
+    });
+
+    it('confirmar dos veces el mismo QR no repite el push', async () => {
+      const { service, notificaciones } = crearService();
+      const { referencia } = await service.iniciarQr(cliente);
+      const { repos } = { repos: (service as unknown as { dataSource: { getRepository: (e: unknown) => { findOne: ReturnType<typeof vi.fn> } } }).dataSource };
+      repos.getRepository(Pago).findOne.mockResolvedValue({
+        notaVenta: { id: 40, idCliente: 7, codigoNota: 'NV-000040', montoTotal: 200 },
+        pasarela: { metodo: 'QR' },
+      });
+
+      await service.confirmarQr(cliente, referencia);
+
+      expect(notificaciones.notificarPorPush).not.toHaveBeenCalled();
+    });
+
+    it('pagar el anticipo de una reserva no envia push', async () => {
+      const { service, notificaciones } = crearService({ reserva: reservaBase() });
+
+      await service.pagarTarjeta(cliente, TARJETA, 9);
+
+      expect(notificaciones.notificarPorPush).not.toHaveBeenCalled();
+    });
+  });
 });
