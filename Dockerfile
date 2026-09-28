@@ -53,7 +53,9 @@ COPY --chown=node:node package.json ./
 RUN mkdir -p uploads/modelos && chown -R node:node uploads
 
 USER node
-EXPOSE 3000
+# Railway inyecta PORT=8080 en runtime y enruta el dominio al puerto expuesto:
+# EXPOSE debe coincidir con ese 8080 o el dominio devuelve 502.
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/docs').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
