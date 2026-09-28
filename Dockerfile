@@ -10,7 +10,7 @@ ARG NODE_IMAGE=node:24-alpine
 FROM ${NODE_IMAGE} AS dev
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+RUN --mount=type=cache,id=npm-cache,target=/root/.npm,sharing=locked npm ci
 COPY . .
 EXPOSE 3000
 CMD ["npm", "run", "start:dev"]
@@ -24,7 +24,7 @@ CMD ["npm", "run", "start:dev"]
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+RUN --mount=type=cache,id=npm-cache,target=/root/.npm,sharing=locked npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
