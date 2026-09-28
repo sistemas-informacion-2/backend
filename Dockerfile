@@ -10,7 +10,7 @@ ARG NODE_IMAGE=node:24-alpine
 FROM ${NODE_IMAGE} AS dev
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+RUN npm ci
 COPY . .
 EXPOSE 3000
 CMD ["npm", "run", "start:dev"]
@@ -24,7 +24,7 @@ CMD ["npm", "run", "start:dev"]
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+RUN npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
@@ -56,7 +56,7 @@ USER node
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/docs').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/sbin/tini", "--"]
 
