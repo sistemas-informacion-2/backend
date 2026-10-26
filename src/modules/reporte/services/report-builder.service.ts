@@ -65,7 +65,8 @@ export class ReportBuilderService {
     const agregar = campos.some((campo) => campo.categoria === 'MEASURE');
     const claves = campos.filter((campo) => campo.categoria !== 'MEASURE');
 
-    const where: string[] = [];
+    const whereFechas: string[] = [];
+    const whereFiltros: string[] = [];
     const params: unknown[] = [];
     const agregarValor = (valor: unknown): number => {
       params.push(valor);
@@ -84,18 +85,25 @@ export class ReportBuilderService {
       const valor = this.coercionDeValor(campo, filtro.valor);
       if (OPERADORES_DIRECTOS.has(filtro.operador)) {
         const simbolo = OPERADOR_SQL[filtro.operador as Exclude<OperadorFiltro, 'contains' | 'startsWith' | 'endsWith'>];
-        where.push(clausula(campo.sql, simbolo, valor));
+        whereFiltros.push(clausula(campo.sql, simbolo, valor));
       } else {
         const comodin =
           filtro.operador === 'endsWith' ? `%${valor}` : filtro.operador === 'startsWith' ? `${valor}%` : `%${valor}%`;
-        where.push(`LOWER(${campo.sql}) LIKE LOWER($${agregarValor(comodin)})`);
+        whereFiltros.push(`LOWER(${campo.sql}) LIKE LOWER($${agregarValor(comodin)})`);
       }
     }
 
     if (fuente.campoFechas) {
-      if (request.dateFrom) where.push(clausula(fuente.campoFechas, '>=', validarFechaIso(request.dateFrom, 'dateFrom')));
-      if (request.dateTo) where.push(clausula(fuente.campoFechas, '<=', validarFechaIso(request.dateTo, 'dateTo')));
+      if (request.dateFrom) whereFechas.push(clausula(fuente.campoFechas, '>=', validarFechaIso(request.dateFrom, 'dateFrom')));
+      if (request.dateTo) whereFechas.push(clausula(fuente.campoFechas, '<=', validarFechaIso(request.dateTo, 'dateTo')));
     }
+
+    // El rango de fechas siempre es AND; el combinador (AND por defecto, OR si se pide) solo afecta
+    // a los filtros propiamente dichos, agrupados entre paréntesis para no alterar la precedencia.
+    const combinador = request.matchType === 'OR' ? ' OR ' : ' AND ';
+    const grupoFiltros =
+      whereFiltros.length > 1 && request.matchType === 'OR' ? `(${whereFiltros.join(combinador)})` : whereFiltros.join(combinador);
+    const where = [...whereFechas, ...(grupoFiltros ? [grupoFiltros] : [])];
 
     let ordenes: string[] = [];
     if (request.sort) {

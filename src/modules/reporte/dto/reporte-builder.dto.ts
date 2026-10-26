@@ -74,6 +74,12 @@ export class ReportRunRequestDto {
   @Type(() => ReportFilterDto)
   filters?: ReportFilterDto[];
 
+  /** Cómo se combinan los filtros entre sí: todos (AND, por defecto) o alguno (OR). No afecta el rango de fechas, que siempre es AND. */
+  @IsOptional()
+  @IsString()
+  @IsIn(['AND', 'OR'])
+  matchType?: 'AND' | 'OR';
+
   @IsOptional()
   @ValidateNested()
   @Type(() => ReportSortDto)
