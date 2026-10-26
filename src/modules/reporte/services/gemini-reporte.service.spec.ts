@@ -118,7 +118,29 @@ describe('GeminiReporteService', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 429, statusText: 'Too Many Requests', text: async () => 'quota exceeded' });
 
     await expect(service.interpretar('ventas de hoy')).rejects.toThrow(/429/);
+    // 429 no es un 503 de "alta demanda": no amerita el reintento especial, se propaga directo.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('un 503 (alta demanda) se reintenta una vez y, si la segunda vez responde bien, funciona', async () => {
+    const { service } = crearService();
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 503, statusText: 'Service Unavailable', text: async () => 'high demand' })
+      .mockResolvedValueOnce(respuestaGemini(JSON.stringify({ reportType: 'VENTAS', selectedFields: ['sucursal'], interpretacion: 'ok tras reintento' })));
+
+    const { interpretacion } = await service.interpretar('ventas de hoy');
+
+    expect(interpretacion).toBe('ok tras reintento');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }, 10_000);
+
+  it('un 503 persistente (dos veces seguidas) se propaga tras el unico reintento, sin insistir mas', async () => {
+    const { service } = crearService();
+    fetchMock.mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable', text: async () => 'high demand' });
+
+    await expect(service.interpretar('ventas de hoy')).rejects.toThrow(/503/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }, 10_000);
 
   it('propaga el error si la respuesta no trae JSON valido', async () => {
     const { service } = crearService();

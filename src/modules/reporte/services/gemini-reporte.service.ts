@@ -30,7 +30,20 @@ const ORDEN_POR_DEFECTO: Record<TipoReporte, { campo: string; direccion: 'asc' |
 const LIMITE_MAXIMO = 100;
 const LIMITE_DEFECTO = 50;
 const MODELO_DEFECTO = 'gemini-3.8-flash';
-const TIMEOUT_MS = 15_000;
+const TIMEOUT_MS = 25_000;
+/** Pausa antes del unico reintento ante un 503 "high demand" (el propio Google recomienda reintentar, no es error nuestro ni de la cuenta). */
+const REINTENTO_ESPERA_MS = 1_500;
+
+/** Error HTTP de Gemini con el status real, para poder decidir si vale la pena reintentar (503) o no (403/404/...). */
+class GeminiHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GeminiHttpError';
+  }
+}
 
 // Subconjunto de OpenAPI que acepta `responseSchema` de Gemini (generationConfig
 // con responseMimeType "application/json"): obliga al modelo a devolver
@@ -132,8 +145,26 @@ export class GeminiReporteService {
       },
     };
 
-    const bruto = await this.llamarGemini(cuerpo);
+    const bruto = await this.llamarGeminiConReintento(cuerpo);
     return this.normalizar(bruto, sucursales);
+  }
+
+  /**
+   * Un 503 "high demand" es la única falla que el propio Google recomienda
+   * reintentar tal cual (no es un error de la cuenta ni de la key): se da una
+   * sola segunda oportunidad, con una pausa corta, antes de rendirse. Para
+   * cualquier otro error (403, 404, timeout, JSON inválido...) reintentar de
+   * inmediato no cambia nada, así que se propaga directo.
+   */
+  private async llamarGeminiConReintento(cuerpo: unknown): Promise<RespuestaGeminiBruta> {
+    try {
+      return await this.llamarGemini(cuerpo);
+    } catch (error) {
+      if (!(error instanceof GeminiHttpError) || error.status !== 503) throw error;
+      this.logger.warn('Gemini respondio 503 (alta demanda); reintentando una vez...');
+      await new Promise((resolve) => setTimeout(resolve, REINTENTO_ESPERA_MS));
+      return this.llamarGemini(cuerpo);
+    }
   }
 
   private async llamarGemini(cuerpo: unknown): Promise<RespuestaGeminiBruta> {
@@ -157,7 +188,7 @@ export class GeminiReporteService {
 
     if (!respuesta.ok) {
       const detalle = await respuesta.text().catch(() => '');
-      throw new Error(`Gemini respondio ${respuesta.status} ${respuesta.statusText}: ${detalle.slice(0, 300)}`);
+      throw new GeminiHttpError(respuesta.status, `Gemini respondio ${respuesta.status} ${respuesta.statusText}: ${detalle.slice(0, 300)}`);
     }
 
     const datos = (await respuesta.json()) as {
