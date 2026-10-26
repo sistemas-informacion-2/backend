@@ -9,6 +9,8 @@ import {
   ExportQueryDto,
   ReporteGenerativoRequestDto,
   ReporteGenerativoResponseDto,
+  ReportePredefinidoDto,
+  ReportePredefinidoEjecutadoDto,
   ReportResultDto,
   ReportRunRequestDto,
   ReportTemplateDto,
@@ -45,6 +47,18 @@ export class ReportsController {
   @ApiOperation({ summary: 'Interpreta un pedido en lenguaje natural (voz o texto) y genera el reporte' })
   generativo(@Body() body: ReporteGenerativoRequestDto): Promise<ReporteGenerativoResponseDto> {
     return this.reportsService.generativo(body.prompt);
+  }
+
+  @Get('predefinidos')
+  @ApiOperation({ summary: 'Catálogo de reportes predefinidos listos para ejecutar con un clic' })
+  predefinidos(): ReportePredefinidoDto[] {
+    return this.reportsService.predefinidos();
+  }
+
+  @Post('predefinidos/:codigo/ejecutar')
+  @ApiOperation({ summary: 'Ejecuta un reporte predefinido (resuelve su rango de fechas al momento) y devuelve el resultado' })
+  ejecutarPredefinido(@Param('codigo') codigo: string): Promise<ReportePredefinidoEjecutadoDto> {
+    return this.reportsService.ejecutarPredefinido(codigo);
   }
 
   @Post('export')

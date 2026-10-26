@@ -1,14 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type {
   CreateReportTemplateDto,
   FormatoExportacion,
   ReporteGenerativoResponseDto,
+  ReportePredefinidoDto,
+  ReportePredefinidoEjecutadoDto,
   ReportResultDto,
   ReportRunRequestDto,
   ReportTemplateDto,
   ReportTypeDefinitionDto,
   UpdateReportTemplateDto,
 } from '../dto/reporte-builder.dto.js';
+import { buscarReportePredefinido, REPORTES_PREDEFINIDOS, type RangoPredefinido, type ReportePredefinido } from '../catalog/reportes-predefinidos.constants.js';
 import { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
 import { exportarReporte, type ArchivoReporte } from '../utils/reporte-exportador.util.js';
@@ -61,6 +64,56 @@ export class ReportsService {
       }
     }
     return { interpretado: await this.nlp.interpretar(prompt), fuente: 'REGEX' };
+  }
+
+  /** Catálogo de reportes predefinidos (CU18): solo metadatos, sin ejecutar nada. */
+  predefinidos(): ReportePredefinidoDto[] {
+    return REPORTES_PREDEFINIDOS.map(({ codigo, nombre, descripcion, categoria }) => ({ codigo, nombre, descripcion, categoria }));
+  }
+
+  async ejecutarPredefinido(codigo: string): Promise<ReportePredefinidoEjecutadoDto> {
+    const definicion = buscarReportePredefinido(codigo);
+    if (!definicion) throw new NotFoundException(`No existe el reporte predefinido "${codigo}"`);
+
+    const request = this.resolverRequestPredefinido(definicion);
+    const result = await this.builder.ejecutar(request);
+    return { codigo: definicion.codigo, nombre: definicion.nombre, request, result };
+  }
+
+  /** Arma el ReportRunRequestDto real a partir de la definicion estatica, resolviendo el rango de fechas al momento de ejecutar (nunca se guarda una fecha fija en el catalogo). */
+  private resolverRequestPredefinido(definicion: ReportePredefinido): ReportRunRequestDto {
+    const { desde, hasta } = this.resolverRango(definicion.rango);
+    return {
+      reportType: definicion.reportType,
+      selectedFields: [...definicion.selectedFields],
+      filters: definicion.filters ? [...definicion.filters] : [],
+      sort: definicion.sort,
+      dateFrom: desde,
+      dateTo: hasta,
+      limit: definicion.limit ?? 50,
+      offset: 0,
+    };
+  }
+
+  private resolverRango(rango: RangoPredefinido): { desde?: string; hasta?: string } {
+    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
+    const hoy = new Date();
+    switch (rango.tipo) {
+      case 'HOY':
+        return { desde: iso(hoy), hasta: iso(hoy) };
+      case 'ULTIMOS_N_DIAS': {
+        const desde = new Date(hoy);
+        desde.setDate(desde.getDate() - (rango.dias - 1));
+        return { desde: iso(desde), hasta: iso(hoy) };
+      }
+      case 'MES_ACTUAL': {
+        const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        return { desde: iso(inicio), hasta: iso(hoy) };
+      }
+      case 'NINGUNO':
+      default:
+        return {};
+    }
   }
 
   async exportar(formato: FormatoExportacion, request: ReportRunRequestDto): Promise<ArchivoReporte> {

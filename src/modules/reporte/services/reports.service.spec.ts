@@ -55,6 +55,46 @@ describe('ReportsService', () => {
     expect(builder.catalogo).toHaveBeenCalled();
   });
 
+  it('predefinidos expone solo metadatos, sin ejecutar nada', () => {
+    const { service, builder } = crearService();
+
+    const lista = service.predefinidos();
+
+    expect(lista.length).toBeGreaterThan(0);
+    expect(lista[0]).toEqual({ codigo: expect.any(String), nombre: expect.any(String), descripcion: expect.any(String), categoria: expect.any(String) });
+    expect(builder.ejecutar).not.toHaveBeenCalled();
+  });
+
+  it('ejecutarPredefinido rechaza un codigo que no existe', async () => {
+    const { service } = crearService();
+
+    await expect(service.ejecutarPredefinido('NO_EXISTE')).rejects.toThrow('No existe el reporte predefinido');
+  });
+
+  it('ejecutarPredefinido de VENTAS_HOY resuelve dateFrom/dateTo al dia de hoy', async () => {
+    const { service, builder } = crearService();
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    const respuesta = await service.ejecutarPredefinido('VENTAS_HOY');
+
+    expect(respuesta.codigo).toBe('VENTAS_HOY');
+    expect(respuesta.request.reportType).toBe('VENTAS');
+    expect(respuesta.request.dateFrom).toBe(hoy);
+    expect(respuesta.request.dateTo).toBe(hoy);
+    expect(builder.ejecutar).toHaveBeenCalledWith(respuesta.request);
+  });
+
+  it('ejecutarPredefinido de STOCK_CRITICO (INVENTARIO) nunca manda rango de fechas', async () => {
+    const { service } = crearService();
+
+    const respuesta = await service.ejecutarPredefinido('STOCK_CRITICO');
+
+    expect(respuesta.request.reportType).toBe('INVENTARIO');
+    expect(respuesta.request.dateFrom).toBeUndefined();
+    expect(respuesta.request.dateTo).toBeUndefined();
+    expect(respuesta.request.filters).toEqual([{ campo: 'en_stock_critico', operador: 'eq', valor: true }]);
+  });
+
   it('generativo sin Gemini configurado cae directo al traductor por palabras clave', async () => {
     const { service, builder, nlp, gemini } = crearService({
       builder: {

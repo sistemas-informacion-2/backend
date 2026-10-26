@@ -29,7 +29,7 @@ const ORDEN_POR_DEFECTO: Record<TipoReporte, { campo: string; direccion: 'asc' |
 
 const LIMITE_MAXIMO = 100;
 const LIMITE_DEFECTO = 50;
-const MODELO_DEFECTO = 'gemini-2.5-flash';
+const MODELO_DEFECTO = 'gemini-3.8-flash';
 const TIMEOUT_MS = 15_000;
 
 // Subconjunto de OpenAPI que acepta `responseSchema` de Gemini (generationConfig

@@ -1,7 +1,7 @@
 import { GeminiReporteService } from './gemini-reporte.service.js';
 
 function crearService(cfg: { apiKey?: string; model?: string } = {}, sucursales: string[] = ['La Paz', 'Santa Cruz']) {
-  const valores: Record<string, unknown> = { 'gemini.apiKey': cfg.apiKey ?? 'clave-de-prueba', 'gemini.model': cfg.model ?? 'gemini-2.5-flash' };
+  const valores: Record<string, unknown> = { 'gemini.apiKey': cfg.apiKey ?? 'clave-de-prueba', 'gemini.model': cfg.model ?? 'gemini-3.8-flash' };
   const config = { get: (clave: string) => valores[clave] };
   const dataSource = { query: vi.fn().mockResolvedValue(sucursales.map((nombre) => ({ nombre }))) };
   return { service: new GeminiReporteService(config as never, dataSource as never), dataSource };
