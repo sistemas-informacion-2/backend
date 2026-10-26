@@ -40,6 +40,11 @@ export interface AppConfig {
     /** Access token de Expo; solo hace falta si se activa "enhanced security" para push en EAS. */
     accessToken: string;
   };
+  gemini: {
+    /** API key de Google AI Studio (generativelanguage.googleapis.com). Vacio = reportes generativos caen al interprete por regex (CU18). */
+    apiKey: string;
+    model: string;
+  };
 }
 
 const paypalMode = process.env.PAYPAL_MODE === 'live' ? 'live' : 'sandbox';
@@ -80,5 +85,9 @@ export default (): AppConfig => ({
   push: {
     enabled: process.env.PUSH_ENABLED !== 'false',
     accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
+  },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY ?? '',
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
   },
 });

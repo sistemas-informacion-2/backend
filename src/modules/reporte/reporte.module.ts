@@ -6,6 +6,7 @@ import { DashboardController } from './controllers/dashboard.controller.js';
 import { DashboardService } from './services/dashboard.service.js';
 import { DashboardRepository } from './repositories/dashboard.repository.js';
 import { ReportBuilderService } from './services/report-builder.service.js';
+import { GeminiReporteService } from './services/gemini-reporte.service.js';
 import { ReporteNlpService } from './services/reporte-nlp.service.js';
 import { ReportsService } from './services/reports.service.js';
 import { ReportePlantillaRepository } from './repositories/reporte-plantilla.repository.js';
@@ -18,6 +19,7 @@ import { ReportePlantillaRepository } from './repositories/reporte-plantilla.rep
     DashboardRepository,
     ReportBuilderService,
     ReporteNlpService,
+    GeminiReporteService,
     ReportsService,
     ReportePlantillaRepository,
   ],

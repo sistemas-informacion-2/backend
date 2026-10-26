@@ -123,6 +123,8 @@ export class ReporteGenerativoResponseDto {
   /** La config que finalmente se ejecutó. */
   request: ReportRunRequestDto;
   result: ReportResultDto;
+  /** Qué interprete respondió esta vez: IA (Gemini) o REGEX (el traductor por palabras clave, usado si Gemini no está configurado o falló). */
+  fuente: 'IA' | 'REGEX';
 }
 
 export class ExportQueryDto {
