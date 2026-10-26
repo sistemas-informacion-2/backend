@@ -29,7 +29,7 @@ const ORDEN_POR_DEFECTO: Record<TipoReporte, { campo: string; direccion: 'asc' |
 
 const LIMITE_MAXIMO = 100;
 const LIMITE_DEFECTO = 50;
-const MODELO_DEFECTO = 'gemini-3.8-flash';
+const MODELO_DEFECTO = 'gemini-3.5-flash-lite';
 const TIMEOUT_MS = 25_000;
 /** Pausa antes del unico reintento ante un 503 "high demand" (el propio Google recomienda reintentar, no es error nuestro ni de la cuenta). */
 const REINTENTO_ESPERA_MS = 1_500;
