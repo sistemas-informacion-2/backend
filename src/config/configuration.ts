@@ -34,6 +34,12 @@ export interface AppConfig {
     /** Bolivianos por cada unidad de `currency`. */
     bobRate: number;
   };
+  push: {
+    /** Si es false no se llama a Expo; las notificaciones solo se guardan en BD. */
+    enabled: boolean;
+    /** Access token de Expo; solo hace falta si se activa "enhanced security" para push en EAS. */
+    accessToken: string;
+  };
 }
 
 const paypalMode = process.env.PAYPAL_MODE === 'live' ? 'live' : 'sandbox';
@@ -70,5 +76,9 @@ export default (): AppConfig => ({
     clientSecret: (paypalMode === 'live' ? process.env.PAYPAL_LIVE_CLIENT_SECRET : process.env.PAYPAL_SANDBOX_CLIENT_SECRET) ?? '',
     currency: process.env.PAYPAL_CURRENCY ?? 'USD',
     bobRate: Number(process.env.PAYPAL_BOB_USD_RATE) || 6.96,
+  },
+  push: {
+    enabled: process.env.PUSH_ENABLED !== 'false',
+    accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
   },
 });
