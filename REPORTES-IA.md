@@ -33,17 +33,44 @@ Generativo/Voz), que antes vivían mezcladas en una sola pantalla.
   Constructor, Por Voz/IA).
 
 **Sin dependencias nuevas** en ninguno de los dos lados — todo reutiliza componentes y
-servicios que ya existían (`ReportFiltersBuilder`, `ReportPreviewTable`,
-`SaveTemplateModal`, el hook de voz, `ReportBuilderService`).
+servicios que ya existían (`ReportFiltersBuilder`, `ReportPreviewTable`, el hook de voz,
+`ReportBuilderService`).
 
 **Qué quedó explícitamente fuera de esta vuelta** (para no inflar el alcance sin que lo
 pidieras de nuevo): catálogo de predefinidos administrable desde la UI (hoy es una
 lista fija en código, no hay CRUD), contexto conversacional multi-turno en el
-generativo (cada pedido es independiente, no hay "¿y la semana pasada?" todavía),
-síntesis de voz (lectura en voz alta de la respuesta) y una pantalla de auditoría
-dedicada (las mutaciones ya quedan en `BITACORA` por el interceptor global existente,
-pero no hay una vista nueva para reportes específicamente). Si quieres cualquiera de
-estas, son extensiones puntuales sobre lo que ya queda armado, no un rediseño.
+generativo (cada pedido es independiente, no hay "¿y la semana pasada?" todavía) y una
+pantalla de auditoría dedicada (las mutaciones ya quedan en `BITACORA` por el
+interceptor global existente, pero no hay una vista nueva para reportes
+específicamente). Si quieres cualquiera de estas, son extensiones puntuales sobre lo
+que ya queda armado, no un rediseño.
+
+### 0.1. Actualización: conversación, lectura en voz y "Refinar" en Generativo
+
+La pantalla de Reportes por Voz/IA (`/admin/reportes/generativo`) ahora mantiene un
+historial de la conversación (cada pedido y respuesta quedan como burbujas de chat,
+dentro de un panel con encabezado propio "💬 Conversación" para que se note que es un
+chat y no texto suelto), lee la respuesta en voz alta con la síntesis de voz nativa del
+navegador (`window.speechSynthesis`, sin dependencias nuevas) y agrega un botón
+**"Refinar"** que abre el mismo `ReportFiltersBuilder` del Constructor QBE, inline,
+para ajustar el reporte activo (columnas/filtros/orden/fechas) sin perder el hilo de la
+conversación — "Aplicar" lo re-ejecuta, "Cancelar" restaura la config anterior. El
+historial no se persiste entre sesiones; "Nueva conversación" lo reinicia.
+
+### 0.2. Actualización: Constructor QBE reformateado y filtros con AND/OR
+
+El Constructor (`/admin/reportes/constructor`) se reformateó al patrón de 3 pasos
+numerados ("1. Entidad y campos", "2. Filtros y orden", "3. Resultado"): el paso 1 usa
+un selector de campos de dos columnas (disponibles → columnas del reporte, con
+reordenar y quitar) y arranca **sin entidad ni columnas preseleccionadas** (antes
+cargaba VENTAS con columnas por defecto). El modal de guardar plantilla
+(`SaveTemplateModal`, eliminado) pasó a ser un campo de nombre inline en el paso 3.
+
+Los filtros ganaron un combinador real: `ReportRunRequestDto.matchType` (`'AND'`
+por defecto, `'OR'` opcional) — no es solo un toggle visual, `ReportBuilderService`
+arma el `WHERE` distinto según el valor (el rango de fechas siempre se combina con
+AND, por separado del grupo de filtros). El mismo `ReportFiltersBuilder` se reutiliza
+en el panel "Refinar" de Generativo.
 
 ## 1. Qué problema resolvía esto
 
@@ -124,9 +151,10 @@ tal cual estaba.
 
 | Archivo | Qué cambió |
 | --- | --- |
-| `src/modules/reporte/reportes.types.ts` | `RespuestaGenerativo` gana el campo `fuente: 'IA' \| 'REGEX'`. |
-| `src/modules/reporte/pages/ReportesPage/ReportesPage.tsx` | Guarda `fuente` de la respuesta en estado (`fuenteInterpretacion`) y se lo pasa a la vista. |
-| `src/modules/reporte/pages/ReportesPage/ReportesPage.view.tsx` | El cuadro de "Interpretación" ahora muestra una etiqueta: **✨ Gemini** (verde) si respondió la IA, o **⚙️ Modo básico** (ámbar, con tooltip explicando por qué) si cayó al traductor por regex. Así el usuario ve honestamente cuál de los dos respondió, en vez del botón "Generar con IA" fijo sin indicar si de verdad hubo IA. |
+| `src/modules/reporte/reportes.types.ts` | `RespuestaGenerativo`/`ReportRunRequest` ganan `fuente: 'IA' \| 'REGEX'` y `matchType?: 'AND' \| 'OR'`. |
+| `src/modules/reporte/pages/ReportesGenerativoPage/` | Pantalla de Reportes por Voz/IA (antes mezclada en `ReportesPage`, hoy eliminada): conversación en burbujas dentro de un panel de chat, lectura en voz alta, botón "Refinar" (reutiliza `ReportFiltersBuilder` inline) y la etiqueta **✨ Gemini** / **⚙️ Modo básico** por mensaje. |
+| `src/modules/reporte/pages/ReportesConstructorPage/` | Report Builder manual reformateado a 3 pasos numerados; arranca sin entidad ni columnas preseleccionadas. |
+| `src/modules/reporte/components/reportes/ReportFiltersBuilder.tsx` | Selector de campos de dos columnas (en vez de checkboxes), filas de filtro con el toggle "Cumplir todos (Y) / Cumplir alguno (O)" (`matchType`), reordenar/quitar columnas. |
 
 El resto del Report Builder (catálogo, filtros manuales, plantillas, exportación) **no
 cambió**: esto solo toca el camino del asistente por texto/voz.
@@ -148,9 +176,16 @@ Solo en el **backend** (`backend/.env`, no versionado):
 # API key de Google AI Studio (gratuita dentro de su cuota): https://aistudio.google.com/apikey
 # Vacio = los reportes generativos caen al interprete por palabras clave (regex), sin IA.
 GEMINI_API_KEY=
-# Opcional: modelo de Gemini a usar. gemini-2.5-flash es rapido y entra comodo en la capa gratuita.
-GEMINI_MODEL=gemini-2.5-flash
+# Opcional: modelo de Gemini a usar. Los modelos "-flash" grandes (ej. 3.8-flash,
+# 3.5-flash) suelen devolver 503 "high demand" por saturacion; "-flash-lite" es mas
+# liviano, menos pedido y de sobra para esta clasificacion/extraccion.
+GEMINI_MODEL=gemini-3.5-flash-lite
 ```
+
+Si Gemini responde 503 ("alta demanda"), `GeminiReporteService` reintenta **una vez**
+con una pausa corta antes de rendirse y caer al modo básico (otros errores, como 403 o
+404, se propagan directo sin reintentar — reintentar no cambia nada ahí). Si el 503
+persiste incluso cambiando de modelo, es saturación real de Google, no un bug local.
 
 El frontend no necesita ninguna variable nueva: no habla con Gemini directamente, solo
 con el backend (igual que antes).
@@ -166,22 +201,26 @@ con el backend (igual que antes).
 
 1. Asegúrate de tener `GEMINI_API_KEY` cargada en `backend/.env` (ya está puesta).
 2. Levanta el backend normal (`npm run start:dev` o Docker).
-3. Entra a `/admin/reportes` con un usuario con permiso `analitica:reportes:gestionar`.
-4. En el "Asistente generativo", escribe (o dicta) algo que el regex viejo **no**
-   reconocía, por ejemplo:
+3. Entra a `/admin/reportes/generativo` (Sidebar → Reportes → "Reportes por Voz / IA")
+   con un usuario con permiso `analitica:reportes:gestionar`.
+4. Escribe (o dicta) algo que el regex viejo **no** reconocía, por ejemplo:
    - *"¿Cuáles son las prendas que menos se vendieron este mes en Santa Cruz?"*
    - *"Dame un resumen de lo que compramos a proveedores el trimestre pasado"*
    - *"¿Qué productos están por agotarse?"*
-5. Debajo de "Interpretación" debería aparecer la etiqueta **✨ Gemini**, y el texto
-   de interpretación debería sonar natural (no una concatenación de frases fijas).
-6. Para confirmar el fallback: pon `GEMINI_API_KEY=` vacío (o una key inválida),
+5. La respuesta debería aparecer con la etiqueta **✨ Gemini** y sonar natural (no una
+   concatenación de frases fijas); si tenés la voz activada, además la lee en alto.
+6. Probá seguir la conversación ("¿y en La Paz?") y el botón "Refinar" para ajustar el
+   reporte sin perder el hilo.
+7. Para confirmar el fallback: pon `GEMINI_API_KEY=` vacío (o una key inválida),
    reinicia el backend, repite un pedido — debería seguir funcionando, con la etiqueta
    **⚙️ Modo básico**.
 
 ## 7. Limitaciones conocidas / próximos pasos
 
-- La capa gratuita de Gemini tiene límite de peticiones por minuto. Si se supera, la
-  llamada falla y cae al modo básico automáticamente (no hay cola de reintentos).
+- La capa gratuita de Gemini tiene límite de peticiones por minuto, y los modelos
+  "-flash" grandes suelen devolver 503 por saturación (de ahí el default a
+  "-flash-lite"). Hay un único reintento automático ante un 503; si falla igual, cae
+  al modo básico (no hay cola de reintentos ni backoff progresivo).
 - Gemini decide `limit`/`sort`/filtros por heurística del propio modelo; dos pedidos
   casi idénticos pueden dar reportes ligeramente distintos (no es determinístico como
   el regex). Para un reporte reproducible exacto, usar el Report Builder manual o
