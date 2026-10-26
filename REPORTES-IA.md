@@ -2,6 +2,49 @@
 
 > Rama backend: `backRamaNico`. Rama frontend: `frontRamaNico`.
 
+## 0. Actualización: módulo de Reportes dividido en 4 secciones
+
+Lo que sigue en este documento (secciones 1-7) describe el intérprete con IA tal como
+se implementó originalmente. Después se sumó una segunda parte: separar el módulo de
+"Reportes" en las 4 secciones de siempre (Dashboard, Predefinidos, Constructor QBE,
+Generativo/Voz), que antes vivían mezcladas en una sola pantalla.
+
+**Backend — nuevo catálogo de Reportes Predefinidos:**
+- `GET /api/reports/predefinidos`: lista el catálogo (`codigo`, `nombre`, `descripcion`,
+  `categoria`) — `src/modules/reporte/catalog/reportes-predefinidos.constants.ts`.
+- `POST /api/reports/predefinidos/:codigo/ejecutar`: ejecuta uno. El rango de fechas
+  ("hoy", "últimos 30 días", "mes actual") se resuelve en el momento de ejecutar, nunca
+  queda una fecha fija guardada. Reutiliza `ReportBuilderService.ejecutar()` — mismo
+  catálogo/whitelist de campos que ya protegía al Report Builder y al intérprete de
+  Gemini, ningún camino nuevo para ejecutar SQL.
+- Predefinidos incluidos: *Ventas de hoy*, *Prendas más vendidas (30 días)*, *Ventas por
+  sucursal (7 días)*, *Stock crítico*, *Compras del mes*.
+
+**Frontend — el módulo pasó de 1 pantalla a 3 rutas (+ el Dashboard que ya existía):**
+- `/admin/reportes/predefinidos` (nueva): tarjetas por categoría, botón "Ejecutar",
+  resultado + exportación.
+- `/admin/reportes/constructor` (antes `/admin/reportes`): el Report Builder manual
+  (fuente, campos, filtros, orden, paginación, plantillas), sin el asistente.
+- `/admin/reportes/generativo` (nueva): el pedido en lenguaje natural/voz, separado del
+  constructor, con un botón "Ajustar en el Constructor" que lleva la config generada
+  allá para retocarla a mano.
+- `/admin/reportes` redirige a `.../constructor` para no romper enlaces viejos.
+- Sidebar: el grupo "Reportes" pasó de 2 a 4 ítems (Dashboard, Predefinidos,
+  Constructor, Por Voz/IA).
+
+**Sin dependencias nuevas** en ninguno de los dos lados — todo reutiliza componentes y
+servicios que ya existían (`ReportFiltersBuilder`, `ReportPreviewTable`,
+`SaveTemplateModal`, el hook de voz, `ReportBuilderService`).
+
+**Qué quedó explícitamente fuera de esta vuelta** (para no inflar el alcance sin que lo
+pidieras de nuevo): catálogo de predefinidos administrable desde la UI (hoy es una
+lista fija en código, no hay CRUD), contexto conversacional multi-turno en el
+generativo (cada pedido es independiente, no hay "¿y la semana pasada?" todavía),
+síntesis de voz (lectura en voz alta de la respuesta) y una pantalla de auditoría
+dedicada (las mutaciones ya quedan en `BITACORA` por el interceptor global existente,
+pero no hay una vista nueva para reportes específicamente). Si quieres cualquiera de
+estas, son extensiones puntuales sobre lo que ya queda armado, no un rediseño.
+
 ## 1. Qué problema resolvía esto
 
 El "asistente generativo" de reportes (`POST /api/reports/generativo`) ya existía, pero
