@@ -22,11 +22,6 @@ export class ActualizarVarianteProductoDto {
   corte?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  modelo3dUrl?: string;
-
-  @IsOptional()
   @IsBoolean()
   activo?: boolean;
 }

@@ -15,7 +15,7 @@ interface MetodoPagoBase {
 
 /**
  * Metodos de pago base (CU16). Efectivo se habilita solo en caja; QR y Tarjeta
- * en ambos canales; PayPal queda inactivo hasta cargar credenciales.
+ * en ambos canales; Stripe queda inactivo hasta cargar la llave secreta.
  * Idempotente: crea por `codigo` solo si no existe y reconcilia `integracion`
  * de los base. Los canales solo se inicializan si aun no se configuraron, para
  * no revertir lo que el administrador haya habilitado/deshabilitado.
@@ -24,7 +24,7 @@ const METODOS_PAGO_BASE: MetodoPagoBase[] = [
   { codigo: 'EFECTIVO', metodo: 'Efectivo', integracion: 'NINGUNA', disponiblePresencial: true, disponibleLinea: false },
   { codigo: 'QR', metodo: 'QR', integracion: 'NINGUNA', disponiblePresencial: true, disponibleLinea: true },
   { codigo: 'TARJETA', metodo: 'Tarjeta', integracion: 'NINGUNA', disponiblePresencial: true, disponibleLinea: true },
-  { codigo: 'PAYPAL', metodo: 'PayPal', integracion: 'API', disponiblePresencial: false, disponibleLinea: false },
+  { codigo: 'STRIPE', metodo: 'Stripe', integracion: 'API', disponiblePresencial: false, disponibleLinea: false },
 ];
 
 @Injectable()
@@ -74,23 +74,37 @@ export class PasarelaSeederService {
       this.logger.log(`Metodo de pago actualizado: ${base.codigo}`);
     }
 
-    await this.activarPaypalDesdeEntorno();
+    await this.retirarPaypal();
+    await this.activarStripeDesdeEntorno();
   }
 
   /**
-   * Si el .env trae credenciales de PayPal, la primera vez habilita PayPal para el checkout en linea. La
+   * PayPal fue reemplazado por Stripe. Su fila no se borra (los pagos historicos la referencian), solo se saca del
+   * checkout en linea para que el panel no la muestre como disponible.
+   */
+  private async retirarPaypal(): Promise<void> {
+    const paypal = await this.pasarelaRepo.findOne({ where: { codigo: 'PAYPAL' } });
+    if (!paypal?.disponibleLinea) return;
+
+    paypal.disponibleLinea = false;
+    await this.pasarelaRepo.save(paypal);
+    this.logger.log('PayPal retirado del checkout en linea (reemplazado por Stripe)');
+  }
+
+  /**
+   * Si el .env trae la llave secreta de Stripe, la primera vez habilita Stripe para el checkout en linea. La
    * descripcion sirve de marca: una vez puesta, el administrador manda y no se vuelve a tocar el canal.
    */
-  private async activarPaypalDesdeEntorno(): Promise<void> {
-    const { clientId, clientSecret, mode } = this.config.get('paypal', { infer: true });
-    if (!clientId || !clientSecret) return;
+  private async activarStripeDesdeEntorno(): Promise<void> {
+    const secretKey = this.config.get('stripe.secretKey', { infer: true });
+    if (!secretKey) return;
 
-    const paypal = await this.pasarelaRepo.findOne({ where: { codigo: 'PAYPAL' } });
-    if (!paypal || paypal.descripcion !== null) return;
+    const stripe = await this.pasarelaRepo.findOne({ where: { codigo: 'STRIPE' } });
+    if (!stripe || stripe.descripcion !== null) return;
 
-    paypal.descripcion = mode === 'sandbox' ? 'Paga con tu cuenta PayPal (modo de pruebas)' : 'Paga con tu cuenta PayPal';
-    if (!paypal.disponiblePresencial && !paypal.disponibleLinea) paypal.disponibleLinea = true;
-    await this.pasarelaRepo.save(paypal);
-    this.logger.log('PayPal habilitado para pagos en linea con las credenciales del .env');
+    stripe.descripcion = secretKey.startsWith('sk_test_') ? 'Paga con tarjeta en Stripe (modo de pruebas)' : 'Paga con tarjeta en Stripe';
+    if (!stripe.disponiblePresencial && !stripe.disponibleLinea) stripe.disponibleLinea = true;
+    await this.pasarelaRepo.save(stripe);
+    this.logger.log('Stripe habilitado para pagos en linea con la llave del .env');
   }
 }

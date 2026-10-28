@@ -163,7 +163,6 @@ export class ProductosService {
             talla: variante.talla.trim(),
             color: variante.color.trim(),
             corte: variante.corte.trim(),
-            modelo3dUrl: variante.modelo3dUrl?.trim() || null,
             activo: true,
           },
           manager,
@@ -225,7 +224,6 @@ export class ProductosService {
       talla: dto.talla.trim(),
       color: dto.color.trim(),
       corte: dto.corte.trim(),
-      modelo3dUrl: dto.modelo3dUrl?.trim() || null,
       activo: true,
     });
     await this.varianteRepo.save(variante);
@@ -249,7 +247,6 @@ export class ProductosService {
       ...(dto.talla !== undefined && { talla: dto.talla.trim() }),
       ...(dto.color !== undefined && { color: dto.color.trim() }),
       ...(dto.corte !== undefined && { corte: dto.corte.trim() }),
-      ...(dto.modelo3dUrl !== undefined && { modelo3dUrl: dto.modelo3dUrl?.trim() || null }),
       ...(dto.activo !== undefined && { activo: dto.activo }),
     });
     await this.varianteRepo.save(variante);

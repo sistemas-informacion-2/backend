@@ -24,7 +24,6 @@ export function toProductoResponseDto(producto: Producto): ProductoResponseDto {
       talla: variante.talla,
       color: variante.color,
       corte: variante.corte,
-      modelo3dUrl: variante.modelo3dUrl,
       activo: variante.activo,
     })),
   };

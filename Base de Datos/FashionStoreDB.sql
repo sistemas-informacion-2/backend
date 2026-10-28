@@ -188,9 +188,6 @@ CREATE TABLE CATEGORIA (
     descripcion TEXT,
     imagen_url VARCHAR(500), -- imagen de la categoria, la pide CU08 explicitamente
     activo BOOLEAN DEFAULT TRUE,
-    -- SUPERIOR|INFERIOR|COMPLETO: que parte del cuerpo usa el probador virtual
-    -- (CU19) para anclar el modelo 3D de una prenda de esta categoria.
-    zona_probador VARCHAR(20) NOT NULL DEFAULT 'SUPERIOR',
     CONSTRAINT fk_categoria_padre FOREIGN KEY (id_categoria_padre) REFERENCES CATEGORIA(id) ON DELETE CASCADE
 );
 
@@ -242,7 +239,6 @@ CREATE TABLE VARIANTE_PRODUCTO (
     talla VARCHAR(20) NOT NULL,
     color VARCHAR(50) NOT NULL,
     corte VARCHAR(50) NOT NULL,
-    modelo_3d_url VARCHAR(500),
     activo BOOLEAN DEFAULT TRUE,
     CONSTRAINT fk_variante_producto FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id) ON DELETE CASCADE
 );

@@ -10,7 +10,6 @@ export function toCategoriaResponseDto(categoria: Categoria): CategoriaResponseD
     imagenUrl: categoria.imagenUrl,
     activo: categoria.activo,
     categoriaPadreId: categoria.idCategoriaPadre,
-    zonaProbador: categoria.zonaProbador,
     temporadas: (categoria.temporadasCategoria ?? [])
       .map((tc) => tc.temporada)
       .filter((temporada) => !!temporada)

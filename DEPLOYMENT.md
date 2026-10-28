@@ -16,7 +16,7 @@ Esta guía explica cómo desplegar la API de FashionStore (NestJS 12, TypeORM, P
                                       ▼
                               Recurso compartido
                               de Azure Files
-                              (imágenes, modelos 3D)
+                              (imágenes)
 ```
 
 | Componente | Recurso de Azure / Supabase | Función |
@@ -29,7 +29,7 @@ Esta guía explica cómo desplegar la API de FashionStore (NestJS 12, TypeORM, P
 ### Por qué estas decisiones
 
 - **Session pooler en lugar de la conexión directa.** El host directo de Supabase (`db.<ref>.supabase.co`) solo resuelve a IPv6, y el tráfico saliente de App Service es IPv4. El Session pooler (Supavisor, puerto `5432`) es compatible con IPv4 y se comporta como una sesión normal de Postgres, así que las transacciones de TypeORM funcionan sin cambios. No uses el *Transaction pooler* (puerto `6543`) para este servicio.
-- **Azure Files para los uploads.** `ArchivosController` y `ProbadorModelosController` escriben en `<cwd>/uploads` en el disco local. Sin un recurso compartido montado, cada reinicio, escalado o nuevo despliegue pierde esos archivos.
+- **Azure Files para los uploads.** `ArchivosController` escribe en `<cwd>/uploads` en el disco local. Sin un recurso compartido montado, cada reinicio, escalado o nuevo despliegue pierde esos archivos.
 
 ---
 
@@ -212,8 +212,6 @@ az webapp config storage-account add --resource-group $RG --name $APP \
   --access-key $STORAGE_KEY --mount-path /app/uploads
 ```
 
-La app guarda los modelos 3D en `uploads/modelos/` y crea esa carpeta si no existe. No hace falta crearla antes en el recurso compartido.
-
 ### 4.6 Configuración de ejecución
 
 ```bash
@@ -248,7 +246,7 @@ App Service pasa los **App settings** al contenedor como variables de entorno. E
 | `DB_NAME` | `postgres` | |
 | `PGSSLMODE` | `no-verify` | Activa TLS hacia Supabase |
 | `CORS_ORIGIN` | `https://<dominio-del-frontend>` | Origen exacto, sin barra final. Si falta, el valor por defecto es `*` |
-| `FRONTEND_URL` | `https://<dominio-del-frontend>` | PayPal redirige aquí al usuario después del pago |
+| `FRONTEND_URL` | `https://<dominio-del-frontend>` | Stripe redirige aquí al usuario después del pago |
 | `JWT_SECRET` | *(secreto)* | Cadena aleatoria larga, por ejemplo `openssl rand -base64 48` |
 | `JWT_ACCESS_EXPIRATION` | `15m` | |
 | `JWT_REFRESH_EXPIRATION` | `7d` | |
@@ -256,11 +254,9 @@ App Service pasa los **App settings** al contenedor como variables de entorno. E
 | `SEED_ADMIN_PASSWORD` | *(secreto)* | Cámbiala respecto al valor de ejemplo |
 | `PAGOS_ENCRYPTION_KEY` | *(secreto)* | 64 caracteres hexadecimales (`openssl rand -hex 32`). **Nunca la cambies sin volver a cifrar los datos guardados** |
 | `PAGOS_SIMULADOS` | `false` | Si es `true`, los pagos con QR y tarjeta se aprueban sin cobrar |
-| `PAYPAL_MODE` | `sandbox` o `live` | |
-| `PAYPAL_SANDBOX_CLIENT_ID` / `PAYPAL_SANDBOX_CLIENT_SECRET` | *(secreto)* | Cuando `PAYPAL_MODE=sandbox` |
-| `PAYPAL_LIVE_CLIENT_ID` / `PAYPAL_LIVE_CLIENT_SECRET` | *(secreto)* | Cuando `PAYPAL_MODE=live` |
-| `PAYPAL_CURRENCY` | `USD` | PayPal no opera con BOB |
-| `PAYPAL_BOB_USD_RATE` | `6.96` | Bolivianos por cada USD |
+| `STRIPE_SECRET_KEY` | *(secreto)* | Llave secreta de Stripe: `sk_test_...` en pruebas, `sk_live_...` en producción. Vacía = Stripe no se ofrece |
+| `STRIPE_CURRENCY` | `usd` | Moneda en la que cobra Stripe |
+| `STRIPE_BOB_RATE` | `6.96` | Bolivianos por cada unidad de `STRIPE_CURRENCY` |
 
 ### 5.2 Aplicarlas
 
@@ -284,11 +280,9 @@ az webapp config appsettings set --resource-group $RG --name $APP --settings \
   SEED_ADMIN_PASSWORD='<contraseña-admin>' \
   PAGOS_ENCRYPTION_KEY='<64-caracteres-hex>' \
   PAGOS_SIMULADOS=false \
-  PAYPAL_MODE=sandbox \
-  PAYPAL_SANDBOX_CLIENT_ID='<client-id>' \
-  PAYPAL_SANDBOX_CLIENT_SECRET='<client-secret>' \
-  PAYPAL_CURRENCY=USD \
-  PAYPAL_BOB_USD_RATE=6.96
+  STRIPE_SECRET_KEY='<sk_test_o_sk_live>' \
+  STRIPE_CURRENCY=usd \
+  STRIPE_BOB_RATE=6.96
 ```
 
 Al cambiar los app settings, el contenedor se reinicia automáticamente.
@@ -342,7 +336,7 @@ A largo plazo, agrega migraciones de TypeORM para que los cambios de esquema que
 
 ### 8.1 URLs HTTPS para los archivos subidos (ya aplicado)
 
-`ArchivosController` y `ProbadorModelosController` construyen las URLs de los archivos a partir de `request.protocol`. Azure termina el TLS antes del contenedor, así que sin configuración adicional la app ve HTTP plano y devuelve URLs `http://...`, que un frontend en HTTPS bloquea como *contenido mixto*. `src/main.ts` ya le indica a Express que confíe exactamente en un salto de proxy:
+`ArchivosController` construye las URLs de los archivos a partir de `request.protocol`. Azure termina el TLS antes del contenedor, así que sin configuración adicional la app ve HTTP plano y devuelve URLs `http://...`, que un frontend en HTTPS bloquea como *contenido mixto*. `src/main.ts` ya le indica a Express que confíe exactamente en un salto de proxy:
 
 ```ts
 server.set('trust proxy', 1);

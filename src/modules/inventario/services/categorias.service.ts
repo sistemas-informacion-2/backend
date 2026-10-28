@@ -38,7 +38,6 @@ export class CategoriasService {
       descripcion: dto.descripcion ?? null,
       imagenUrl: dto.imagenUrl ?? null,
       idCategoriaPadre: dto.categoriaPadreId ?? null,
-      ...(dto.zonaProbador !== undefined && { zonaProbador: dto.zonaProbador }),
     });
     await this.categoriaRepo.save(categoria);
 
@@ -72,7 +71,6 @@ export class CategoriasService {
       ...(dto.imagenUrl !== undefined && { imagenUrl: dto.imagenUrl }),
       ...(dto.categoriaPadreId !== undefined && { idCategoriaPadre: dto.categoriaPadreId }),
       ...(dto.activo !== undefined && { activo: dto.activo }),
-      ...(dto.zonaProbador !== undefined && { zonaProbador: dto.zonaProbador }),
     });
     await this.categoriaRepo.save(categoria);
 

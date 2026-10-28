@@ -15,18 +15,18 @@ import { Carrito } from '../entities/carrito.entity.js';
 import { Reserva } from '../entities/reserva.entity.js';
 import { DetalleCarrito } from '../entities/detalle-carrito.entity.js';
 import { NotificacionPush } from '../entities/notificacion-push.entity.js';
-import { PaypalService } from './paypal.service.js';
+import { StripeService } from './stripe.service.js';
 import { NotificacionesService } from './notificaciones.service.js';
 import type {
   CodigoMetodoOnline,
   CompraOnlineResponseDto,
-  IniciarPaypalResponseDto,
   IniciarQrResponseDto,
+  IniciarStripeResponseDto,
   MetodoPagoOnlineDto,
   PagoTarjetaDto,
 } from '../dto/checkout.dto.js';
 
-const METODOS_SOPORTADOS: CodigoMetodoOnline[] = ['QR', 'PAYPAL', 'TARJETA'];
+const METODOS_SOPORTADOS: CodigoMetodoOnline[] = ['QR', 'STRIPE', 'TARJETA'];
 const VIGENCIA_QR_MS = 15 * 60 * 1000;
 /** Tarjeta de prueba: el pago simulado siempre la rechaza, para poder probar el flujo de error. */
 const TARJETA_RECHAZADA = '4000000000000002';
@@ -107,7 +107,8 @@ interface PayloadQr {
 /**
  * Pago del carrito (CU14). El stock se descuenta y la venta se registra en una sola transaccion, y el cobro
  * en la pasarela va al final de ella: si no hay stock o falla algo antes, nunca se cobra; si el cobro falla,
- * todo se deshace. PayPal es real (sandbox/live); QR y tarjeta no tienen pasarela y se aprueban en simulacion.
+ * todo se deshace. Stripe es real (llave de pruebas o de produccion); QR y tarjeta no tienen pasarela y se aprueban
+ * en simulacion.
  */
 @Injectable()
 export class CheckoutService {
@@ -116,7 +117,7 @@ export class CheckoutService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(PasarelaPago) private readonly pasarelaRepo: Repository<PasarelaPago>,
-    private readonly paypal: PaypalService,
+    private readonly stripe: StripeService,
     private readonly disponibilidad: DisponibilidadService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly notificaciones: NotificacionesService,
@@ -133,61 +134,73 @@ export class CheckoutService {
         codigo: pasarela.codigo as CodigoMetodoOnline,
         metodo: pasarela.metodo,
         descripcion: pasarela.descripcion,
-        simulado: pasarela.codigo !== 'PAYPAL',
+        simulado: pasarela.codigo !== 'STRIPE',
       }));
   }
 
-  async iniciarPaypal(usuario: ActiveUser, idReserva?: number): Promise<IniciarPaypalResponseDto> {
+  async iniciarStripe(usuario: ActiveUser, idReserva?: number): Promise<IniciarStripeResponseDto> {
     const idCliente = this.idCliente(usuario);
-    await this.pasarelaOnline('PAYPAL');
+    await this.pasarelaOnline('STRIPE');
     const { monto, descripcion } = await this.montoAPagar(idCliente, idReserva);
 
     const frontend = this.config.get('frontendUrl', { infer: true });
     const sufijo = idReserva === undefined ? '' : `?reserva=${idReserva}`;
-    const orden = await this.paypal.crearOrden({
+    const sesion = await this.stripe.crearSesion({
       referencia: idReserva === undefined ? `C${idCliente}-${Date.now()}` : `${this.prefijoReserva(idCliente, idReserva)}${Date.now()}`,
       montoBob: monto,
       descripcion,
       // Al volver, la pagina de retorno sabe si cobra un carrito o el anticipo de una reserva.
-      urlRetorno: `${frontend}/checkout/paypal/retorno${sufijo}`,
-      urlCancelado: `${frontend}/checkout/paypal/cancelado${sufijo}`,
+      urlRetorno: `${frontend}/checkout/stripe/retorno${sufijo}`,
+      urlCancelado: `${frontend}/checkout/stripe/cancelado${sufijo}`,
     });
 
-    return { orderId: orden.id, urlAprobacion: orden.urlAprobacion, montoBob: monto, montoPaypal: orden.monto, monedaPaypal: this.paypal.moneda };
+    return { sessionId: sesion.id, urlPago: sesion.url, montoBob: monto, montoCobrado: sesion.monto, monedaCobro: this.stripe.moneda.toUpperCase() };
   }
 
-  /** Vuelta desde PayPal: confirma que la orden es de este cliente y del monto correcto, y la cobra. */
-  async capturarPaypal(usuario: ActiveUser, orderId: string, idReserva?: number): Promise<CompraOnlineResponseDto> {
+  /**
+   * Vuelta desde Stripe: confirma que la sesion es de este cliente y del monto correcto, y cobra lo que el cliente
+   * autorizo. Si la compra no se puede registrar, se libera la retencion de la tarjeta.
+   */
+  async confirmarStripe(usuario: ActiveUser, sessionId: string, idReserva?: number): Promise<CompraOnlineResponseDto> {
     const idCliente = this.idCliente(usuario);
-    const pasarela = await this.pasarelaOnline('PAYPAL');
+    const pasarela = await this.pasarelaOnline('STRIPE');
 
-    const referencia = `PAYPAL:${orderId}`;
+    const referencia = `STRIPE:${sessionId}`;
     // Recargar la pagina de retorno no debe cobrar dos veces: se devuelve la compra ya registrada.
     const previa = await this.compraPorReferencia(referencia, idCliente);
     if (previa) return previa;
 
-    const orden = await this.paypal.obtenerOrden(orderId);
+    const sesion = await this.stripe.obtenerSesion(sessionId);
     const prefijo = idReserva === undefined ? `C${idCliente}-` : this.prefijoReserva(idCliente, idReserva);
-    if (!orden.referenceId.startsWith(prefijo)) throw new NotFoundException('Orden de PayPal no encontrada');
-    if (orden.status !== 'APPROVED') {
-      throw new ConflictException(orden.status === 'COMPLETED' ? 'Este pago ya fue procesado' : 'PayPal todavia no confirma que aprobaste el pago');
+    if (!sesion.referencia.startsWith(prefijo)) throw new NotFoundException('Pago de Stripe no encontrado');
+    // Mientras la sesion sigue abierta Stripe aun no crea el PaymentIntent: tambien es "todavia no autorizo".
+    const paymentIntentId = sesion.paymentIntentId;
+    if (sesion.status !== 'complete' || !paymentIntentId || sesion.paymentIntentStatus !== 'requires_capture') {
+      throw new ConflictException(
+        sesion.paymentIntentStatus === 'succeeded' ? 'Este pago ya fue procesado' : 'Stripe todavia no confirma que autorizaste el pago',
+      );
     }
 
-    return this.finalizar(
-      idCliente,
-      pasarela,
-      referencia,
-      {
-        validar: (montoBob) => {
-          const esperado = this.paypal.aMonedaPaypal(montoBob);
-          if (orden.moneda !== this.paypal.moneda || Math.abs(Number(orden.monto) - esperado) > 0.005) {
-            throw new ConflictException('El monto a pagar cambio desde que iniciaste el pago. No se te cobro nada; vuelve a intentarlo');
-          }
+    try {
+      return await this.finalizar(
+        idCliente,
+        pasarela,
+        referencia,
+        {
+          validar: (montoBob) => {
+            if (sesion.moneda !== this.stripe.moneda || sesion.montoMinor !== this.stripe.aMonedaStripe(montoBob)) {
+              throw new ConflictException('El monto a pagar cambio desde que iniciaste el pago. No se te cobro nada; vuelve a intentarlo');
+            }
+          },
+          cobrar: () => this.stripe.capturar(paymentIntentId),
         },
-        cobrar: () => this.paypal.capturar(orderId),
-      },
-      idReserva,
-    );
+        idReserva,
+      );
+    } catch (error) {
+      // La compra no quedo registrada: se libera la retencion ya, en vez de esperar a que la autorizacion venza.
+      await this.stripe.cancelar(paymentIntentId);
+      throw error;
+    }
   }
 
   /** Genera el QR de cobro (token firmado, sin estado en base de datos). */
@@ -416,7 +429,7 @@ export class CheckoutService {
       }),
     );
 
-    // Lo ultimo antes de confirmar: si PayPal no cobra, la transaccion se deshace y el stock vuelve.
+    // Lo ultimo antes de confirmar: si Stripe no cobra, la transaccion se deshace y el stock vuelve.
     if (opciones.cobrar) await opciones.cobrar();
 
     return {
@@ -554,7 +567,7 @@ export class CheckoutService {
 
   private esOfrecible(pasarela: PasarelaPago): boolean {
     if (!METODOS_SOPORTADOS.includes(pasarela.codigo as CodigoMetodoOnline)) return false;
-    if (pasarela.codigo === 'PAYPAL') return this.paypal.configurado;
+    if (pasarela.codigo === 'STRIPE') return this.stripe.configurado;
     return this.config.get('payments.simulated', { infer: true });
   }
 

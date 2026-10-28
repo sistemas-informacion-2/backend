@@ -32,7 +32,6 @@ const PERMISOS_BASE = [
   'electronico:ventas:leer',
   'comercial:devoluciones:gestionar',
   'electronico:notificaciones:gestionar',
-  'electronico:probador:gestionar',
   'analitica:dashboard:leer',
   'analitica:reportes:gestionar',
 ];
@@ -60,7 +59,7 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
   {
     nombre: 'ENCARGADO_INVENTARIO',
     descripcion: 'Controla existencias, registra el ingreso de productos y actualiza disponibilidad por sucursal.',
-    permisos: ['inventario:productos:gestionar', 'inventario:categorias:gestionar', 'inventario:almacen:gestionar', 'electronico:probador:gestionar'],
+    permisos: ['inventario:productos:gestionar', 'inventario:categorias:gestionar', 'inventario:almacen:gestionar'],
   },
   {
     nombre: 'ENCARGADO_COMPRAS',

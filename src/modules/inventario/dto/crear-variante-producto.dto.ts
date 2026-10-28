@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class CrearVarianteProductoDto {
   @IsString()
@@ -20,9 +20,4 @@ export class CrearVarianteProductoDto {
   @IsNotEmpty()
   @MaxLength(50)
   corte: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  modelo3dUrl?: string;
 }

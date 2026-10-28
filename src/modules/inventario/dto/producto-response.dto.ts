@@ -11,7 +11,6 @@ export class VarianteProductoResponseDto {
   talla: string;
   color: string;
   corte: string;
-  modelo3dUrl: string | null;
   activo: boolean;
 }
 

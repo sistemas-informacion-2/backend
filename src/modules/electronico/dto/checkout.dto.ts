@@ -1,6 +1,6 @@
 import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
 
-export type CodigoMetodoOnline = 'QR' | 'PAYPAL' | 'TARJETA';
+export type CodigoMetodoOnline = 'QR' | 'STRIPE' | 'TARJETA';
 
 export class MetodoPagoOnlineDto {
   id: number;
@@ -11,13 +11,13 @@ export class MetodoPagoOnlineDto {
   simulado: boolean;
 }
 
-export class CapturarPaypalDto {
-  /** Id de la orden de PayPal: llega en el parametro `token` al volver de PayPal. */
+export class ConfirmarStripeDto {
+  /** Id de la sesion de Stripe Checkout: llega en el parametro `session_id` al volver de Stripe. */
   @IsString()
   @IsNotEmpty()
-  @MaxLength(64)
-  @Matches(/^[A-Za-z0-9_-]+$/)
-  orderId: string;
+  @MaxLength(255)
+  @Matches(/^cs_(test|live)_[A-Za-z0-9]+$/)
+  sessionId: string;
 }
 
 export class ConfirmarQrDto {
@@ -47,13 +47,14 @@ export class PagoTarjetaDto {
   cvv: string;
 }
 
-export class IniciarPaypalResponseDto {
-  orderId: string;
-  /** Pagina de PayPal a la que hay que enviar al cliente para que apruebe el cobro. */
-  urlAprobacion: string;
+export class IniciarStripeResponseDto {
+  sessionId: string;
+  /** Pagina de Stripe Checkout a la que hay que enviar al cliente para que autorice el cobro. */
+  urlPago: string;
   montoBob: number;
-  montoPaypal: number;
-  monedaPaypal: string;
+  /** Lo que Stripe cobrara, en `monedaCobro` (no opera con el total en Bs). */
+  montoCobrado: number;
+  monedaCobro: string;
 }
 
 export class IniciarQrResponseDto {

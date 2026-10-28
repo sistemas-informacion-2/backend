@@ -43,7 +43,7 @@ async function bootstrap() {
   await app.get(UbicacionSeederService).run();
   // Idempotente: siembra los metodos de pago base (CU16).
   await app.get(PasarelaSeederService).run();
-  // Idempotente: siembra la taxonomia de categorias de ropa con su zona para el probador virtual (CU19).
+  // Idempotente: siembra la taxonomia de categorias de ropa.
   await app.get(CategoriaSeederService).run();
   // Idempotente: siembra las 4 estaciones (hemisferio sur / Bolivia) para el filtro de temporadas.
   await app.get(TemporadaSeederService).run();

@@ -33,15 +33,29 @@ function reservaBase(overrides: Record<string, unknown> = {}) {
   return { id: 9, codigoReserva: 'RS-000009', idCliente: 7, estado: 'PENDIENTE', montoAnticipo: 40, montoTotal: 200, fechaLimite: new Date(Date.now() + 3600_000), ...overrides };
 }
 
+/** Sesion de Stripe ya autorizada por el cliente 7 para su carrito de Bs 200 (= 2874 centavos de USD). */
+function sesionStripe(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'cs_test_1',
+    status: 'complete',
+    referencia: 'C7-123',
+    moneda: 'usd',
+    montoMinor: 2874,
+    paymentIntentId: 'pi_1',
+    paymentIntentStatus: 'requires_capture',
+    ...overrides,
+  };
+}
+
 interface Escenario {
   reserva?: ReturnType<typeof reservaBase> | null;
   carrito?: ReturnType<typeof carritoBase> | null;
   filasInventario?: Array<{ id: number; stock_disponible: number }>;
   simulados?: boolean;
-  paypalConfigurado?: boolean;
+  stripeConfigurado?: boolean;
   pasarelas?: Array<{ id: number; codigo: string; metodo: string; descripcion: string | null; disponibleLinea: boolean }>;
   pagoPrevio?: Record<string, unknown> | null;
-  ordenPaypal?: { id: string; status: string; referenceId: string; moneda: string; monto: string };
+  sesionStripe?: ReturnType<typeof sesionStripe>;
 }
 
 function crearService(escenario: Escenario = {}) {
@@ -51,7 +65,7 @@ function crearService(escenario: Escenario = {}) {
   const pasarelas = escenario.pasarelas ?? [
     { id: 1, codigo: 'QR', metodo: 'QR', descripcion: null, disponibleLinea: true },
     { id: 2, codigo: 'TARJETA', metodo: 'Tarjeta', descripcion: null, disponibleLinea: true },
-    { id: 3, codigo: 'PAYPAL', metodo: 'PayPal', descripcion: 'PayPal', disponibleLinea: true },
+    { id: 3, codigo: 'STRIPE', metodo: 'Stripe', descripcion: 'Stripe', disponibleLinea: true },
     { id: 4, codigo: 'EFECTIVO', metodo: 'Efectivo', descripcion: null, disponibleLinea: true },
   ];
 
@@ -128,23 +142,24 @@ function crearService(escenario: Escenario = {}) {
     find: vi.fn().mockResolvedValue(pasarelas),
     findOne: vi.fn(async ({ where }: { where: { codigo: string } }) => pasarelas.find((p) => p.codigo === where.codigo && p.disponibleLinea) ?? null),
   };
-  const paypal = {
-    configurado: escenario.paypalConfigurado ?? true,
-    moneda: 'USD',
-    aMonedaPaypal: (bob: number) => Math.round((bob / 6.96 + Number.EPSILON) * 100) / 100,
-    crearOrden: vi.fn().mockResolvedValue({ id: 'ORD-1', urlAprobacion: 'https://paypal.test/aprobar', monto: 28.74 }),
-    obtenerOrden: vi.fn().mockResolvedValue(escenario.ordenPaypal ?? { id: 'ORD-1', status: 'APPROVED', referenceId: 'C7-123', moneda: 'USD', monto: '28.74' }),
+  const stripe = {
+    configurado: escenario.stripeConfigurado ?? true,
+    moneda: 'usd',
+    aMonedaStripe: (bob: number) => Math.round((bob / 6.96) * 100),
+    crearSesion: vi.fn().mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.test/pagar', monto: 28.74 }),
+    obtenerSesion: vi.fn().mockResolvedValue(escenario.sesionStripe ?? sesionStripe()),
     capturar: vi.fn(async () => {
       orden.push('capturar');
-      return { capturaId: 'CAP-1' };
+      return { capturaId: 'pi_1' };
     }),
+    cancelar: vi.fn(async () => undefined),
   };
   const disponibilidad = { stockPorVariante: vi.fn().mockResolvedValue(new Map([[3, 10]])) };
   const cfg: Record<string, unknown> = { frontendUrl: 'http://localhost:5173', 'payments.simulated': escenario.simulados ?? true, 'jwt.secret': 'secreto-de-prueba' };
   const config = { get: (clave: string) => cfg[clave] };
   const notificaciones = { notificarPorPush: vi.fn() };
-  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, paypal as never, disponibilidad as never, config as never, notificaciones as never);
-  return { service, paypal, guardados, orden, consultas, manager, repos, disponibilidad, notificaciones };
+  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never);
+  return { service, stripe, guardados, orden, consultas, manager, repos, disponibilidad, notificaciones };
 }
 
 describe('luhnValido', () => {
@@ -157,24 +172,35 @@ describe('luhnValido', () => {
 
 describe('CheckoutService', () => {
   describe('metodos', () => {
-    it('ofrece QR, tarjeta y PayPal, y omite lo que este servidor no procesa', async () => {
+    it('ofrece QR, tarjeta y Stripe, y omite lo que este servidor no procesa', async () => {
       const { service } = crearService();
 
       const metodos = await service.metodos(cliente);
 
-      expect(metodos.map((m) => m.codigo)).toEqual(['QR', 'TARJETA', 'PAYPAL']);
-      expect(metodos.find((m) => m.codigo === 'PAYPAL')?.simulado).toBe(false);
+      expect(metodos.map((m) => m.codigo)).toEqual(['QR', 'TARJETA', 'STRIPE']);
+      expect(metodos.find((m) => m.codigo === 'STRIPE')?.simulado).toBe(false);
       expect(metodos.find((m) => m.codigo === 'QR')?.simulado).toBe(true);
+    });
+
+    it('ya no ofrece PayPal aunque siga habilitado en la base', async () => {
+      const { service } = crearService({
+        pasarelas: [
+          { id: 1, codigo: 'QR', metodo: 'QR', descripcion: null, disponibleLinea: true },
+          { id: 5, codigo: 'PAYPAL', metodo: 'PayPal', descripcion: 'PayPal', disponibleLinea: true },
+        ],
+      });
+
+      expect((await service.metodos(cliente)).map((m) => m.codigo)).toEqual(['QR']);
     });
 
     it('sin pagos simulados (produccion) oculta QR y tarjeta', async () => {
       const { service } = crearService({ simulados: false });
 
-      expect((await service.metodos(cliente)).map((m) => m.codigo)).toEqual(['PAYPAL']);
+      expect((await service.metodos(cliente)).map((m) => m.codigo)).toEqual(['STRIPE']);
     });
 
-    it('sin credenciales de PayPal lo oculta', async () => {
-      const { service } = crearService({ paypalConfigurado: false });
+    it('sin llave de Stripe lo oculta', async () => {
+      const { service } = crearService({ stripeConfigurado: false });
 
       expect((await service.metodos(cliente)).map((m) => m.codigo)).toEqual(['QR', 'TARJETA']);
     });
@@ -328,71 +354,98 @@ describe('CheckoutService', () => {
     });
   });
 
-  describe('PayPal', () => {
-    it('crea la orden por el total del carrito con las URL de retorno del frontend', async () => {
-      const { service, paypal } = crearService();
+  describe('Stripe', () => {
+    it('crea la sesion por el total del carrito con las URL de retorno del frontend', async () => {
+      const { service, stripe } = crearService();
 
-      const orden = await service.iniciarPaypal(cliente);
+      const sesion = await service.iniciarStripe(cliente);
 
-      expect(orden).toMatchObject({ orderId: 'ORD-1', urlAprobacion: 'https://paypal.test/aprobar', montoBob: 200, montoPaypal: 28.74, monedaPaypal: 'USD' });
-      expect(paypal.crearOrden).toHaveBeenCalledWith(
-        expect.objectContaining({ montoBob: 200, urlRetorno: 'http://localhost:5173/checkout/paypal/retorno', urlCancelado: 'http://localhost:5173/checkout/paypal/cancelado' }),
+      expect(sesion).toMatchObject({ sessionId: 'cs_test_1', urlPago: 'https://checkout.stripe.test/pagar', montoBob: 200, montoCobrado: 28.74, monedaCobro: 'USD' });
+      expect(stripe.crearSesion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          montoBob: 200,
+          referencia: expect.stringMatching(/^C7-\d+$/),
+          urlRetorno: 'http://localhost:5173/checkout/stripe/retorno',
+          urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado',
+        }),
       );
     });
 
-    it('cobra en PayPal al final de la transaccion, despues de descontar stock y registrar el pago', async () => {
-      const { service, orden } = crearService();
+    it('cobra en Stripe al final de la transaccion, despues de descontar stock y registrar el pago', async () => {
+      const { service, stripe, orden, guardados } = crearService();
 
-      const compra = await service.capturarPaypal(cliente, 'ORD-1');
+      const compra = await service.confirmarStripe(cliente, 'cs_test_1');
 
-      expect(compra).toMatchObject({ codigoNota: 'NV-000040', metodo: 'PayPal' });
+      expect(compra).toMatchObject({ codigoNota: 'NV-000040', metodo: 'Stripe' });
+      expect(guardados.pagos[0]).toMatchObject({ referenciaExterna: 'STRIPE:cs_test_1', monto: 200 });
+      expect(stripe.capturar).toHaveBeenCalledWith('pi_1');
       expect(orden.indexOf('capturar')).toBe(orden.length - 1);
       expect(orden.indexOf('descuento')).toBeLessThan(orden.indexOf('pago'));
       expect(orden.indexOf('pago')).toBeLessThan(orden.indexOf('capturar'));
+      expect(stripe.cancelar).not.toHaveBeenCalled();
     });
 
-    it('si PayPal falla al cobrar, la operacion falla y no queda venta confirmada', async () => {
-      const { service, paypal } = crearService();
-      paypal.capturar.mockRejectedValue(new Error('PayPal rechazo'));
+    it('si Stripe falla al cobrar, la operacion falla y se libera la autorizacion', async () => {
+      const { service, stripe } = crearService();
+      stripe.capturar.mockRejectedValue(new Error('Stripe rechazo'));
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1')).rejects.toThrow('PayPal rechazo');
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow('Stripe rechazo');
+      expect(stripe.cancelar).toHaveBeenCalledWith('pi_1');
     });
 
-    it('no cobra una orden de otro cliente', async () => {
-      const { service, paypal } = crearService({ ordenPaypal: { id: 'ORD-1', status: 'APPROVED', referenceId: 'C99-123', moneda: 'USD', monto: '28.74' } });
+    it('no cobra una sesion de otro cliente', async () => {
+      const { service, stripe } = crearService({ sesionStripe: sesionStripe({ referencia: 'C99-123' }) });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1')).rejects.toThrow(NotFoundException);
-      expect(paypal.capturar).not.toHaveBeenCalled();
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow(NotFoundException);
+      expect(stripe.capturar).not.toHaveBeenCalled();
+      expect(stripe.cancelar).not.toHaveBeenCalled();
     });
 
-    it('no cobra una orden que el cliente aun no aprobo', async () => {
-      const { service, paypal } = crearService({ ordenPaypal: { id: 'ORD-1', status: 'PAYER_ACTION_REQUIRED', referenceId: 'C7-123', moneda: 'USD', monto: '28.74' } });
+    it('no cobra una sesion que el cliente aun no autorizo', async () => {
+      // Asi la devuelve Stripe mientras esta abierta: todavia sin PaymentIntent.
+      const { service, stripe } = crearService({ sesionStripe: sesionStripe({ status: 'open', paymentIntentId: null, paymentIntentStatus: null }) });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1')).rejects.toThrow('todavia no confirma');
-      expect(paypal.capturar).not.toHaveBeenCalled();
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow('todavia no confirma');
+      expect(stripe.capturar).not.toHaveBeenCalled();
     });
 
-    it('no cobra si el carrito cambio despues de crear la orden', async () => {
-      const { service, paypal } = crearService({ ordenPaypal: { id: 'ORD-1', status: 'APPROVED', referenceId: 'C7-123', moneda: 'USD', monto: '10.00' } });
+    it('avisa si el pago ya fue cobrado', async () => {
+      const { service, stripe } = crearService({ sesionStripe: sesionStripe({ paymentIntentStatus: 'succeeded' }) });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1')).rejects.toThrow('cambio');
-      expect(paypal.capturar).not.toHaveBeenCalled();
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow('ya fue procesado');
+      expect(stripe.capturar).not.toHaveBeenCalled();
+    });
+
+    it('si el carrito cambio despues de crear la sesion, no cobra y libera la autorizacion', async () => {
+      const { service, stripe } = crearService({ sesionStripe: sesionStripe({ montoMinor: 1000 }) });
+
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow('cambio');
+      expect(stripe.capturar).not.toHaveBeenCalled();
+      expect(stripe.cancelar).toHaveBeenCalledWith('pi_1');
+    });
+
+    it('si ya no hay stock al volver, no cobra y libera la autorizacion', async () => {
+      const { service, stripe } = crearService({ filasInventario: [] });
+
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow('stock');
+      expect(stripe.capturar).not.toHaveBeenCalled();
+      expect(stripe.cancelar).toHaveBeenCalledWith('pi_1');
     });
 
     it('recargar la pagina de retorno devuelve la compra ya registrada sin cobrar de nuevo', async () => {
-      const { service, paypal } = crearService({
-        pagoPrevio: { notaVenta: { id: 40, idCliente: 7, codigoNota: 'NV-000040', montoTotal: 200 }, pasarela: { metodo: 'PayPal' } },
+      const { service, stripe } = crearService({
+        pagoPrevio: { notaVenta: { id: 40, idCliente: 7, codigoNota: 'NV-000040', montoTotal: 200 }, pasarela: { metodo: 'Stripe' } },
       });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1')).resolves.toMatchObject({ idNotaVenta: 40 });
-      expect(paypal.obtenerOrden).not.toHaveBeenCalled();
-      expect(paypal.capturar).not.toHaveBeenCalled();
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).resolves.toMatchObject({ idNotaVenta: 40 });
+      expect(stripe.obtenerSesion).not.toHaveBeenCalled();
+      expect(stripe.capturar).not.toHaveBeenCalled();
     });
 
-    it('con PayPal deshabilitado no crea ordenes', async () => {
-      const { service } = crearService({ paypalConfigurado: false });
+    it('sin llave de Stripe no crea sesiones', async () => {
+      const { service } = crearService({ stripeConfigurado: false });
 
-      await expect(service.iniciarPaypal(cliente)).rejects.toThrow(ConflictException);
+      await expect(service.iniciarStripe(cliente)).rejects.toThrow(ConflictException);
     });
   });
 
@@ -411,54 +464,55 @@ describe('CheckoutService', () => {
       expect(repos.get(DetalleCarrito)?.delete).not.toHaveBeenCalled();
     });
 
-    it('con PayPal crea la orden por el anticipo y vuelve a la pagina de retorno de esa reserva', async () => {
-      const { service, paypal } = crearService({ reserva: reservaBase() });
+    it('con Stripe crea la sesion por el anticipo y vuelve a la pagina de retorno de esa reserva', async () => {
+      const { service, stripe } = crearService({ reserva: reservaBase() });
 
-      const orden = await service.iniciarPaypal(cliente, 9);
+      const sesion = await service.iniciarStripe(cliente, 9);
 
-      expect(orden.montoBob).toBe(40);
-      expect(paypal.crearOrden).toHaveBeenCalledWith(
+      expect(sesion.montoBob).toBe(40);
+      expect(stripe.crearSesion).toHaveBeenCalledWith(
         expect.objectContaining({
           montoBob: 40,
           referencia: expect.stringMatching(/^R7-9-\d+$/),
-          urlRetorno: 'http://localhost:5173/checkout/paypal/retorno?reserva=9',
-          urlCancelado: 'http://localhost:5173/checkout/paypal/cancelado?reserva=9',
+          urlRetorno: 'http://localhost:5173/checkout/stripe/retorno?reserva=9',
+          urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado?reserva=9',
         }),
       );
     });
 
-    it('cobra en PayPal al final, despues de registrar el pago y confirmar la reserva', async () => {
+    it('cobra en Stripe al final, despues de registrar el pago y confirmar la reserva', async () => {
       const { service, orden } = crearService({
         reserva: reservaBase(),
-        ordenPaypal: { id: 'ORD-1', status: 'APPROVED', referenceId: 'R7-9-123', moneda: 'USD', monto: '5.75' },
+        sesionStripe: sesionStripe({ referencia: 'R7-9-123', montoMinor: 575 }),
       });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1', 9)).resolves.toMatchObject({ tipo: 'ANTICIPO_RESERVA', codigoReserva: 'RS-000009' });
+      await expect(service.confirmarStripe(cliente, 'cs_test_1', 9)).resolves.toMatchObject({ tipo: 'ANTICIPO_RESERVA', codigoReserva: 'RS-000009' });
 
       expect(orden.indexOf('pago')).toBeLessThan(orden.indexOf('reserva'));
       expect(orden.indexOf('capturar')).toBe(orden.length - 1);
     });
 
-    it('no cobra una orden creada para el carrito ni para otra reserva', async () => {
-      const carritoOrden = crearService({ reserva: reservaBase() });
-      await expect(carritoOrden.service.capturarPaypal(cliente, 'ORD-1', 9)).rejects.toThrow(NotFoundException);
-      expect(carritoOrden.paypal.capturar).not.toHaveBeenCalled();
+    it('no cobra una sesion creada para el carrito ni para otra reserva', async () => {
+      const carritoSesion = crearService({ reserva: reservaBase() });
+      await expect(carritoSesion.service.confirmarStripe(cliente, 'cs_test_1', 9)).rejects.toThrow(NotFoundException);
+      expect(carritoSesion.stripe.capturar).not.toHaveBeenCalled();
 
       const otra = crearService({
         reserva: reservaBase(),
-        ordenPaypal: { id: 'ORD-1', status: 'APPROVED', referenceId: 'R7-10-123', moneda: 'USD', monto: '5.75' },
+        sesionStripe: sesionStripe({ referencia: 'R7-10-123', montoMinor: 575 }),
       });
-      await expect(otra.service.capturarPaypal(cliente, 'ORD-1', 9)).rejects.toThrow(NotFoundException);
+      await expect(otra.service.confirmarStripe(cliente, 'cs_test_1', 9)).rejects.toThrow(NotFoundException);
     });
 
-    it('no cobra si el monto de la orden no es el del anticipo', async () => {
-      const { service, paypal } = crearService({
+    it('no cobra si el monto de la sesion no es el del anticipo', async () => {
+      const { service, stripe } = crearService({
         reserva: reservaBase(),
-        ordenPaypal: { id: 'ORD-1', status: 'APPROVED', referenceId: 'R7-9-123', moneda: 'USD', monto: '99.00' },
+        sesionStripe: sesionStripe({ referencia: 'R7-9-123', montoMinor: 9900 }),
       });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1', 9)).rejects.toThrow('cambio');
-      expect(paypal.capturar).not.toHaveBeenCalled();
+      await expect(service.confirmarStripe(cliente, 'cs_test_1', 9)).rejects.toThrow('cambio');
+      expect(stripe.capturar).not.toHaveBeenCalled();
+      expect(stripe.cancelar).toHaveBeenCalledWith('pi_1');
     });
 
     it('una reserva ajena o inexistente responde no encontrada', async () => {
@@ -485,13 +539,13 @@ describe('CheckoutService', () => {
     });
 
     it('un cobro repetido devuelve el anticipo ya registrado sin cobrar de nuevo', async () => {
-      const { service, paypal } = crearService({
+      const { service, stripe } = crearService({
         reserva: reservaBase(),
-        pagoPrevio: { monto: 40, reserva: { id: 9, idCliente: 7, codigoReserva: 'RS-000009' }, notaVenta: null, pasarela: { metodo: 'PayPal' } },
+        pagoPrevio: { monto: 40, reserva: { id: 9, idCliente: 7, codigoReserva: 'RS-000009' }, notaVenta: null, pasarela: { metodo: 'Stripe' } },
       });
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1', 9)).resolves.toMatchObject({ tipo: 'ANTICIPO_RESERVA', idReserva: 9, montoTotal: 40 });
-      expect(paypal.capturar).not.toHaveBeenCalled();
+      await expect(service.confirmarStripe(cliente, 'cs_test_1', 9)).resolves.toMatchObject({ tipo: 'ANTICIPO_RESERVA', idReserva: 9, montoTotal: 40 });
+      expect(stripe.capturar).not.toHaveBeenCalled();
     });
   });
 
@@ -507,20 +561,20 @@ describe('CheckoutService', () => {
       ]);
     });
 
-    it('con PayPal el push sale despues de cobrar, fuera de la transaccion', async () => {
-      const { service, paypal, notificaciones } = crearService();
+    it('con Stripe el push sale despues de cobrar, fuera de la transaccion', async () => {
+      const { service, stripe, notificaciones } = crearService();
 
-      await service.capturarPaypal(cliente, 'ORD-1');
+      await service.confirmarStripe(cliente, 'cs_test_1');
 
       expect(notificaciones.notificarPorPush).toHaveBeenCalledTimes(1);
-      expect(paypal.capturar.mock.invocationCallOrder[0]).toBeLessThan(notificaciones.notificarPorPush.mock.invocationCallOrder[0]);
+      expect(stripe.capturar.mock.invocationCallOrder[0]).toBeLessThan(notificaciones.notificarPorPush.mock.invocationCallOrder[0]);
     });
 
-    it('si PayPal no cobra, no hay push', async () => {
-      const { service, paypal, notificaciones } = crearService();
-      paypal.capturar.mockRejectedValue(new Error('PayPal rechazo'));
+    it('si Stripe no cobra, no hay push', async () => {
+      const { service, stripe, notificaciones } = crearService();
+      stripe.capturar.mockRejectedValue(new Error('Stripe rechazo'));
 
-      await expect(service.capturarPaypal(cliente, 'ORD-1')).rejects.toThrow('PayPal rechazo');
+      await expect(service.confirmarStripe(cliente, 'cs_test_1')).rejects.toThrow('Stripe rechazo');
 
       expect(notificaciones.notificarPorPush).not.toHaveBeenCalled();
     });

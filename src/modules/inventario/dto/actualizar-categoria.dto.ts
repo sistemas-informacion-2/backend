@@ -1,8 +1,6 @@
-import { ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
-import type { ZonaProbador } from '../entities/categoria.entity.js';
+import { ArrayUnique, IsArray, IsBoolean, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 
 const PATRON_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const ZONAS_PROBADOR: ZonaProbador[] = ['SUPERIOR', 'INFERIOR', 'COMPLETO'];
 
 export class ActualizarCategoriaDto {
   @IsOptional()
@@ -32,11 +30,6 @@ export class ActualizarCategoriaDto {
   @IsOptional()
   @IsBoolean()
   activo?: boolean;
-
-  /** Que parte del cuerpo ancla el probador virtual (CU19) para las prendas de esta categoría. */
-  @IsOptional()
-  @IsIn(ZONAS_PROBADOR)
-  zonaProbador?: ZonaProbador;
 
   @IsOptional()
   @IsArray()

@@ -13,7 +13,7 @@ import { Sucursal } from '../operaciones/entities/sucursal.entity.js';
 import { ReservaRepository } from './repositories/reserva.repository.js';
 import { ReservasService } from './services/reservas.service.js';
 import { PasarelaPago } from '../comercial/entities/pasarela-pago.entity.js';
-import { PaypalService } from './services/paypal.service.js';
+import { StripeService } from './services/stripe.service.js';
 import { CheckoutService } from './services/checkout.service.js';
 import { CheckoutController } from './controllers/checkout.controller.js';
 import { ReservasController } from './controllers/reservas.controller.js';
@@ -23,10 +23,6 @@ import { NotificacionesService } from './services/notificaciones.service.js';
 import { CarritoService } from './services/carrito.service.js';
 import { NotificacionesController } from './controllers/notificaciones.controller.js';
 import { CarritoController } from './controllers/carrito.controller.js';
-import { ProbadorController } from './controllers/probador.controller.js';
-import { ProbadorService } from './services/probador.service.js';
-import { ProbadorModelosController } from './controllers/probador-modelos.controller.js';
-import { ProbadorModelosService } from './services/probador-modelos.service.js';
 import { DispositivoPush } from './entities/dispositivo-push.entity.js';
 import { DispositivoPushRepository } from './repositories/dispositivo-push.repository.js';
 import { PushService } from './services/push.service.js';
@@ -36,7 +32,7 @@ import { PushService } from './services/push.service.js';
     TypeOrmModule.forFeature([NotificacionPush, DispositivoPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
     InventarioModule,
   ],
-  controllers: [NotificacionesController, CarritoController, ProbadorController, ProbadorModelosController, ReservasController, CheckoutController],
+  controllers: [NotificacionesController, CarritoController, ReservasController, CheckoutController],
   providers: [
     NotificacionesService,
     NotificacionRepository,
@@ -44,11 +40,9 @@ import { PushService } from './services/push.service.js';
     PushService,
     CarritoService,
     CarritoRepository,
-    ProbadorService,
-    ProbadorModelosService,
     ReservasService,
     ReservaRepository,
-    PaypalService,
+    StripeService,
     CheckoutService,
   ],
   exports: [TypeOrmModule],

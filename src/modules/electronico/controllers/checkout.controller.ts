@@ -4,12 +4,12 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator.j
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { CheckoutService } from '../services/checkout.service.js';
 import {
-  CapturarPaypalDto,
   ConfirmarQrDto,
+  ConfirmarStripeDto,
   PagoTarjetaDto,
   type CompraOnlineResponseDto,
-  type IniciarPaypalResponseDto,
   type IniciarQrResponseDto,
+  type IniciarStripeResponseDto,
   type MetodoPagoOnlineDto,
 } from '../dto/checkout.dto.js';
 
@@ -30,16 +30,16 @@ export class CheckoutController {
 
   // --- Carrito ---
 
-  @Post('paypal/orden')
-  @ApiOperation({ summary: 'Crea la orden de PayPal por el total del carrito y devuelve la pagina de aprobacion' })
-  iniciarPaypal(@CurrentUser() usuario: ActiveUser): Promise<IniciarPaypalResponseDto> {
-    return this.checkoutService.iniciarPaypal(usuario);
+  @Post('stripe/sesion')
+  @ApiOperation({ summary: 'Crea la sesion de Stripe Checkout por el total del carrito y devuelve la pagina de pago' })
+  iniciarStripe(@CurrentUser() usuario: ActiveUser): Promise<IniciarStripeResponseDto> {
+    return this.checkoutService.iniciarStripe(usuario);
   }
 
-  @Post('paypal/capturar')
-  @ApiOperation({ summary: 'Cobra la orden aprobada en PayPal y registra la compra' })
-  capturarPaypal(@Body() dto: CapturarPaypalDto, @CurrentUser() usuario: ActiveUser): Promise<CompraOnlineResponseDto> {
-    return this.checkoutService.capturarPaypal(usuario, dto.orderId);
+  @Post('stripe/confirmar')
+  @ApiOperation({ summary: 'Cobra el pago autorizado en Stripe y registra la compra' })
+  confirmarStripe(@Body() dto: ConfirmarStripeDto, @CurrentUser() usuario: ActiveUser): Promise<CompraOnlineResponseDto> {
+    return this.checkoutService.confirmarStripe(usuario, dto.sessionId);
   }
 
   @Post('qr')
@@ -62,20 +62,20 @@ export class CheckoutController {
 
   // --- Anticipo de una reserva ---
 
-  @Post('reservas/:idReserva/paypal/orden')
-  @ApiOperation({ summary: 'Crea la orden de PayPal por el anticipo de una reserva propia' })
-  iniciarPaypalReserva(@Param('idReserva', ParseIntPipe) idReserva: number, @CurrentUser() usuario: ActiveUser): Promise<IniciarPaypalResponseDto> {
-    return this.checkoutService.iniciarPaypal(usuario, idReserva);
+  @Post('reservas/:idReserva/stripe/sesion')
+  @ApiOperation({ summary: 'Crea la sesion de Stripe Checkout por el anticipo de una reserva propia' })
+  iniciarStripeReserva(@Param('idReserva', ParseIntPipe) idReserva: number, @CurrentUser() usuario: ActiveUser): Promise<IniciarStripeResponseDto> {
+    return this.checkoutService.iniciarStripe(usuario, idReserva);
   }
 
-  @Post('reservas/:idReserva/paypal/capturar')
-  @ApiOperation({ summary: 'Cobra el anticipo aprobado en PayPal y deja la reserva PAGADA' })
-  capturarPaypalReserva(
+  @Post('reservas/:idReserva/stripe/confirmar')
+  @ApiOperation({ summary: 'Cobra el anticipo autorizado en Stripe y deja la reserva PAGADA' })
+  confirmarStripeReserva(
     @Param('idReserva', ParseIntPipe) idReserva: number,
-    @Body() dto: CapturarPaypalDto,
+    @Body() dto: ConfirmarStripeDto,
     @CurrentUser() usuario: ActiveUser,
   ): Promise<CompraOnlineResponseDto> {
-    return this.checkoutService.capturarPaypal(usuario, dto.orderId, idReserva);
+    return this.checkoutService.confirmarStripe(usuario, dto.sessionId, idReserva);
   }
 
   @Post('reservas/:idReserva/qr')

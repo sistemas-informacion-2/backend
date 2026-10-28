@@ -56,7 +56,7 @@ export class Pago {
   @Column({ type: 'enum', enum: ['PAGO_TOTAL', 'ANTICIPO_RESERVA', 'SALDO_LIQUIDACION', 'REEMBOLSO'], enumName: 'concepto_pago_enum' })
   concepto: ConceptoPago;
 
-  /** Id de la transaccion en la pasarela (orden de PayPal, etc.); unico para que un cobro no se registre dos veces. */
+  /** Id de la transaccion en la pasarela (sesion de Stripe, etc.); unico para que un cobro no se registre dos veces. */
   @Column({ name: 'referencia_externa', type: 'varchar', length: 100, nullable: true, unique: true })
   referenciaExterna: string | null;
 
