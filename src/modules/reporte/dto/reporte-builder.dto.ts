@@ -74,6 +74,12 @@ export class ReportRunRequestDto {
   @Type(() => ReportFilterDto)
   filters?: ReportFilterDto[];
 
+  /** Cómo se combinan los filtros entre sí: todos (AND, por defecto) o alguno (OR). No afecta el rango de fechas, que siempre es AND. */
+  @IsOptional()
+  @IsString()
+  @IsIn(['AND', 'OR'])
+  matchType?: 'AND' | 'OR';
+
   @IsOptional()
   @ValidateNested()
   @Type(() => ReportSortDto)
@@ -123,6 +129,8 @@ export class ReporteGenerativoResponseDto {
   /** La config que finalmente se ejecutó. */
   request: ReportRunRequestDto;
   result: ReportResultDto;
+  /** Qué interprete respondió esta vez: IA (Gemini) o REGEX (el traductor por palabras clave, usado si Gemini no está configurado o falló). */
+  fuente: 'IA' | 'REGEX';
 }
 
 export class ExportQueryDto {
@@ -137,6 +145,22 @@ export class ReportTemplateDto {
   config: ReportRunRequestDto;
   fechaCreacion: Date;
   fechaActualizacion: Date;
+}
+
+/** Entrada del catálogo de reportes predefinidos (sin ejecutar todavía). */
+export class ReportePredefinidoDto {
+  codigo: string;
+  nombre: string;
+  descripcion: string;
+  categoria: string;
+}
+
+/** Resultado de ejecutar un reporte predefinido: igual forma que el generativo, sin el prompt ni la interpretación. */
+export class ReportePredefinidoEjecutadoDto {
+  codigo: string;
+  nombre: string;
+  request: ReportRunRequestDto;
+  result: ReportResultDto;
 }
 
 export class BaseReportTemplateDto {

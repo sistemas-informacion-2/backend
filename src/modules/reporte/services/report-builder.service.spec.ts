@@ -92,6 +92,63 @@ describe('ReportBuilderService', () => {
     expect(parametros).toEqual([100, 25, 0]);
   });
 
+  it('matchType "AND" (o ausente) combina los filtros con AND, sin paréntesis', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], [{ sucursal: 'X', monto_total: 300 }]]);
+
+    await service.ejecutar({
+      reportType: 'VENTAS',
+      selectedFields: ['sucursal', 'monto_total'],
+      filters: [
+        { campo: 'monto_total', operador: 'gte', valor: 100 },
+        { campo: 'sucursal', operador: 'eq', valor: 'La Paz' },
+      ],
+      limit: 25,
+      offset: 0,
+    });
+
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('WHERE nv.monto_total >= $1 AND sc.nombre = $2');
+  });
+
+  it('matchType "OR" combina los filtros con OR, agrupados entre paréntesis', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], [{ sucursal: 'X', monto_total: 300 }]]);
+
+    await service.ejecutar({
+      reportType: 'VENTAS',
+      selectedFields: ['sucursal', 'monto_total'],
+      filters: [
+        { campo: 'monto_total', operador: 'gte', valor: 100 },
+        { campo: 'sucursal', operador: 'eq', valor: 'La Paz' },
+      ],
+      matchType: 'OR',
+      limit: 25,
+      offset: 0,
+    });
+
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('WHERE (nv.monto_total >= $1 OR sc.nombre = $2)');
+  });
+
+  it('matchType "OR" no afecta el rango de fechas, que sigue siendo AND', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], [{ sucursal: 'X', monto_total: 300 }]]);
+
+    await service.ejecutar({
+      reportType: 'VENTAS',
+      selectedFields: ['sucursal', 'monto_total'],
+      filters: [
+        { campo: 'monto_total', operador: 'gte', valor: 100 },
+        { campo: 'sucursal', operador: 'eq', valor: 'La Paz' },
+      ],
+      matchType: 'OR',
+      dateFrom: '2026-01-01',
+      limit: 25,
+      offset: 0,
+    });
+
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('WHERE nv.fecha_emision >= $3 AND (nv.monto_total >= $1 OR sc.nombre = $2)');
+  });
+
   it('rechaza tipos de reporte no soportados', async () => {
     const { service } = crearBuilder([]);
     await expect(

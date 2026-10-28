@@ -1,4 +1,4 @@
-Esta es la estructura del frontend que necesita un cliente, antes y después de iniciar sesión, sin nada de administración. La calculé siguiendo los imports reales de cada pantalla del cliente, así que no depende de mi memoria. Incluye lo nuevo del front: la sucursal elegida por el cliente (CU08), las reservas con anticipo en línea (CU23), el probador virtual con cámara (CU19) y la campana de notificaciones propias.
+Esta es la estructura del frontend que necesita un cliente, antes y después de iniciar sesión, sin nada de administración. La calculé siguiendo los imports reales de cada pantalla del cliente, así que no depende de mi memoria. Incluye lo nuevo del front: la sucursal elegida por el cliente (pppppppCU08), las reservas con anticipo en línea (CU23), el probador virtual con cámara (CU19) y la campana de notificaciones propias.
 
 **Flujo de la vista cliente**
 

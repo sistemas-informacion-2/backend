@@ -594,7 +594,7 @@ Permite agrupar productos en colecciones o temporadas comerciales específicas (
 
 1. **Listar Temporadas (`GET /api/inventario/temporadas`):**
 * Muestra las colecciones registradas y sus rangos de fechas de vigencia.
-
+r
 
 2. **Crear Temporada (`POST /api/inventario/temporadas`):**
 * Campos: `nombre`, `codigo`, `fecha_inicio`, `fecha_fin`, `activo`.
