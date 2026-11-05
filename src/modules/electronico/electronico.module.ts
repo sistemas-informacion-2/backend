@@ -16,6 +16,7 @@ import { PasarelaPago } from '../comercial/entities/pasarela-pago.entity.js';
 import { StripeService } from './services/stripe.service.js';
 import { CheckoutService } from './services/checkout.service.js';
 import { CheckoutController } from './controllers/checkout.controller.js';
+import { CheckoutOfflineController } from './controllers/checkout-offline.controller.js';
 import { ReservasController } from './controllers/reservas.controller.js';
 import { NotificacionRepository } from './repositories/notificacion.repository.js';
 import { CarritoRepository } from './repositories/carrito.repository.js';
@@ -32,7 +33,7 @@ import { PushService } from './services/push.service.js';
     TypeOrmModule.forFeature([NotificacionPush, DispositivoPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
     InventarioModule,
   ],
-  controllers: [NotificacionesController, CarritoController, ReservasController, CheckoutController],
+  controllers: [NotificacionesController, CarritoController, ReservasController, CheckoutController, CheckoutOfflineController],
   providers: [
     NotificacionesService,
     NotificacionRepository,

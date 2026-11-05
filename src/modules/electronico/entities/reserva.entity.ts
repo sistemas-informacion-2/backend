@@ -62,6 +62,13 @@ export class Reserva {
   @Column({ type: 'text', nullable: true })
   observaciones: string | null;
 
+  /**
+   * RF-SYNC-01: id que el navegador le dio al pedido hecho sin conexion. Unico: si la cola de Background Sync
+   * reenvia el mismo pedido (p. ej. se perdio la respuesta), se devuelve esta reserva en vez de crear otra.
+   */
+  @Column({ name: 'id_local_offline', type: 'varchar', length: 40, nullable: true, unique: true })
+  idLocalOffline: string | null;
+
   @OneToMany(() => DetalleReserva, (detalle) => detalle.reserva)
   detalles: Relation<DetalleReserva>[];
 
