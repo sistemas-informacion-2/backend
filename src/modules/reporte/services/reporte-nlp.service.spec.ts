@@ -1,3 +1,4 @@
+import { fechaLocal } from '../utils/fecha.util.js';
 import { ReporteNlpService } from './reporte-nlp.service.js';
 
 function crearNlp(nombresSucursales: string[]) {
@@ -50,7 +51,7 @@ describe('ReporteNlpService', () => {
     const hoy = new Date();
     const hace14Dias = new Date(hoy);
     hace14Dias.setDate(hace14Dias.getDate() - 13);
-    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
+    const iso = fechaLocal;
 
     const { request, interpretacion } = await nlp.interpretar('Ventas de las últimas dos semanas');
 

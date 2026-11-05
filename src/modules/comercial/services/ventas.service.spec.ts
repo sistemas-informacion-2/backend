@@ -221,7 +221,7 @@ describe('VentasService', () => {
 
     expect(notaVentaRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        codigoNota: 'NV-000001',
+        codigoNota: expect.stringMatching(/^TMP-/),
         idCliente: 1,
         idCajero: 5,
         idSucursal: 1,
@@ -240,6 +240,10 @@ describe('VentasService', () => {
       expect.objectContaining({ idNotaVenta: 99, monto: 100, concepto: 'PAGO_TOTAL' }),
       expect.anything(),
     );
+    const ventaGuardada = notaVentaRepo.save.mock.calls.at(-1)?.[0] as { codigoNota: string };
+    expect(ventaGuardada.codigoNota).toBe('NV-000099');
+    const movimientoGuardado = movimientoCajaRepo.save.mock.calls.at(-1)?.[0] as { concepto: string };
+    expect(movimientoGuardado.concepto).toBe('Venta presencial NV-000099');
     const inventarioGuardado = repoDe(Inventario).save.mock.calls[0][0] as { stockDisponible: number };
     expect(inventarioGuardado.stockDisponible).toBe(8);
     expect(response.id).toBe(99);

@@ -29,7 +29,7 @@ describe('ReportBuilderService', () => {
   it('agrupa al haber medidas y resume con SUM', async () => {
     const { service, query } = crearBuilder([
       [{ total: 3 }],
-      [{ fecha_emision: new Date('2026-09-01'), sucursal: 'La Paz', monto_total: 150.5, cantidad: 2 }],
+      [{ fecha_emision: new Date(2026, 8, 1), sucursal: 'La Paz', monto_total: 150.5, cantidad: 2 }],
     ]);
 
     const resultado = await service.ejecutar({
@@ -55,7 +55,7 @@ describe('ReportBuilderService', () => {
   it('sin medidas hace un SELECT plano sin GROUP BY', async () => {
     const { service, query } = crearBuilder([
       [{ total: 2 }],
-      [{ fecha_emision: new Date('2026-09-02'), codigo_nota: 'NV-1', sucursal: 'Cochabamba' }],
+      [{ fecha_emision: new Date(2026, 8, 2), codigo_nota: 'NV-1', sucursal: 'Cochabamba' }],
     ]);
 
     const resultado = await service.ejecutar({

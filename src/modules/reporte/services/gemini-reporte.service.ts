@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import type { AppConfig } from '../../../config/configuration.js';
 import { FUENTES_REPORTE, type FuenteReporte } from '../catalog/reporte-catalog.constants.js';
 import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
+import { fechaLocal } from '../utils/fecha.util.js';
 import type { InterpretacionPrompt } from './reporte-nlp.service.js';
 
 const TIPOS_VALIDOS = ['VENTAS', 'INVENTARIO', 'COMPRAS'] as const;
@@ -284,7 +285,7 @@ export class GeminiReporteService {
 
   private construirInstrucciones(sucursales: string[]): string {
     const catalogo = FUENTES_REPORTE.map((fuente) => this.describirFuente(fuente)).join('\n\n');
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = fechaLocal();
 
     return [
       'Eres el motor de reportes generativos del backoffice de FashionStore (tienda de ropa boliviana, sucursales físicas y e-commerce).',

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { normalizarTexto } from '../catalog/reporte-catalog.constants.js';
 import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
+import { fechaLocal } from '../utils/fecha.util.js';
 
 export interface InterpretacionPrompt {
   request: ReportRunRequestDto;
@@ -121,7 +122,7 @@ export class ReporteNlpService {
 
   private detectarPeriodo(prompt: string): { desde?: string; hasta?: string; periodoTexto?: string } {
     const hoy = new Date();
-    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
+    const iso = fechaLocal;
     const diasAtras = (dias: number) => {
       const fecha = new Date(hoy);
       fecha.setDate(fecha.getDate() - dias);

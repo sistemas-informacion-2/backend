@@ -1,4 +1,5 @@
 import { FORMATOS_EXPORTACION, type FormatoExportacion, type ReportResultDto } from '../dto/reporte-builder.dto.js';
+import { fechaLocal } from './fecha.util.js';
 
 export interface ArchivoReporte {
   buffer: Buffer;
@@ -62,7 +63,7 @@ function generarHtml(nombreReporte: string, resultado: ReportResultDto): Buffer 
 </head>
 <body>
   <h1>${escaparHtml(nombreReporte)}</h1>
-  <p>${resultado.total} filas en total · Generado ${new Date().toISOString().slice(0, 10)}</p>
+  <p>${resultado.total} filas en total · Generado ${fechaLocal()}</p>
   <table>
     <thead><tr>${resultado.columnLabels.map((label) => `<th>${escaparHtml(label)}</th>`).join('')}</tr></thead>
     <tbody>${filasHtml}</tbody>

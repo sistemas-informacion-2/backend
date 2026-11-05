@@ -10,6 +10,7 @@ import {
   type OperadorFiltro,
 } from '../catalog/reporte-catalog.constants.js';
 import { FUENTES_REPORTE } from '../catalog/reporte-catalog.constants.js';
+import { fechaLocal } from '../utils/fecha.util.js';
 import {
   LIMITE_REPORTE_MAXIMO,
   type ReportResultDto,
@@ -201,7 +202,7 @@ export class ReportBuilderService {
 
   private serializar(valor: unknown): string | number | boolean {
     if (valor === null || valor === undefined) return '';
-    if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+    if (valor instanceof Date) return fechaLocal(valor);
     if (typeof valor === 'number' || typeof valor === 'boolean' || typeof valor === 'string') return valor;
     return String(valor);
   }

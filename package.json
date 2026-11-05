@@ -15,6 +15,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "seed": "tsc -p tsconfig.build.json && node dist/database/seeders/initial.seeder.js",
+    "seed:demo": "tsc -p tsconfig.build.json && node dist/database/seeders/demo-data.seeder.js",
     "lint": "oxlint src/ test/",
     "test": "vitest run",
     "test:watch": "vitest",

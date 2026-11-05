@@ -4,6 +4,7 @@ import { ReporteNlpService } from './reporte-nlp.service.js';
 import { ReportsService } from './reports.service.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
 import type { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
+import { fechaLocal } from '../utils/fecha.util.js';
 
 function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: unknown; plantillaRepo?: unknown } = {}) {
   const builder = {
@@ -73,7 +74,7 @@ describe('ReportsService', () => {
 
   it('ejecutarPredefinido de VENTAS_HOY resuelve dateFrom/dateTo al dia de hoy', async () => {
     const { service, builder } = crearService();
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = fechaLocal();
 
     const respuesta = await service.ejecutarPredefinido('VENTAS_HOY');
 

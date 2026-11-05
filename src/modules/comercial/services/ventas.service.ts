@@ -117,14 +117,15 @@ export class VentasService {
       if (montoTotal < 0) throw new BadRequestException('El total de la venta no puede ser negativo');
 
       const ahora = new Date();
-      const secuencia = (await this.notaVentaRepo.count(manager)) + 1;
-      const codigoNota = `NV-${String(secuencia).padStart(6, '0')}`;
+      // Codigo provisorio hasta conocer el id: con count()+1 chocaba con los NV-<id> que emiten el
+      // checkout y la liquidacion de reservas en cuanto habia una de esas notas de por medio.
+      const codigoProvisional = `TMP-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
       const movimiento = this.movimientoCajaRepo.create(
         {
           idCaja: caja.id,
           tipo: 'INGRESO',
-          concepto: `Venta presencial ${codigoNota}`,
+          concepto: 'Venta presencial',
           monto: montoTotal.toFixed(2),
           observaciones: null,
           fechaHora: ahora,
@@ -135,7 +136,7 @@ export class VentasService {
 
       const venta = this.notaVentaRepo.create(
         {
-          codigoNota,
+          codigoNota: codigoProvisional,
           idCliente,
           idCajero: usuario.tipoUsuario === 'E' ? usuario.sub : null,
           idSucursal,
@@ -157,6 +158,10 @@ export class VentasService {
         manager,
       );
       await this.notaVentaRepo.save(venta, manager);
+      venta.codigoNota = `NV-${String(venta.id).padStart(6, '0')}`;
+      await this.notaVentaRepo.save(venta, manager);
+      movimiento.concepto = `Venta presencial ${venta.codigoNota}`;
+      await this.movimientoCajaRepo.save(movimiento, manager);
 
       const detalleRepo = manager.getRepository(DetalleNotaVenta);
       const inventarioRepo = manager.getRepository(Inventario);

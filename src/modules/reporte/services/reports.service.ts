@@ -14,6 +14,7 @@ import type {
 import { buscarReportePredefinido, REPORTES_PREDEFINIDOS, type RangoPredefinido, type ReportePredefinido } from '../catalog/reportes-predefinidos.constants.js';
 import { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
+import { fechaLocal } from '../utils/fecha.util.js';
 import { exportarReporte, type ArchivoReporte } from '../utils/reporte-exportador.util.js';
 import { GeminiReporteService } from './gemini-reporte.service.js';
 import { ReportBuilderService } from './report-builder.service.js';
@@ -96,7 +97,7 @@ export class ReportsService {
   }
 
   private resolverRango(rango: RangoPredefinido): { desde?: string; hasta?: string } {
-    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
+    const iso = fechaLocal;
     const hoy = new Date();
     switch (rango.tipo) {
       case 'HOY':
