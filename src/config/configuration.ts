@@ -39,6 +39,14 @@ export interface AppConfig {
     /** Access token de Expo; solo hace falta si se activa "enhanced security" para push en EAS. */
     accessToken: string;
   };
+  tenant: {
+    /**
+     * Empresa que se usa cuando un request no trae X-Empresa ni token con empresa.
+     * Mantiene funcionando a los clientes que todavia no mandan el header
+     * (frontend y app movil anteriores al SaaS). Vacio = el header es obligatorio.
+     */
+    slugPorDefecto: string;
+  };
   gemini: {
     /** API key de Google AI Studio (generativelanguage.googleapis.com). Vacio = reportes generativos caen al interprete por regex (CU18). */
     apiKey: string;
@@ -80,6 +88,9 @@ export default (): AppConfig => ({
   push: {
     enabled: process.env.PUSH_ENABLED !== 'false',
     accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
+  },
+  tenant: {
+    slugPorDefecto: (process.env.TENANT_SLUG_POR_DEFECTO ?? 'fashionstore').trim().toLowerCase(),
   },
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
