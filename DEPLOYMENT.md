@@ -87,38 +87,13 @@ PGSSLMODE=no-verify
 
 Así la conexión va cifrada, pero no se verifica la cadena de certificados de Supabase, porque Supabase usa su propia CA raíz. Para una verificación completa, consulta la [Sección 8](#8-mejoras-recomendadas).
 
-### 3.3 Crear el esquema (inicialización única)
+### 3.3 Crear el esquema (automático)
 
-Cuando `NODE_ENV=production`, TypeORM **no** sincroniza el esquema (`synchronize: false` en `src/database/database.config.ts`), y el proyecto no tiene migraciones. Además, la API ejecuta sus seeders al arrancar (`main.ts`), así que **se cae con una base de datos vacía**. Crea el esquema antes del primer despliegue.
+El esquema lo crean las **migraciones de TypeORM** (`src/database/migrations/`), que la API aplica sola al arrancar (`migrationsRun: true`), antes de los seeders. Con una base vacía, el primer arranque crea todas las tablas y los seeders cargan los datos base: no hay que ejecutar nada a mano. El flujo de trabajo está en [MIGRACIONES.md](MIGRACIONES.md).
 
-**Opción A (recomendada): que TypeORM lo cree a partir de las entidades**
+> Usa la **misma `PAGOS_ENCRYPTION_KEY`** en todos los entornos que compartan base. Las credenciales de los métodos de pago se cifran con AES-256-GCM, y lo que se cifró con una clave no se puede descifrar con otra.
 
-Las entidades son la fuente de verdad. Ejecuta la API una vez desde tu máquina contra Supabase, en modo desarrollo:
-
-```bash
-# Desde la carpeta backend, en Git Bash
-npm ci
-NODE_ENV=development \
-DB_HOST=aws-0-sa-east-1.pooler.supabase.com \
-DB_PORT=5432 \
-DB_USERNAME=postgres.abcdefghijklmnop \
-DB_PASSWORD='<tu-contraseña>' \
-DB_NAME=postgres \
-PGSSLMODE=no-verify \
-JWT_SECRET=solo-para-inicializar \
-PAGOS_ENCRYPTION_KEY=<la-misma-clave-que-usarás-en-producción> \
-SEED_ADMIN_EMAIL=admin@fashionstore.com \
-SEED_ADMIN_PASSWORD='<contraseña-segura-del-admin>' \
-npm run start
-```
-
-Cuando veas `Nest application successfully started`, detén el proceso con `Ctrl+C`. Para entonces TypeORM ya creó todas las tablas, y los seeders insertaron los permisos, el rol `ADMINISTRADOR`, el usuario administrador, los departamentos, los métodos de pago, las categorías y las temporadas.
-
-> Usa la **misma `PAGOS_ENCRYPTION_KEY`** aquí y en Azure. Las credenciales de los métodos de pago se cifran con AES-256-GCM, y lo que se cifró con una clave no se puede descifrar con otra.
-
-**Opción B: ejecutar el script SQL**
-
-Abre el **SQL Editor** de Supabase, pega el contenido de `Base de Datos/FashionStoreDB.sql` y ejecútalo. Los seeders cargan los datos base en el primer arranque en Azure. Usa esta opción solo si el script coincide con las entidades actuales. Si una entidad cambió y el script no, las consultas fallarán en tiempo de ejecución.
+`Base de Datos/FashionStoreDB.sql` queda solo como referencia y datos de demostración: no lo uses para crear el esquema.
 
 ### 3.4 Cerrar la Data API de Supabase (importante)
 
@@ -323,12 +298,7 @@ az webapp config container set --resource-group $RG --name $APP \
 
 **Revertir:** ejecuta el mismo comando `az webapp config container set` con la etiqueta anterior.
 
-**Cambios en el esquema:** el proyecto no tiene migraciones y en producción no se sincroniza. Cuando una versión agrega o cambia columnas de una entidad, aplica el cambio en Supabase **antes** de desplegar la imagen nueva:
-
-- Escribe a mano las sentencias `ALTER TABLE ...` y ejecútalas en el SQL Editor de Supabase. Es la opción más segura.
-- O repite la [Opción A del paso 3.3](#33-crear-el-esquema-inicialización-única) contra la base de datos de producción. **Advertencia:** `synchronize` también elimina las columnas y tablas que ya no existen en las entidades, lo que **borra esos datos de forma permanente**. Haz antes un respaldo (Supabase → Database → Backups), o pruébalo contra una copia.
-
-A largo plazo, agrega migraciones de TypeORM para que los cambios de esquema queden versionados y sean repetibles.
+**Cambios en el esquema:** viajan dentro de la imagen como migraciones y se aplican solas al arrancar la versión nueva. Haz un respaldo de la base antes de desplegar una versión que traiga migraciones nuevas.
 
 ---
 
@@ -365,7 +335,7 @@ Escalar a más de una instancia funciona: los uploads viven en el montaje compar
 | `ENETUNREACH` o `getaddrinfo ENOTFOUND db.<ref>.supabase.co` | Se usó el host de conexión directa (solo IPv6) | Usa el host del **Session pooler** |
 | `Tenant or user not found` | A `DB_USERNAME` le falta la referencia del proyecto | Usa `postgres.<project-ref>` |
 | `self-signed certificate in certificate chain` | Se verifica el TLS sin la CA de Supabase | `PGSSLMODE=no-verify`, o ver [8.2](#82-verificar-el-certificado-de-la-base-de-datos) |
-| `relation "..." does not exist` al arrancar | El esquema nunca se creó (en producción no se sincroniza) | Sigue el paso [3.3](#33-crear-el-esquema-inicialización-única) |
+| `relation "..." does not exist` al arrancar | Hay migraciones sin aplicar o fallaron al arrancar | Revisa el log de arranque y [MIGRACIONES.md](MIGRACIONES.md) |
 | El contenedor se reinicia en bucle; *"didn't respond to HTTP pings on port"* | Falta `WEBSITES_PORT` o no coincide con `PORT` | Configura ambos en `3000` |
 | `ImagePullFailure` o descarga no autorizada | La identidad administrada no tiene `AcrPull`, o falta `acrUseManagedIdentityCreds` | Repite el paso [4.4](#44-permitir-que-la-aplicación-descargue-desde-acr-identidad-administrada) |
 | Las imágenes subidas desaparecen tras un reinicio | El recurso compartido de Azure Files no está montado | Repite el paso [4.5](#45-almacenamiento-persistente-para-uploads) y revisa `az webapp config storage-account list` |
