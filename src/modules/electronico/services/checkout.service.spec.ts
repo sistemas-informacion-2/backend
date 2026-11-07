@@ -158,7 +158,7 @@ function crearService(escenario: Escenario = {}) {
   const cfg: Record<string, unknown> = { frontendUrl: 'http://localhost:5173', 'payments.simulated': escenario.simulados ?? true, 'jwt.secret': 'secreto-de-prueba' };
   const config = { get: (clave: string) => cfg[clave] };
   const notificaciones = { notificarPorPush: vi.fn() };
-  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never, { empresaId: () => 1 } as never);
+  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never, { empresaId: () => 1, empresa: () => ({ id: 1, slug: 'fashionstore' }) } as never);
   return { service, stripe, guardados, orden, consultas, manager, repos, disponibilidad, notificaciones };
 }
 
@@ -365,8 +365,8 @@ describe('CheckoutService', () => {
         expect.objectContaining({
           montoBob: 200,
           referencia: expect.stringMatching(/^C7-\d+$/),
-          urlRetorno: 'http://localhost:5173/checkout/stripe/retorno',
-          urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado',
+          urlRetorno: 'http://localhost:5173/t/fashionstore/checkout/stripe/retorno',
+          urlCancelado: 'http://localhost:5173/t/fashionstore/checkout/stripe/cancelado',
         }),
       );
     });
@@ -474,8 +474,8 @@ describe('CheckoutService', () => {
         expect.objectContaining({
           montoBob: 40,
           referencia: expect.stringMatching(/^R7-9-\d+$/),
-          urlRetorno: 'http://localhost:5173/checkout/stripe/retorno?reserva=9',
-          urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado?reserva=9',
+          urlRetorno: 'http://localhost:5173/t/fashionstore/checkout/stripe/retorno?reserva=9',
+          urlCancelado: 'http://localhost:5173/t/fashionstore/checkout/stripe/cancelado?reserva=9',
         }),
       );
     });

@@ -145,7 +145,8 @@ export class CheckoutService {
     await this.pasarelaOnline('STRIPE');
     const { monto, descripcion } = await this.montoAPagar(idCliente, idReserva);
 
-    const frontend = this.config.get('frontendUrl', { infer: true });
+    // Stripe devuelve al cliente a su tienda (/t/:slug): el frontend usa ese prefijo como base de sus rutas.
+    const frontend = `${this.config.get('frontendUrl', { infer: true })}/t/${this.tenant.empresa()?.slug ?? ''}`;
     const sufijo = idReserva === undefined ? '' : `?reserva=${idReserva}`;
     const sesion = await this.stripe.crearSesion({
       referencia: idReserva === undefined ? `C${idCliente}-${Date.now()}` : `${this.prefijoReserva(idCliente, idReserva)}${Date.now()}`,
