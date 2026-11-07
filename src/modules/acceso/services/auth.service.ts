@@ -166,6 +166,7 @@ export class AuthService {
       tipoUsuario: usuario.tipoUsuario,
       permisos,
       sucursalId,
+      empresaId: usuario.idEmpresa,
       jti: randomUUID(),
     };
 

@@ -9,6 +9,8 @@ import { Rol } from '../../modules/acceso/entities/rol.entity.js';
 import { RolPermiso } from '../../modules/acceso/entities/rol-permiso.entity.js';
 import { RolUsuario } from '../../modules/acceso/entities/rol-usuario.entity.js';
 import { Usuario } from '../../modules/acceso/entities/usuario.entity.js';
+// Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
+import { ID_EMPRESA_INICIAL } from '../migraciones.util.js';
 
 const PERMISOS_BASE = [
   'acceso:usuarios:gestionar',
@@ -103,10 +105,10 @@ export class InitialSeederService {
       permisos.push(permiso);
     }
 
-    let rolAdmin = await this.rolRepo.findOne({ where: { nombre: 'ADMINISTRADOR' } });
+    let rolAdmin = await this.rolRepo.findOne({ where: { nombre: 'ADMINISTRADOR', idEmpresa: ID_EMPRESA_INICIAL } });
     if (!rolAdmin) {
       rolAdmin = await this.rolRepo.save(
-        this.rolRepo.create({ nombre: 'ADMINISTRADOR', descripcion: 'Acceso total al sistema' }),
+        this.rolRepo.create({ nombre: 'ADMINISTRADOR', descripcion: 'Acceso total al sistema', idEmpresa: ID_EMPRESA_INICIAL }),
       );
       this.logger.log('Rol ADMINISTRADOR creado');
     }
@@ -122,9 +124,9 @@ export class InitialSeederService {
 
     const permisosPorAccion = new Map(permisos.map((permiso) => [permiso.accion, permiso]));
     for (const rolBase of ROLES_BASE) {
-      let rol = await this.rolRepo.findOne({ where: { nombre: rolBase.nombre } });
+      let rol = await this.rolRepo.findOne({ where: { nombre: rolBase.nombre, idEmpresa: ID_EMPRESA_INICIAL } });
       if (!rol) {
-        rol = await this.rolRepo.save(this.rolRepo.create({ nombre: rolBase.nombre, descripcion: rolBase.descripcion }));
+        rol = await this.rolRepo.save(this.rolRepo.create({ nombre: rolBase.nombre, descripcion: rolBase.descripcion, idEmpresa: ID_EMPRESA_INICIAL }));
         this.logger.log(`Rol creado: ${rolBase.nombre}`);
       }
 
@@ -141,7 +143,7 @@ export class InitialSeederService {
     const email = this.config.get('seed.adminEmail', { infer: true });
     const password = this.config.get('seed.adminPassword', { infer: true });
 
-    let admin = await this.usuarioRepo.findOne({ where: { email } });
+    let admin = await this.usuarioRepo.findOne({ where: { email, idEmpresa: ID_EMPRESA_INICIAL } });
     if (!admin) {
       const passwordHash = await bcrypt.hash(password, 10);
       admin = await this.usuarioRepo.save(
@@ -150,6 +152,7 @@ export class InitialSeederService {
           apellido: 'FashionStore',
           email,
           passwordHash,
+          idEmpresa: ID_EMPRESA_INICIAL,
           tipoUsuario: 'A',
           estadoAcceso: 'HABILITADO',
         }),

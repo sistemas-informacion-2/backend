@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Bitacora } from '../entities/bitacora.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 export interface BitacoraQuery {
   page: number;
@@ -15,7 +16,10 @@ export interface BitacoraQuery {
 
 @Injectable()
 export class BitacoraRepository {
-  constructor(@InjectRepository(Bitacora) private readonly repo: Repository<Bitacora>) {}
+  constructor(
+    @InjectRepository(Bitacora) private readonly repo: Repository<Bitacora>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   registrar(datos: Partial<Bitacora>): Promise<Bitacora> {
     return this.repo.save(this.repo.create(datos));
@@ -25,6 +29,7 @@ export class BitacoraRepository {
     const builder = this.repo
       .createQueryBuilder('bitacora')
       .leftJoinAndSelect('bitacora.usuario', 'usuario')
+      .where('bitacora.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('bitacora.fecha_hora', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
@@ -44,6 +49,6 @@ export class BitacoraRepository {
   }
 
   obtenerPorId(id: string): Promise<Bitacora | null> {
-    return this.repo.findOne({ where: { id }, relations: { usuario: true } });
+    return this.repo.findOne({ where: { id, idEmpresa: this.tenant.empresaId() }, relations: { usuario: true } });
   }
 }

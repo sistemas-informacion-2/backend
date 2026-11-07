@@ -5,6 +5,7 @@ import { Empresa } from '../../modules/plataforma/entities/empresa.entity.js';
 import { EmpresaResolver } from './empresa-resolver.service.js';
 import { TenantContext } from './tenant-context.service.js';
 import { TenantGuard } from './tenant.guard.js';
+import { TenantSubscriber } from './tenant.subscriber.js';
 
 /**
  * Multiempresa (SaaS): contexto CLS por request y resolucion de la empresa.
@@ -14,7 +15,7 @@ import { TenantGuard } from './tenant.guard.js';
 @Global()
 @Module({
   imports: [ClsModule.forRoot({ global: true, middleware: { mount: true } }), TypeOrmModule.forFeature([Empresa])],
-  providers: [TenantContext, EmpresaResolver, TenantGuard],
+  providers: [TenantContext, EmpresaResolver, TenantGuard, TenantSubscriber],
   exports: [TenantContext, EmpresaResolver, TenantGuard],
 })
 export class TenantModule {}

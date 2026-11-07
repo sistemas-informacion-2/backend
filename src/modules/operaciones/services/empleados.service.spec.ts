@@ -62,7 +62,7 @@ function crearService(overrides: {
   };
 
   return {
-    service: new EmpleadosService(dataSource, empleadoRepo as never),
+    service: new EmpleadosService(dataSource, empleadoRepo as never, {} as never, {} as never, { empresaId: () => 1 } as never),
     empleadoRepo,
     usuarioRepo,
   };
@@ -94,7 +94,7 @@ describe('EmpleadosService', () => {
       fechaContratacion: '2026-02-01',
     });
 
-    expect(usuarioRepo.findOne).toHaveBeenCalledWith({ where: { email: 'maria@example.com' } });
+    expect(usuarioRepo.findOne).toHaveBeenCalledWith({ where: { email: 'maria@example.com', idEmpresa: 1 } });
     expect(usuarioRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'maria@example.com', tipoUsuario: 'E', activo: true }),
     );

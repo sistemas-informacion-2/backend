@@ -1,13 +1,23 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { RolPermiso } from './rol-permiso.entity.js';
 import { RolUsuario } from './rol-usuario.entity.js';
 
+@Index('uq_rol_empresa_nombre', ['idEmpresa', 'nombre'], { unique: true })
 @Entity('rol')
 export class Rol {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ length: 50, unique: true })
+  /** Cada empresa tiene sus propios roles. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
+
+  @Column({ length: 50 })
   nombre: string;
 
   @Column({ type: 'text', nullable: true })

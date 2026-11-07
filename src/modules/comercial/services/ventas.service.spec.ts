@@ -126,6 +126,7 @@ function crearService(config: {
       notaVentaRepo as never,
       pagoRepo as never,
       movimientoCajaRepo as never,
+      { empresaId: () => 1 } as never,
     ),
     dataSource,
     notaVentaRepo,

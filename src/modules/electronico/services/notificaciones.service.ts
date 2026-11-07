@@ -11,6 +11,7 @@ import type { RegistrarDispositivoPushDto } from '../dto/dispositivo-push.dto.js
 import { PushService, type MensajePush } from './push.service.js';
 import type { CrearNotificacionDto } from '../dto/crear-notificacion.dto.js';
 import type { NotificacionesQueryDto } from '../dto/notificaciones-query.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type {
   DestinatarioResponseDto,
   EnvioNotificacionResponseDto,
@@ -33,6 +34,7 @@ export class NotificacionesService {
     @InjectRepository(Usuario) private readonly usuarioRepo: Repository<Usuario>,
     private readonly dispositivoRepo: DispositivoPushRepository,
     private readonly pushService: PushService,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: NotificacionesQueryDto): Promise<NotificacionesPaginatedResponseDto> {
@@ -47,7 +49,7 @@ export class NotificacionesService {
 
   async listarDestinatarios(): Promise<DestinatarioResponseDto[]> {
     const clientes = await this.usuarioRepo.find({
-      where: { tipoUsuario: 'C', activo: true },
+      where: { tipoUsuario: 'C', activo: true, idEmpresa: this.tenant.empresaId() },
       select: { id: true, nombre: true, apellido: true, email: true },
       order: { nombre: 'ASC' },
     });
@@ -75,7 +77,7 @@ export class NotificacionesService {
 
     if (difundir) {
       const clientes = await this.usuarioRepo.find({
-        where: { tipoUsuario: 'C', activo: true },
+        where: { tipoUsuario: 'C', activo: true, idEmpresa: this.tenant.empresaId() },
         select: { id: true, nombre: true, apellido: true, email: true },
       });
       if (clientes.length === 0) return { cantidadEnviada: 0 };
@@ -101,7 +103,7 @@ export class NotificacionesService {
       return { cantidadEnviada: filas.length };
     }
 
-    const usuario = await this.usuarioRepo.findOne({ where: { id: dto.idUsuario } });
+    const usuario = await this.usuarioRepo.findOne({ where: { id: dto.idUsuario, idEmpresa: this.tenant.empresaId() } });
     if (!usuario || !usuario.activo) throw new NotFoundException('Usuario destinatario no encontrado');
 
     const notificacion = this.notificacionRepo.create({

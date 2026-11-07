@@ -22,6 +22,7 @@ import type { CrearVentaDto } from '../dto/crear-venta.dto.js';
 import type { VentasQueryDto } from '../dto/ventas-query.dto.js';
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
 import type { VentaPaginatedResponseDto, VentaResponseDto } from '../dto/venta-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 /**
  * NOTA_VENTA.id_cliente es obligatorio, pero en una venta de mostrador no se pide registrar al comprador. Esas ventas
@@ -51,6 +52,7 @@ export class VentasService {
     private readonly notaVentaRepo: NotaVentaRepository,
     private readonly pagoRepo: PagoRepository,
     private readonly movimientoCajaRepo: MovimientoCajaRepository,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: VentasQueryDto): Promise<VentaPaginatedResponseDto> {
@@ -202,11 +204,11 @@ export class VentasService {
 
   /**
    * Devuelve el id del cliente generico "Consumidor Final", creandolo la primera vez. Va dentro de la transaccion de la
-   * venta: si dos primeras ventas coinciden, una falla por el correo unico y basta con repetirla (no se cobra nada).
+   * venta: si dos primeras ventas coinciden, una falla por el correo unico (por empresa) y basta con repetirla (no se cobra nada).
    */
   private async obtenerConsumidorFinal(manager: EntityManager): Promise<number> {
     const usuarioRepo = manager.getRepository(Usuario);
-    let usuario = await usuarioRepo.findOne({ where: { email: EMAIL_CONSUMIDOR_FINAL } });
+    let usuario = await usuarioRepo.findOne({ where: { email: EMAIL_CONSUMIDOR_FINAL, idEmpresa: this.tenant.empresaId() } });
     if (!usuario) {
       usuario = await usuarioRepo.save(
         usuarioRepo.create({

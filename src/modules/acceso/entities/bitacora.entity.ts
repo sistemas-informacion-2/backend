@@ -1,10 +1,20 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Usuario } from './usuario.entity.js';
 
+@Index('idx_bitacora_empresa_fecha', ['idEmpresa', 'fechaHora'])
 @Entity('bitacora')
 export class Bitacora {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;
+
+  /** Empresa en la que ocurrio la accion; null para acciones de la plataforma. */
+  @Column({ name: 'id_empresa', type: 'int', nullable: true })
+  idEmpresa: number | null;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa> | null;
 
   @Column({ name: 'id_usuario', type: 'int', nullable: true })
   idUsuario: number | null;
