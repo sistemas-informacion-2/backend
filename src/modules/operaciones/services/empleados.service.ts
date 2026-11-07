@@ -141,7 +141,7 @@ export class EmpleadosService {
 
   private async validarSucursales(idsSucursal: number[], manager?: EntityManager): Promise<void> {
     if (idsSucursal.length === 0) return;
-    const sucursales = await (manager ?? this.sucursalRepo.manager).getRepository(Sucursal).find({ where: { id: In(idsSucursal) } });
+    const sucursales = await (manager ?? this.sucursalRepo.manager).getRepository(Sucursal).find({ where: { id: In(idsSucursal), idEmpresa: this.tenant.empresaId() } });
     if (sucursales.length !== new Set(idsSucursal).size) {
       throw new BadRequestException('Una o más sucursales indicadas no existen');
     }
