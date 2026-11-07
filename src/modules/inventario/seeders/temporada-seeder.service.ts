@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 import { Temporada } from '../entities/temporada.entity.js';
 // Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
 import { ID_EMPRESA_INICIAL } from '../../../database/migraciones.util.js';
@@ -69,13 +69,19 @@ export class TemporadaSeederService {
 
   constructor(@InjectRepository(Temporada) private readonly temporadaRepo: Repository<Temporada>) {}
 
-  async run(): Promise<void> {
+  run(): Promise<void> {
+    return this.sembrarEn(this.temporadaRepo.manager, ID_EMPRESA_INICIAL);
+  }
+
+  /** Las 4 estaciones de una empresa. Lo usan el arranque (empresa inicial) y el alta de empresas, en su transaccion. */
+  async sembrarEn(manager: EntityManager, idEmpresa: number): Promise<void> {
+    const repo = manager.getRepository(Temporada);
     const taxonomia = construirTaxonomia(new Date());
     for (const semilla of taxonomia) {
-      const existente = await this.temporadaRepo.findOne({ where: { nombre: semilla.nombre, idEmpresa: ID_EMPRESA_INICIAL } });
+      const existente = await repo.findOne({ where: { nombre: semilla.nombre, idEmpresa } });
       if (existente) continue;
 
-      await this.temporadaRepo.save(this.temporadaRepo.create({ ...semilla, idEmpresa: ID_EMPRESA_INICIAL }));
+      await repo.save(repo.create({ ...semilla, idEmpresa }));
       this.logger.log(`Temporada creada: ${semilla.nombre} (${semilla.fechaInicio} a ${semilla.fechaFin})`);
     }
   }

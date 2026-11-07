@@ -11,6 +11,7 @@ import { InventarioModule } from './modules/inventario/inventario.module.js';
 import { ComercialModule } from './modules/comercial/comercial.module.js';
 import { ElectronicoModule } from './modules/electronico/electronico.module.js';
 import { ReporteModule } from './modules/reporte/reporte.module.js';
+import { PlataformaModule } from './modules/plataforma/plataforma.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ReporteModule } from './modules/reporte/reporte.module.js';
     ElectronicoModule,
     ReporteModule,
     AccesoModule,
+    PlataformaModule,
   ],
 })
 export class AppModule {}

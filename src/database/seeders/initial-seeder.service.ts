@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import type { Repository } from 'typeorm';
+import { In, IsNull, type EntityManager, type Repository } from 'typeorm';
 import type { AppConfig } from '../../config/configuration.js';
 import { Permiso } from '../../modules/acceso/entities/permiso.entity.js';
 import { Rol } from '../../modules/acceso/entities/rol.entity.js';
@@ -75,11 +75,26 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
   },
 ];
 
+/** Datos del primer administrador de una empresa. */
+export interface DatosAdministrador {
+  nombre: string;
+  apellido: string;
+  email: string;
+  password: string;
+}
+
 /**
- * Siembra los datos mínimos para poder usar el sistema: permisos base, rol
- * ADMINISTRADOR y el usuario admin (credenciales en SEED_ADMIN_EMAIL /
- * SEED_ADMIN_PASSWORD). Es idempotente: se llama tanto en cada arranque de
- * la app (main.ts) como desde el script standalone `npm run seed`.
+ * Siembra los datos minimos del sistema y es idempotente: se llama en cada
+ * arranque de la app (main.ts) y desde el script standalone `npm run seed`.
+ *
+ * - Permisos base: globales, compartidos por todas las empresas.
+ * - Roles base y administrador de la empresa inicial (SEED_ADMIN_EMAIL /
+ *   SEED_ADMIN_PASSWORD).
+ * - Superadmin de la plataforma (SEED_SUPERADMIN_EMAIL /
+ *   SEED_SUPERADMIN_PASSWORD), solo si esas variables estan definidas.
+ *
+ * `sembrarRolesEn` y `crearAdministradorEn` los reutiliza tambien el alta de
+ * empresas (AprovisionamientoService) dentro de su transaccion.
  */
 @Injectable()
 export class InitialSeederService {
@@ -87,84 +102,116 @@ export class InitialSeederService {
 
   constructor(
     @InjectRepository(Permiso) private readonly permisoRepo: Repository<Permiso>,
-    @InjectRepository(Rol) private readonly rolRepo: Repository<Rol>,
-    @InjectRepository(RolPermiso) private readonly rolPermisoRepo: Repository<RolPermiso>,
-    @InjectRepository(RolUsuario) private readonly rolUsuarioRepo: Repository<RolUsuario>,
     @InjectRepository(Usuario) private readonly usuarioRepo: Repository<Usuario>,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   async run(): Promise<void> {
-    const permisos: Permiso[] = [];
     for (const accion of PERMISOS_BASE) {
-      let permiso = await this.permisoRepo.findOne({ where: { accion } });
-      if (!permiso) {
-        permiso = await this.permisoRepo.save(this.permisoRepo.create({ accion }));
+      const existe = await this.permisoRepo.findOne({ where: { accion } });
+      if (!existe) {
+        await this.permisoRepo.save(this.permisoRepo.create({ accion }));
         this.logger.log(`Permiso creado: ${accion}`);
       }
-      permisos.push(permiso);
     }
 
-    let rolAdmin = await this.rolRepo.findOne({ where: { nombre: 'ADMINISTRADOR', idEmpresa: ID_EMPRESA_INICIAL } });
-    if (!rolAdmin) {
-      rolAdmin = await this.rolRepo.save(
-        this.rolRepo.create({ nombre: 'ADMINISTRADOR', descripcion: 'Acceso total al sistema', idEmpresa: ID_EMPRESA_INICIAL }),
-      );
-      this.logger.log('Rol ADMINISTRADOR creado');
-    }
-
-    for (const permiso of permisos) {
-      const existe = await this.rolPermisoRepo.findOne({
-        where: { idRol: rolAdmin.id, idPermiso: permiso.id },
-      });
-      if (!existe) {
-        await this.rolPermisoRepo.save(this.rolPermisoRepo.create({ idRol: rolAdmin.id, idPermiso: permiso.id }));
-      }
-    }
-
-    const permisosPorAccion = new Map(permisos.map((permiso) => [permiso.accion, permiso]));
-    for (const rolBase of ROLES_BASE) {
-      let rol = await this.rolRepo.findOne({ where: { nombre: rolBase.nombre, idEmpresa: ID_EMPRESA_INICIAL } });
-      if (!rol) {
-        rol = await this.rolRepo.save(this.rolRepo.create({ nombre: rolBase.nombre, descripcion: rolBase.descripcion, idEmpresa: ID_EMPRESA_INICIAL }));
-        this.logger.log(`Rol creado: ${rolBase.nombre}`);
-      }
-
-      for (const accion of rolBase.permisos) {
-        const permiso = permisosPorAccion.get(accion);
-        if (!permiso) continue;
-        const existe = await this.rolPermisoRepo.findOne({ where: { idRol: rol.id, idPermiso: permiso.id } });
-        if (!existe) {
-          await this.rolPermisoRepo.save(this.rolPermisoRepo.create({ idRol: rol.id, idPermiso: permiso.id }));
-        }
-      }
-    }
+    const manager = this.usuarioRepo.manager;
+    const rolAdmin = await this.sembrarRolesEn(manager, ID_EMPRESA_INICIAL);
 
     const email = this.config.get('seed.adminEmail', { infer: true });
-    const password = this.config.get('seed.adminPassword', { infer: true });
-
-    let admin = await this.usuarioRepo.findOne({ where: { email, idEmpresa: ID_EMPRESA_INICIAL } });
-    if (!admin) {
-      const passwordHash = await bcrypt.hash(password, 10);
-      admin = await this.usuarioRepo.save(
-        this.usuarioRepo.create({
-          nombre: 'Administrador',
-          apellido: 'FashionStore',
-          email,
-          passwordHash,
-          idEmpresa: ID_EMPRESA_INICIAL,
-          tipoUsuario: 'A',
-          estadoAcceso: 'HABILITADO',
-        }),
-      );
+    const existente = await this.usuarioRepo.findOne({ where: { email, idEmpresa: ID_EMPRESA_INICIAL } });
+    if (existente) {
+      await this.asegurarRol(manager, rolAdmin.id, existente.id);
+    } else {
+      const password = this.config.get('seed.adminPassword', { infer: true });
+      await this.crearAdministradorEn(manager, ID_EMPRESA_INICIAL, rolAdmin, { nombre: 'Administrador', apellido: 'FashionStore', email, password });
       this.logger.log(`Usuario administrador creado: ${email}`);
     }
 
-    const yaTieneRol = await this.rolUsuarioRepo.findOne({
-      where: { idRol: rolAdmin.id, idUsuario: admin.id },
-    });
-    if (!yaTieneRol) {
-      await this.rolUsuarioRepo.save(this.rolUsuarioRepo.create({ idRol: rolAdmin.id, idUsuario: admin.id }));
+    await this.asegurarSuperadmin();
+  }
+
+  /** Crea (si faltan) el rol ADMINISTRADOR con todos los permisos y los roles operativos base de una empresa. */
+  async sembrarRolesEn(manager: EntityManager, idEmpresa: number): Promise<Rol> {
+    const permisos = await manager.getRepository(Permiso).find({ where: { accion: In(PERMISOS_BASE) } });
+    const permisosPorAccion = new Map(permisos.map((permiso) => [permiso.accion, permiso]));
+
+    const rolAdmin = await this.asegurarRolBase(manager, idEmpresa, 'ADMINISTRADOR', 'Acceso total al sistema', PERMISOS_BASE, permisosPorAccion);
+    for (const rolBase of ROLES_BASE) {
+      await this.asegurarRolBase(manager, idEmpresa, rolBase.nombre, rolBase.descripcion, rolBase.permisos, permisosPorAccion);
     }
+    return rolAdmin;
+  }
+
+  /** Crea el usuario administrador (tipo A) de una empresa y le asigna el rol ADMINISTRADOR. */
+  async crearAdministradorEn(manager: EntityManager, idEmpresa: number, rolAdmin: Rol, datos: DatosAdministrador): Promise<Usuario> {
+    const usuarioRepo = manager.getRepository(Usuario);
+    const admin = await usuarioRepo.save(
+      usuarioRepo.create({
+        nombre: datos.nombre,
+        apellido: datos.apellido,
+        email: datos.email.trim().toLowerCase(),
+        passwordHash: await bcrypt.hash(datos.password, 10),
+        idEmpresa,
+        tipoUsuario: 'A',
+        estadoAcceso: 'HABILITADO',
+      }),
+    );
+    await this.asegurarRol(manager, rolAdmin.id, admin.id);
+    return admin;
+  }
+
+  private async asegurarRolBase(
+    manager: EntityManager,
+    idEmpresa: number,
+    nombre: string,
+    descripcion: string,
+    acciones: string[],
+    permisosPorAccion: Map<string, Permiso>,
+  ): Promise<Rol> {
+    const rolRepo = manager.getRepository(Rol);
+    let rol = await rolRepo.findOne({ where: { nombre, idEmpresa } });
+    if (!rol) {
+      rol = await rolRepo.save(rolRepo.create({ nombre, descripcion, idEmpresa }));
+      this.logger.log(`Rol creado: ${nombre} (empresa ${idEmpresa})`);
+    }
+
+    const rolPermisoRepo = manager.getRepository(RolPermiso);
+    for (const accion of acciones) {
+      const permiso = permisosPorAccion.get(accion);
+      if (!permiso) continue;
+      const existe = await rolPermisoRepo.findOne({ where: { idRol: rol.id, idPermiso: permiso.id } });
+      if (!existe) await rolPermisoRepo.save(rolPermisoRepo.create({ idRol: rol.id, idPermiso: permiso.id }));
+    }
+    return rol;
+  }
+
+  private async asegurarRol(manager: EntityManager, idRol: number, idUsuario: number): Promise<void> {
+    const rolUsuarioRepo = manager.getRepository(RolUsuario);
+    const existe = await rolUsuarioRepo.findOne({ where: { idRol, idUsuario } });
+    if (!existe) await rolUsuarioRepo.save(rolUsuarioRepo.create({ idRol, idUsuario }));
+  }
+
+  /** El superadmin no pertenece a ninguna empresa (id_empresa NULL) y solo opera las rutas /plataforma. */
+  private async asegurarSuperadmin(): Promise<void> {
+    const email = this.config.get('seed.superadminEmail', { infer: true });
+    const password = this.config.get('seed.superadminPassword', { infer: true });
+    if (!email || !password) return;
+
+    const existente = await this.usuarioRepo.findOne({ where: { email, idEmpresa: IsNull() } });
+    if (existente) return;
+
+    await this.usuarioRepo.save(
+      this.usuarioRepo.create({
+        nombre: 'Superadmin',
+        apellido: 'Plataforma',
+        email,
+        passwordHash: await bcrypt.hash(password, 10),
+        idEmpresa: null,
+        tipoUsuario: 'S',
+        estadoAcceso: 'HABILITADO',
+      }),
+    );
+    this.logger.log(`Superadmin de la plataforma creado: ${email}`);
   }
 }

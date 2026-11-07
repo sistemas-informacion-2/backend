@@ -19,6 +19,9 @@ export interface AppConfig {
   seed: {
     adminEmail: string;
     adminPassword: string;
+    /** Superadmin de la plataforma (SaaS); vacios = no se crea. */
+    superadminEmail: string;
+    superadminPassword: string;
   };
   payments: {
     encryptionKey: string;
@@ -74,6 +77,8 @@ export default (): AppConfig => ({
   seed: {
     adminEmail: process.env.SEED_ADMIN_EMAIL ?? 'admin@fashionstore.com',
     adminPassword: process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!',
+    superadminEmail: (process.env.SEED_SUPERADMIN_EMAIL ?? '').trim().toLowerCase(),
+    superadminPassword: process.env.SEED_SUPERADMIN_PASSWORD ?? '',
   },
   payments: {
     encryptionKey: process.env.PAGOS_ENCRYPTION_KEY ?? '',

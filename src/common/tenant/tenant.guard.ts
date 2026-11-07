@@ -1,8 +1,10 @@
 import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import type { AppConfig } from '../../config/configuration.js';
 import type { ActiveUser } from '../../modules/acceso/types/jwt-payload.type.js';
+import { ES_RUTA_PLATAFORMA } from '../decorators/solo-plataforma.decorator.js';
 import { EmpresaResolver } from './empresa-resolver.service.js';
 import { TenantContext, type EmpresaActual } from './tenant-context.service.js';
 
@@ -17,8 +19,12 @@ export const HEADER_EMPRESA = 'x-empresa';
  *    coincide, se rechaza (un token de una tienda no sirve en otra).
  * 2. Sin token con empresa (rutas publicas, tokens previos al SaaS): el slug
  *    del header X-Empresa o, si no viene, el slug por defecto de la config.
- * 3. Sin nada de lo anterior la ruta queda sin empresa (rutas de plataforma);
- *    quien llame a TenantContext.empresaId() ahi recibe un error.
+ * 3. Sin nada de lo anterior la ruta queda sin empresa; quien llame a
+ *    TenantContext.empresaId() ahi recibe un error.
+ *
+ * Las rutas @SoloPlataforma no corren dentro de ninguna empresa y, autenticadas,
+ * son solo del superadmin. A la inversa, el superadmin no entra a las rutas de
+ * una tienda: el dueno de la plataforma no ve los datos de sus clientes.
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -28,6 +34,7 @@ export class TenantGuard implements CanActivate {
     private readonly resolver: EmpresaResolver,
     private readonly tenant: TenantContext,
     config: ConfigService<AppConfig, true>,
+    private readonly reflector: Reflector,
   ) {
     this.slugPorDefecto = config.get('tenant.slugPorDefecto', { infer: true });
   }
@@ -35,6 +42,15 @@ export class TenantGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
     const request = context.switchToHttp().getRequest<Request & { user?: ActiveUser }>();
+    const esRutaPlataforma = this.reflector.getAllAndOverride<boolean>(ES_RUTA_PLATAFORMA, [context.getHandler(), context.getClass()]);
+    const esSuperadmin = request.user?.tipoUsuario === 'S';
+
+    if (esRutaPlataforma) {
+      if (request.user && !esSuperadmin) throw new ForbiddenException('Solo el superadmin de la plataforma puede usar esta ruta');
+      return true;
+    }
+    if (esSuperadmin) throw new ForbiddenException('El superadmin de la plataforma no opera dentro de una tienda');
+
     const slugHeader = normalizarSlug(request.headers[HEADER_EMPRESA]);
     const empresaToken = request.user?.empresaId;
 

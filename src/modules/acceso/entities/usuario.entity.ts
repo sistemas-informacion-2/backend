@@ -3,7 +3,8 @@ import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { RolUsuario } from './rol-usuario.entity.js';
 import { Sesion } from './sesion.entity.js';
 
-export type TipoUsuario = 'A' | 'E' | 'C';
+/** A = administrador de empresa, E = empleado, C = cliente, S = superadmin de la plataforma (sin empresa). */
+export type TipoUsuario = 'A' | 'E' | 'C' | 'S';
 export type EstadoAcceso = 'HABILITADO' | 'BLOQUEADO' | 'SUSPENDIDO';
 
 // El email es unico dentro de cada empresa (una persona puede tener cuenta en

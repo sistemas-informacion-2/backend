@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, type EntityManager, type Repository } from 'typeorm';
+import { Brackets, IsNull, type EntityManager, type Repository } from 'typeorm';
 import { Usuario } from '../entities/usuario.entity.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
@@ -23,6 +23,15 @@ export class UsuarioRepository {
 
   findByEmail(email: string, manager: EntityManager = this.repo.manager): Promise<Usuario | null> {
     return manager.getRepository(Usuario).findOne({ where: { email, idEmpresa: this.tenant.empresaId() } });
+  }
+
+  /** El superadmin no pertenece a ninguna empresa: se busca sin TenantContext. */
+  findSuperadminPorEmail(email: string): Promise<Usuario | null> {
+    return this.repo.findOne({ where: { email, idEmpresa: IsNull(), tipoUsuario: 'S' } });
+  }
+
+  findSuperadminPorId(id: number): Promise<Usuario | null> {
+    return this.repo.findOne({ where: { id, idEmpresa: IsNull(), tipoUsuario: 'S' } });
   }
 
   findByIdConRoles(id: number): Promise<Usuario | null> {

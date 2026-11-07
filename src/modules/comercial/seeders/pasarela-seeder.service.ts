@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 import type { AppConfig } from '../../../config/configuration.js';
 import { PasarelaPago, type IntegracionPago } from '../entities/pasarela-pago.entity.js';
 // Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
@@ -39,12 +39,20 @@ export class PasarelaSeederService {
   ) {}
 
   async run(): Promise<void> {
+    await this.sembrarEn(this.pasarelaRepo.manager, ID_EMPRESA_INICIAL);
+    await this.retirarPaypal();
+    await this.activarStripeDesdeEntorno();
+  }
+
+  /** Metodos de pago base de una empresa. Lo usan el arranque (empresa inicial) y el alta de empresas, en su transaccion. */
+  async sembrarEn(manager: EntityManager, idEmpresa: number): Promise<void> {
+    const pasarelaRepo = manager.getRepository(PasarelaPago);
     for (const base of METODOS_PAGO_BASE) {
-      const existente = await this.pasarelaRepo.findOne({ where: { codigo: base.codigo, idEmpresa: ID_EMPRESA_INICIAL } });
+      const existente = await pasarelaRepo.findOne({ where: { codigo: base.codigo, idEmpresa } });
       if (!existente) {
-        await this.pasarelaRepo.save(
-          this.pasarelaRepo.create({
-            idEmpresa: ID_EMPRESA_INICIAL,
+        await pasarelaRepo.save(
+          pasarelaRepo.create({
+            idEmpresa,
             codigo: base.codigo,
             metodo: base.metodo,
             descripcion: null,
@@ -55,7 +63,7 @@ export class PasarelaSeederService {
             disponibleLinea: base.disponibleLinea,
           }),
         );
-        this.logger.log(`Metodo de pago creado: ${base.codigo}`);
+        this.logger.log(`Metodo de pago creado: ${base.codigo} (empresa ${idEmpresa})`);
         continue;
       }
 
@@ -73,12 +81,9 @@ export class PasarelaSeederService {
         existente.disponiblePresencial = base.disponiblePresencial;
         existente.disponibleLinea = base.disponibleLinea;
       }
-      await this.pasarelaRepo.save(existente);
+      await pasarelaRepo.save(existente);
       this.logger.log(`Metodo de pago actualizado: ${base.codigo}`);
     }
-
-    await this.retirarPaypal();
-    await this.activarStripeDesdeEntorno();
   }
 
   /**
