@@ -24,6 +24,7 @@ import type { ProductosQueryDto } from '../dto/productos-query.dto.js';
 import type { ProductosPublicoQueryDto } from '../dto/productos-publico-query.dto.js';
 import type { ProductoResponseDto, ProductosPaginatedResponseDto } from '../dto/producto-response.dto.js';
 import type { ProductoDetallePublicoDto } from '../dto/producto-detalle-publico.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 /** Cuantos productos se sugieren en "Tambien te puede interesar". */
 const LIMITE_RELACIONADOS = 6;
@@ -47,6 +48,7 @@ export class ProductosService {
     private readonly categoriaRepo: CategoriaRepository,
     private readonly disponibilidad: DisponibilidadService,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listarPublico(query: ProductosPublicoQueryDto): Promise<ProductoResponseDto[]> {
@@ -334,7 +336,7 @@ export class ProductosService {
 
   private async validarSucursales(idsSucursal: number[]): Promise<void> {
     if (idsSucursal.length === 0) return;
-    const sucursales = await this.sucursalRepo.find({ where: { id: In(idsSucursal) } });
+    const sucursales = await this.sucursalRepo.find({ where: { id: In(idsSucursal), idEmpresa: this.tenant.empresaId() } });
     if (sucursales.length !== new Set(idsSucursal).size) {
       throw new UnprocessableEntityException('Una o más sucursales indicadas no existen');
     }

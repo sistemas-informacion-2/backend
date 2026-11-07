@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Categoria } from '../entities/categoria.entity.js';
+// Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
+import { ID_EMPRESA_INICIAL } from '../../../database/migraciones.util.js';
 
 interface CategoriaSemilla {
   nombre: string;
@@ -65,11 +67,11 @@ export class CategoriaSeederService {
   }
 
   private async asegurar(nombre: string, slug: string, idCategoriaPadre: number | null): Promise<number> {
-    const existente = await this.categoriaRepo.findOne({ where: { slug } });
+    const existente = await this.categoriaRepo.findOne({ where: { slug, idEmpresa: ID_EMPRESA_INICIAL } });
     if (existente) return existente.id;
 
     const creada = await this.categoriaRepo.save(
-      this.categoriaRepo.create({ nombre, slug, idCategoriaPadre }),
+      this.categoriaRepo.create({ nombre, slug, idCategoriaPadre, idEmpresa: ID_EMPRESA_INICIAL }),
     );
     this.logger.log(`Categoría creada: ${nombre}`);
     return creada.id;

@@ -45,6 +45,7 @@ function crearService(overrides: {
       almacenRepo as never,
       varianteRepo as never,
       productoSucursalRepo as never,
+      { empresaId: () => 1 } as never,
     ),
     inventarioRepo,
     almacenRepo,

@@ -1,4 +1,5 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Categoria } from './categoria.entity.js';
 import { ImagenProducto } from './imagen-producto.entity.js';
 import { VarianteProducto } from './variante-producto.entity.js';
@@ -10,10 +11,19 @@ const TRANSFORMER_DECIMAL = {
   from: (valor: string | null) => (valor === null ? null : Number(valor)),
 };
 
+@Index('idx_producto_empresa', ['idEmpresa'])
 @Entity('producto')
 export class Producto {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
 
   @Column({ name: 'id_categoria', type: 'int' })
   idCategoria: number;

@@ -1,14 +1,24 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 
+@Index('uq_proveedor_empresa_nit', ['idEmpresa', 'nit'], { unique: true })
 @Entity('proveedor')
 export class Proveedor {
   @PrimaryGeneratedColumn()
   id: number;
 
+  /** Empresa (tienda) duena del registro. La relacion no se llama empresa porque esa propiedad ya es el nombre comercial del proveedor. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresaDuena: Relation<Empresa>;
+
   @Column({ type: 'varchar', length: 150 })
   empresa: string;
 
-  @Column({ type: 'varchar', length: 50, unique: true })
+  @Column({ type: 'varchar', length: 50 })
   nit: string;
 
   @Column({ name: 'nombre_contacto', type: 'varchar', length: 100, nullable: true })

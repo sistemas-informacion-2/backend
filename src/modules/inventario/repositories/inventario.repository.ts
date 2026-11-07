@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type Repository } from 'typeorm';
 import { Inventario } from '../entities/inventario.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 interface FiltrosInventario {
   page: number;
@@ -15,7 +16,10 @@ interface FiltrosInventario {
 
 @Injectable()
 export class InventarioRepository {
-  constructor(@InjectRepository(Inventario) private readonly repo: Repository<Inventario>) {}
+  constructor(
+    @InjectRepository(Inventario) private readonly repo: Repository<Inventario>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async findPage(query: FiltrosInventario): Promise<{ items: Inventario[]; total: number }> {
     const builder = this.repo
@@ -24,6 +28,8 @@ export class InventarioRepository {
       .leftJoinAndSelect('almacen.sucursal', 'sucursal')
       .leftJoinAndSelect('inventario.variante', 'variante')
       .leftJoinAndSelect('variante.producto', 'producto')
+      // El inventario no tiene empresa propia: es la de su almacen.
+      .where('almacen.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('inventario.id', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
@@ -59,6 +65,7 @@ export class InventarioRepository {
       .leftJoinAndSelect('inventario.variante', 'variante')
       .leftJoinAndSelect('variante.producto', 'producto')
       .where('inventario.id = :id', { id })
+      .andWhere('almacen.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .getOne();
   }
 

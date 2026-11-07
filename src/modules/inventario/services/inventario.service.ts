@@ -11,6 +11,7 @@ import type { ActualizarStockDto } from '../dto/actualizar-stock.dto.js';
 import type { AjustarStockDto } from '../dto/ajustar-stock.dto.js';
 import type { InventarioQueryDto } from '../dto/inventario-query.dto.js';
 import type { InventarioPaginatedResponseDto, InventarioResponseDto } from '../dto/inventario-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class InventarioService {
@@ -19,6 +20,7 @@ export class InventarioService {
     @InjectRepository(Almacen) private readonly almacenRepo: Repository<Almacen>,
     @InjectRepository(VarianteProducto) private readonly varianteRepo: Repository<VarianteProducto>,
     @InjectRepository(ProductoSucursal) private readonly productoSucursalRepo: Repository<ProductoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: InventarioQueryDto): Promise<InventarioPaginatedResponseDto> {
@@ -41,15 +43,15 @@ export class InventarioService {
   }
 
   async registrar(dto: CrearStockDto): Promise<InventarioResponseDto> {
-    const almacen = await this.almacenRepo.findOne({ where: { id: dto.idAlmacen } });
+    const almacen = await this.almacenRepo.findOne({ where: { id: dto.idAlmacen, idEmpresa: this.tenant.empresaId() } });
     if (!almacen) throw new NotFoundException('Almacen no encontrado');
     if (!almacen.activo) throw new ConflictException('El almacen esta inactivo');
 
-    const variante = await this.varianteRepo.findOne({ where: { id: dto.idVarianteProducto } });
+    const variante = await this.varianteRepo.findOne({ where: { id: dto.idVarianteProducto, idEmpresa: this.tenant.empresaId() } });
     if (!variante) throw new NotFoundException('Variante de producto no encontrada');
     if (!variante.activo) throw new ConflictException('La variante esta inactiva');
 
-    // El catalogo es global, pero solo se puede tener stock de lo que la sucursal del almacen tiene activado.
+    // El catalogo es de toda la empresa, pero solo se puede tener stock de lo que la sucursal del almacen tiene activado.
     const activoEnSucursal = await this.productoSucursalRepo.findOne({
       where: { idProducto: variante.idProducto, idSucursal: almacen.idSucursal, activo: true },
     });

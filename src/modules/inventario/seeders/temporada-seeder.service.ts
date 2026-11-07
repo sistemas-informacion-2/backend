@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Temporada } from '../entities/temporada.entity.js';
+// Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
+import { ID_EMPRESA_INICIAL } from '../../../database/migraciones.util.js';
 
 interface TemporadaSemilla {
   nombre: string;
@@ -70,10 +72,10 @@ export class TemporadaSeederService {
   async run(): Promise<void> {
     const taxonomia = construirTaxonomia(new Date());
     for (const semilla of taxonomia) {
-      const existente = await this.temporadaRepo.findOne({ where: { nombre: semilla.nombre } });
+      const existente = await this.temporadaRepo.findOne({ where: { nombre: semilla.nombre, idEmpresa: ID_EMPRESA_INICIAL } });
       if (existente) continue;
 
-      await this.temporadaRepo.save(this.temporadaRepo.create(semilla));
+      await this.temporadaRepo.save(this.temporadaRepo.create({ ...semilla, idEmpresa: ID_EMPRESA_INICIAL }));
       this.logger.log(`Temporada creada: ${semilla.nombre} (${semilla.fechaInicio} a ${semilla.fechaFin})`);
     }
   }

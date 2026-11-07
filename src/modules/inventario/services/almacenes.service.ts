@@ -8,12 +8,14 @@ import type { CrearAlmacenDto } from '../dto/crear-almacen.dto.js';
 import type { ActualizarAlmacenDto } from '../dto/actualizar-almacen.dto.js';
 import type { AlmacenesQueryDto } from '../dto/almacenes-query.dto.js';
 import type { AlmacenResponseDto } from '../dto/almacen-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class AlmacenesService {
   constructor(
     private readonly almacenRepo: AlmacenRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: AlmacenesQueryDto): Promise<AlmacenResponseDto[]> {
@@ -66,7 +68,7 @@ export class AlmacenesService {
   }
 
   private async validarSucursal(idSucursal: number): Promise<void> {
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
   }
