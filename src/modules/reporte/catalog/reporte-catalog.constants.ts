@@ -51,6 +51,22 @@ export interface CampoReporte {
   sql: string;
   /** Conjuntos de JOIN requeridos para poder usar este campo. */
   joins: string[];
+  /**
+   * Medida de cabecera (un valor por documento, no por linea). Si la consulta incluye el detalle, se reparte entre
+   * las lineas con el peso de `FuenteReporte.prorrateo`; si no, se repetiria una vez por linea al sumar.
+   */
+  deCabecera?: boolean;
+}
+
+/**
+ * Reparto de las medidas de cabecera cuando la consulta une el detalle: `peso` es la parte de la linea dentro de su
+ * documento (sus pesos suman 1), asi la suma por cualquier agrupacion da el total real.
+ */
+export interface ProrrateoFuente {
+  /** Conjunto de JOIN que multiplica las filas (el detalle). */
+  join: string;
+  /** Expresion SQL del peso de la fila; 1 cuando el documento no tiene lineas. */
+  peso: string;
 }
 
 export interface FuenteReporte {
@@ -69,26 +85,41 @@ export interface FuenteReporte {
    * tablaBase o de un join de joinsSiempre.
    */
   columnaEmpresa: string;
+  /** Solo en fuentes con medidas de cabecera y un detalle que se puede unir. */
+  prorrateo?: ProrrateoFuente;
   campos: CampoReporte[];
+}
+
+/**
+ * Detalle unido con LATERAL (se calcula por documento, usando el indice de la FK) y con el peso de cada linea: su
+ * subtotal sobre el del documento, o partes iguales si todos los subtotales son 0.
+ */
+function detalleConPeso(tabla: string, alias: string, columnaDocumento: string, documento: string): string {
+  return (
+    `LEFT JOIN LATERAL (SELECT d.*, COALESCE(d.subtotal / NULLIF(SUM(d.subtotal) OVER (), 0), 1.0 / COUNT(*) OVER ()) AS peso ` +
+    `FROM ${tabla} d WHERE d.${columnaDocumento} = ${documento}) ${alias} ON TRUE`
+  );
 }
 
 const VENTAS: FuenteReporte = {
   id: 'VENTAS',
   nombre: 'Ventas',
   descripcion:
-    'Notas de venta con detalle por producto, categoría, cliente y sucursal. Las medidas de cabecera (monto total, descuento e impuesto) se calculan por nota de venta.',
+    'Notas de venta con detalle por producto, categoría, cliente y sucursal. El monto total, el descuento y el impuesto son de la nota; si el reporte incluye datos del detalle, se reparten entre sus líneas en proporción al subtotal de cada una, así que la suma nunca cuenta una nota dos veces.',
   tablaBase: 'nota_venta nv',
   campoFechas: 'nv.fecha_emision',
   columnaEmpresa: 'nv.id_empresa',
   joins: {
     SUCURSAL: 'LEFT JOIN sucursal sc ON sc.id = nv.id_sucursal',
     CLIENTE: 'LEFT JOIN usuario clu ON clu.id = nv.id_cliente',
-    DETALLE: 'LEFT JOIN detalle_nota_venta dnv ON dnv.id_nota_venta = nv.id',
+    FICHA_CLIENTE: 'LEFT JOIN cliente clf ON clf.id_usuario = nv.id_cliente',
+    DETALLE: detalleConPeso('detalle_nota_venta', 'dnv', 'id_nota_venta', 'nv.id'),
     VARIANTE: 'LEFT JOIN variante_producto vp ON vp.id = dnv.id_variante_producto',
     PRODUCTO: 'LEFT JOIN producto pr ON pr.id = vp.id_producto',
     CATEGORIA: 'LEFT JOIN categoria ct ON ct.id = pr.id_categoria',
   },
   joinsSiempre: [],
+  prorrateo: { join: 'DETALLE', peso: 'COALESCE(dnv.peso, 1)' },
   campos: [
     { name: 'id_nota', label: 'ID nota', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'nv.id::int', joins: [] },
     { name: 'codigo_nota', label: 'Código', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nv.codigo_nota', joins: [] },
@@ -102,6 +133,14 @@ const VENTAS: FuenteReporte = {
       sql: "TRIM(COALESCE(clu.nombre, '') || ' ' || COALESCE(clu.apellido, ''))",
       joins: ['CLIENTE'],
     },
+    {
+      name: 'cliente_identificado',
+      label: '¿Cliente identificado?',
+      categoria: 'DIMENSION',
+      tipo: 'BOOLEAN',
+      sql: 'NOT COALESCE(clf.es_consumidor_final, FALSE)',
+      joins: ['FICHA_CLIENTE'],
+    },
     { name: 'categoria', label: 'Categoría', categoria: 'DIMENSION', tipo: 'STRING', sql: 'ct.nombre', joins: ['DETALLE', 'VARIANTE', 'PRODUCTO', 'CATEGORIA'] },
     { name: 'producto', label: 'Producto', categoria: 'DIMENSION', tipo: 'STRING', sql: 'pr.nombre', joins: ['DETALLE', 'VARIANTE', 'PRODUCTO'] },
     { name: 'variante', label: 'Variante (SKU)', categoria: 'DIMENSION', tipo: 'STRING', sql: 'vp.sku', joins: ['DETALLE', 'VARIANTE'] },
@@ -111,9 +150,9 @@ const VENTAS: FuenteReporte = {
     { name: 'estado_pago', label: 'Estado de pago', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nv.estado_pago', joins: [] },
     { name: 'cantidad', label: 'Cantidad', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnv.cantidad', joins: ['DETALLE'] },
     { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnv.subtotal', joins: ['DETALLE'] },
-    { name: 'descuento', label: 'Descuento', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.descuento', joins: [] },
-    { name: 'impuesto', label: 'Impuesto', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.impuesto', joins: [] },
-    { name: 'monto_total', label: 'Monto total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.monto_total', joins: [] },
+    { name: 'descuento', label: 'Descuento', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.descuento', joins: [], deCabecera: true },
+    { name: 'impuesto', label: 'Impuesto', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.impuesto', joins: [], deCabecera: true },
+    { name: 'monto_total', label: 'Monto total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.monto_total', joins: [], deCabecera: true },
   ],
 };
 
@@ -156,16 +195,18 @@ const INVENTARIO: FuenteReporte = {
 const COMPRAS: FuenteReporte = {
   id: 'COMPRAS',
   nombre: 'Compras',
-  descripcion: 'Órdenes de compra a proveedores por sucursal y estado. Las medidas de cabecera se calculan por nota de compra.',
+  descripcion:
+    'Órdenes de compra a proveedores por sucursal y estado. El subtotal y el total son de la nota; si el reporte incluye la cantidad, se reparten entre sus líneas en proporción al subtotal de cada una.',
   tablaBase: 'nota_compra nc',
   campoFechas: 'nc.fecha_emision',
   columnaEmpresa: 'nc.id_empresa',
   joins: {
     SUCURSAL: 'LEFT JOIN sucursal sc ON sc.id = nc.id_sucursal',
     PROVEEDOR: 'LEFT JOIN proveedor pv ON pv.id = nc.id_proveedor',
-    DETALLE: 'LEFT JOIN detalle_nota_compra dnc ON dnc.id_nota_compra = nc.id',
+    DETALLE: detalleConPeso('detalle_nota_compra', 'dnc', 'id_nota_compra', 'nc.id'),
   },
   joinsSiempre: [],
+  prorrateo: { join: 'DETALLE', peso: 'COALESCE(dnc.peso, 1)' },
   campos: [
     { name: 'id_compra', label: 'ID compra', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'nc.id::int', joins: [] },
     { name: 'nro_factura', label: 'Nº factura', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nc.nro_factura', joins: [] },
@@ -173,8 +214,8 @@ const COMPRAS: FuenteReporte = {
     { name: 'sucursal', label: 'Sucursal', categoria: 'DIMENSION', tipo: 'STRING', sql: 'sc.nombre', joins: ['SUCURSAL'] },
     { name: 'proveedor', label: 'Proveedor', categoria: 'DIMENSION', tipo: 'STRING', sql: 'pv.empresa', joins: ['PROVEEDOR'] },
     { name: 'estado', label: 'Estado', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nc.estado', joins: [] },
-    { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.subtotal', joins: [] },
-    { name: 'total', label: 'Total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.total', joins: [] },
+    { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.subtotal', joins: [], deCabecera: true },
+    { name: 'total', label: 'Total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.total', joins: [], deCabecera: true },
     { name: 'cantidad', label: 'Cantidad', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnc.cantidad', joins: ['DETALLE'] },
   ],
 };
