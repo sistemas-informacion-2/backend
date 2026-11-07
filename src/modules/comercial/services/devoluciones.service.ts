@@ -48,6 +48,8 @@ function normalizarCodigo(codigo?: string): string | undefined {
 
 interface LineaNota {
   idVarianteProducto: number;
+  /** Primera linea de la nota con esta variante (las lineas repetidas de una variante se suman en una). */
+  idDetalleNotaVenta: number;
   sku: string;
   descripcion: string;
   cantidadComprada: number;
@@ -285,11 +287,13 @@ export class DevolucionesService {
   /** Suma las lineas repetidas de una misma variante y prorratea descuento/impuesto de la nota en el precio. */
   private agruparLineas(nota: NotaVenta, devueltas: Map<number, number>): LineaNota[] {
     const factor = Number(nota.subtotal) > 0 ? Number(nota.montoTotal) / Number(nota.subtotal) : 1;
-    const porVariante = new Map<number, { sku: string; descripcion: string; cantidad: number; importe: number }>();
+    const porVariante = new Map<number, { idDetalle: number; sku: string; descripcion: string; cantidad: number; importe: number }>();
 
-    for (const detalle of nota.detalles ?? []) {
+    const detalles = [...(nota.detalles ?? [])].sort((a, b) => a.id - b.id);
+    for (const detalle of detalles) {
       if (detalle.idVarianteProducto === null) continue;
       const acumulado = porVariante.get(detalle.idVarianteProducto) ?? {
+        idDetalle: detalle.id,
         sku: detalle.variante?.sku ?? '',
         descripcion: detalle.descripcion,
         cantidad: 0,
@@ -302,6 +306,7 @@ export class DevolucionesService {
 
     return [...porVariante.entries()].map(([idVarianteProducto, linea]) => ({
       idVarianteProducto,
+      idDetalleNotaVenta: linea.idDetalle,
       sku: linea.sku,
       descripcion: linea.descripcion,
       cantidadComprada: linea.cantidad,
@@ -419,6 +424,7 @@ export class DevolucionesService {
       const linea = origen.lineas.find((candidata) => candidata.idVarianteProducto === item.idVarianteProducto) as LineaNota;
       return {
         idVarianteProducto: item.idVarianteProducto,
+        idDetalleNotaVenta: linea.idDetalleNotaVenta,
         idAlmacen: item.idAlmacen ?? null,
         descripcion: linea.descripcion.slice(0, 255),
         precioUnitario: linea.precioReembolsable,
@@ -436,6 +442,7 @@ export class DevolucionesService {
     return [
       {
         idVarianteProducto: null,
+        idDetalleNotaVenta: null,
         idAlmacen: null,
         descripcion: `Reembolso del anticipo de la reserva ${origen.reserva.codigoReserva}`.slice(0, 255),
         precioUnitario: pendiente,
@@ -542,6 +549,7 @@ export class DevolucionesService {
 
 interface LineaDevolucion {
   idVarianteProducto: number | null;
+  idDetalleNotaVenta: number | null;
   idAlmacen: number | null;
   descripcion: string;
   precioUnitario: number;

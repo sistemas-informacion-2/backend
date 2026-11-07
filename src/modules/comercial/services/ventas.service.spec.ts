@@ -326,7 +326,8 @@ describe('VentasService', () => {
       const creado = repoDe(Usuario).save.mock.calls[0][0] as Record<string, unknown>;
       expect(creado).toMatchObject({ email: EMAIL_CONSUMIDOR_FINAL, tipoUsuario: 'C', activo: false, estadoAcceso: 'SUSPENDIDO' });
       expect(String(creado.passwordHash)).toMatch(/^\$2[aby]\$/);
-      expect(repoDe(Cliente).save).toHaveBeenCalledWith(expect.objectContaining({ idUsuario: 50 }));
+      // Marcado para que los analisis de clientes lo excluyan.
+      expect(repoDe(Cliente).save).toHaveBeenCalledWith(expect.objectContaining({ idUsuario: 50, esConsumidorFinal: true }));
       expect(notaVentaRepo.create).toHaveBeenCalledWith(expect.objectContaining({ idCliente: 50 }), expect.anything());
     });
 

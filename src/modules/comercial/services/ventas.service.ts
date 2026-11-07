@@ -253,7 +253,9 @@ export class VentasService {
     const clienteRepo = manager.getRepository(Cliente);
     const cliente = await clienteRepo.findOne({ where: { idUsuario: usuario.id } });
     if (!cliente) {
-      await clienteRepo.save(clienteRepo.create({ idUsuario: usuario.id, ciudadResidencia: null, direccionPrincipal: null, puntosFidelidad: 0 }));
+      await clienteRepo.save(
+        clienteRepo.create({ idUsuario: usuario.id, ciudadResidencia: null, direccionPrincipal: null, puntosFidelidad: 0, esConsumidorFinal: true }),
+      );
     }
     return usuario.id;
   }

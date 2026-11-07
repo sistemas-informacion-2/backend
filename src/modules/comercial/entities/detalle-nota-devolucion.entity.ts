@@ -1,6 +1,7 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
+import { DetalleNotaVenta } from './detalle-nota-venta.entity.js';
 import { NotaDevolucion } from './nota-devolucion.entity.js';
 
 export type EstadoProductoDevolucion = 'REINGRESO_INVENTARIO' | 'MERMA_DEFECTUOSO' | 'NO_APLICA';
@@ -30,6 +31,17 @@ export class DetalleNotaDevolucion {
   @ManyToOne(() => VarianteProducto)
   @JoinColumn({ name: 'id_variante_producto' })
   variante: Relation<VarianteProducto> | null;
+
+  /**
+   * Linea de la nota de venta de la que sale la prenda devuelta (su precio y costo de venta). Null en el reembolso del
+   * anticipo de una reserva, que no tiene venta detras.
+   */
+  @Column({ name: 'id_detalle_nota_venta', type: 'int', nullable: true })
+  idDetalleNotaVenta: number | null;
+
+  @ManyToOne(() => DetalleNotaVenta, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'id_detalle_nota_venta' })
+  detalleNotaVenta: Relation<DetalleNotaVenta> | null;
 
   @Column({ name: 'id_almacen', type: 'int', nullable: true })
   idAlmacen: number | null;
