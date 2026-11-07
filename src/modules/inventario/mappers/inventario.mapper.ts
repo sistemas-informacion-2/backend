@@ -1,5 +1,6 @@
 import type { Inventario } from '../entities/inventario.entity.js';
 import type { InventarioResponseDto } from '../dto/inventario-response.dto.js';
+import { calcularPrecioVenta } from '../utils/precio.util.js';
 
 export function toInventarioResponseDto(inventario: Inventario): InventarioResponseDto {
   const almacen = inventario.almacen;
@@ -17,6 +18,7 @@ export function toInventarioResponseDto(inventario: Inventario): InventarioRespo
     talla: variante?.talla ?? '',
     color: variante?.color ?? '',
     precio: Number(variante?.producto?.precio ?? 0),
+    precioVenta: calcularPrecioVenta(Number(variante?.producto?.precio ?? 0), variante?.producto?.descuentoPorcentaje).precioUnitario,
     stockDisponible: inventario.stockDisponible,
     stockReservado: inventario.stockReservado,
     stockMinimo: inventario.stockMinimo,

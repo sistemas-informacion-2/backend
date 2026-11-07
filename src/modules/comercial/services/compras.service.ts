@@ -1,13 +1,14 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, type Repository } from 'typeorm';
+import { DataSource, In, type EntityManager, type Repository } from 'typeorm';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { Proveedor } from '../../inventario/entities/proveedor.entity.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
+import { registrarCostoDeEntrada } from '../../inventario/utils/costo.util.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { EmpleadoSucursal } from '../../operaciones/entities/empleado-sucursal.entity.js';
 import { Caja } from '../entities/caja.entity.js';
@@ -117,6 +118,8 @@ export class ComprasService {
         ),
       );
 
+      // El costo se pondera contra el stock de ANTES de esta compra: primero el costo, despues las unidades.
+      await this.registrarCostos(manager, dto.detalles);
       await this.incrementarStock(manager.getRepository(Inventario), dto.detalles);
 
       if (dto.pagarEnCaja) {
@@ -178,6 +181,24 @@ export class ComprasService {
           `La variante ${variante.sku} pertenece a un producto que no esta activo en esta sucursal; activalo primero en la sucursal`,
         );
       }
+    }
+  }
+
+  /**
+   * Actualiza el costo promedio de cada variante comprada. Las lineas de una misma variante (p. ej. a dos almacenes)
+   * se juntan en una sola entrada al precio ponderado, y las variantes se recorren por id para que dos compras
+   * simultaneas las bloqueen en el mismo orden.
+   */
+  private async registrarCostos(manager: EntityManager, detalles: CrearDetalleCompraDto[]): Promise<void> {
+    const porVariante = new Map<number, { cantidad: number; importe: number }>();
+    for (const linea of detalles) {
+      const acumulado = porVariante.get(linea.idVarianteProducto) ?? { cantidad: 0, importe: 0 };
+      acumulado.cantidad += linea.cantidad;
+      acumulado.importe += linea.cantidad * linea.precioUnitario;
+      porVariante.set(linea.idVarianteProducto, acumulado);
+    }
+    for (const [idVariante, { cantidad, importe }] of [...porVariante].sort(([a], [b]) => a - b)) {
+      await registrarCostoDeEntrada(manager, idVariante, cantidad, importe / cantidad);
     }
   }
 

@@ -16,7 +16,7 @@ import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
-import { precioConDescuento } from '../../inventario/utils/precio.util.js';
+import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
 import { Caja } from '../../comercial/entities/caja.entity.js';
 import { DetalleNotaVenta } from '../../comercial/entities/detalle-nota-venta.entity.js';
 import { MovimientoCaja } from '../../comercial/entities/movimiento-caja.entity.js';
@@ -64,6 +64,8 @@ function codigoDefinitivo(prefijo: string, id: number): string {
 interface LineaReserva {
   variante: VarianteProducto;
   cantidad: number;
+  precioLista: number;
+  descuentoUnitario: number;
   precioUnitario: number;
   subtotal: number;
 }
@@ -218,6 +220,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
           detalleRepo.create({
             idReserva: reserva.id,
             idVarianteProducto: linea.variante.id,
+            precioLista: linea.precioLista,
+            descuentoUnitario: linea.descuentoUnitario,
             precioUnitario: linea.precioUnitario,
             cantidad: linea.cantidad,
             subtotal: linea.subtotal,
@@ -338,7 +342,11 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
             idNotaVenta: nota.id,
             idVarianteProducto: detalle.idVarianteProducto,
             descripcion: `${detalle.variante?.producto?.nombre ?? 'Producto'} (${detalle.variante?.talla}/${detalle.variante?.color})`.slice(0, 255),
+            // Precio pactado al reservar; el costo es el de hoy, cuando la prenda sale del inventario.
+            precioLista: Number(detalle.precioLista),
+            descuentoUnitario: Number(detalle.descuentoUnitario),
             precioUnitario: Number(detalle.precioUnitario),
+            costoUnitario: detalle.variante?.costoPromedio ?? null,
             cantidad: detalle.cantidad,
             subtotal: Number(detalle.subtotal),
           }),
@@ -457,8 +465,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (!activados.some((activado) => activado.idProducto === variante.idProducto)) {
         throw new ConflictException(`"${variante.producto.nombre}" no se vende en esta sucursal`);
       }
-      const precioUnitario = precioConDescuento(Number(variante.producto.precio), Number(variante.producto.descuentoPorcentaje));
-      return { variante, cantidad: item.cantidad, precioUnitario, subtotal: redondear(precioUnitario * item.cantidad) };
+      const { precioLista, descuentoUnitario, precioUnitario } = calcularPrecioVenta(Number(variante.producto.precio), variante.producto.descuentoPorcentaje);
+      return { variante, cantidad: item.cantidad, precioLista, descuentoUnitario, precioUnitario, subtotal: redondear(precioUnitario * item.cantidad) };
     });
   }
 

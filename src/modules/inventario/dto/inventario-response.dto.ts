@@ -9,7 +9,10 @@ export class InventarioResponseDto {
   productoNombre: string;
   talla: string;
   color: string;
+  /** Precio de lista del producto. */
   precio: number;
+  /** Precio que se cobra hoy (con el descuento del producto): el mismo en caja, en linea y en reservas. */
+  precioVenta: number;
   stockDisponible: number;
   stockReservado: number;
   stockMinimo: number;

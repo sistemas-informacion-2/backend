@@ -208,6 +208,30 @@ describe('VentasService', () => {
     expect(dataSource.transaction).toHaveBeenCalled();
   });
 
+  it('cobra el precio con el descuento del producto y guarda lista, descuento y costo de cada linea', async () => {
+    const { service, repoDe } = crearService({
+      variante: {
+        id: 7, idProducto: 1, activo: true, sku: 'SKU-1', talla: 'M', color: 'Rojo', costoPromedio: 31.5,
+        producto: { nombre: 'Camisa', precio: 50, descuentoPorcentaje: 10, activo: true },
+      },
+    });
+
+    await service.crear(dtoBase, usuarioEmpleado);
+
+    // Antes el mostrador cobraba 50 ignorando el descuento que la tienda en linea si aplicaba.
+    expect(repoDe(DetalleNotaVenta).create).toHaveBeenCalledWith(
+      expect.objectContaining({ precioLista: 50, descuentoUnitario: 5, precioUnitario: 45, costoUnitario: 31.5, subtotal: 90 }),
+    );
+  });
+
+  it('una variante sin costo conocido deja el costo de la linea vacio', async () => {
+    const { service, repoDe } = crearService();
+
+    await service.crear(dtoBase, usuarioEmpleado);
+
+    expect(repoDe(DetalleNotaVenta).create).toHaveBeenCalledWith(expect.objectContaining({ precioLista: 50, precioUnitario: 50, costoUnitario: null }));
+  });
+
   it('rechaza la venta si el stock es insuficiente', async () => {
     const { service } = crearService({ inventarios: [{ id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 1 }] });
 

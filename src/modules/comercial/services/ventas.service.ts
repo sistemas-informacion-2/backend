@@ -9,6 +9,7 @@ import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
+import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
 import { Caja } from '../entities/caja.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
@@ -40,7 +41,10 @@ interface Asignacion {
 interface LineaVenta {
   idVarianteProducto: number;
   descripcion: string;
+  precioLista: number;
+  descuentoUnitario: number;
   precioUnitario: number;
+  costoUnitario: number | null;
   cantidad: number;
   subtotal: number;
   asignaciones: Asignacion[];
@@ -175,7 +179,10 @@ export class VentasService {
             idNotaVenta: venta.id,
             idVarianteProducto: linea.idVarianteProducto,
             descripcion: linea.descripcion,
+            precioLista: linea.precioLista,
+            descuentoUnitario: linea.descuentoUnitario,
             precioUnitario: linea.precioUnitario,
+            costoUnitario: linea.costoUnitario,
             cantidad: linea.cantidad,
             subtotal: linea.subtotal,
           }),
@@ -314,11 +321,18 @@ export class VentasService {
       }
       if (restante > 0) throw new BadRequestException(`Stock insuficiente para la variante ${variante.sku}`);
 
-      const precioUnitario = Number(variante.producto?.precio ?? 0);
+      // Mismo precio que en la tienda en linea y en las reservas: con el descuento vigente del producto.
+      const { precioLista, descuentoUnitario, precioUnitario } = calcularPrecioVenta(
+        Number(variante.producto?.precio ?? 0),
+        variante.producto?.descuentoPorcentaje,
+      );
       lineas.push({
         idVarianteProducto: variante.id,
         descripcion: `${variante.producto?.nombre ?? 'Producto'} (${variante.talla}/${variante.color})`,
+        precioLista,
+        descuentoUnitario,
         precioUnitario,
+        costoUnitario: variante.costoPromedio ?? null,
         cantidad: item.cantidad,
         subtotal: redondear(precioUnitario * item.cantidad),
         asignaciones,

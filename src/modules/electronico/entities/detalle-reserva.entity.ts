@@ -28,6 +28,13 @@ export class DetalleReserva {
   @JoinColumn({ name: 'id_variante_producto' })
   variante: Relation<VarianteProducto>;
 
+  /** Precio de lista al reservar; la liquidacion lo copia a la nota de venta. */
+  @Column({ name: 'precio_lista', type: 'decimal', precision: 12, scale: 2, transformer: TRANSFORMER_DECIMAL })
+  precioLista: number;
+
+  @Column({ name: 'descuento_unitario', type: 'decimal', precision: 12, scale: 2, default: 0, transformer: TRANSFORMER_DECIMAL })
+  descuentoUnitario: number;
+
   @Column({ name: 'precio_unitario', type: 'decimal', precision: 12, scale: 2, transformer: TRANSFORMER_DECIMAL })
   precioUnitario: number;
 

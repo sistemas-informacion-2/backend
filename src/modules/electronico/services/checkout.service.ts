@@ -7,7 +7,7 @@ import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type { AppConfig } from '../../../config/configuration.js';
 import { DisponibilidadService } from '../../inventario/services/disponibilidad.service.js';
-import { precioConDescuento } from '../../inventario/utils/precio.util.js';
+import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
 import { DetalleNotaVenta } from '../../comercial/entities/detalle-nota-venta.entity.js';
 import { NotaVenta } from '../../comercial/entities/nota-venta.entity.js';
 import { Pago } from '../../comercial/entities/pago.entity.js';
@@ -61,7 +61,10 @@ interface LineaCompra {
   idVarianteProducto: number;
   descripcion: string;
   cantidad: number;
+  precioLista: number;
+  descuentoUnitario: number;
   precioUnitario: number;
+  costoUnitario: number | null;
   subtotal: number;
 }
 
@@ -387,7 +390,10 @@ export class CheckoutService {
           idNotaVenta: nota.id,
           idVarianteProducto: linea.idVarianteProducto,
           descripcion: linea.descripcion,
+          precioLista: linea.precioLista,
+          descuentoUnitario: linea.descuentoUnitario,
           precioUnitario: linea.precioUnitario,
+          costoUnitario: linea.costoUnitario,
           cantidad: linea.cantidad,
           subtotal: linea.subtotal,
         }),
@@ -525,12 +531,15 @@ export class CheckoutService {
           throw new ConflictException(`"${producto?.nombre ?? 'Un producto'}" ya no esta disponible; quitalo del carrito para continuar`);
         }
         // Se cobra el precio vigente, no el guardado en el carrito.
-        const precioUnitario = precioConDescuento(Number(producto.precio), Number(producto.descuentoPorcentaje));
+        const { precioLista, descuentoUnitario, precioUnitario } = calcularPrecioVenta(Number(producto.precio), producto.descuentoPorcentaje);
         return {
           idVarianteProducto: detalle.idVarianteProducto,
           descripcion: `${producto.nombre} (${detalle.variante.talla}/${detalle.variante.color})`.slice(0, 255),
           cantidad: detalle.cantidad,
+          precioLista,
+          descuentoUnitario,
           precioUnitario,
+          costoUnitario: detalle.variante.costoPromedio ?? null,
           subtotal: redondear(precioUnitario * detalle.cantidad),
         };
       });

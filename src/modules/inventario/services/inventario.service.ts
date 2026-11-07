@@ -5,6 +5,7 @@ import { Almacen } from '../entities/almacen.entity.js';
 import { VarianteProducto } from '../entities/variante-producto.entity.js';
 import { ProductoSucursal } from '../entities/producto-sucursal.entity.js';
 import { InventarioRepository } from '../repositories/inventario.repository.js';
+import { registrarCostoDeEntrada } from '../utils/costo.util.js';
 import { toInventarioResponseDto } from '../mappers/inventario.mapper.js';
 import type { CrearStockDto } from '../dto/crear-stock.dto.js';
 import type { ActualizarStockDto } from '../dto/actualizar-stock.dto.js';
@@ -63,6 +64,11 @@ export class InventarioService {
 
     const existente = await this.inventarioRepo.findByAlmacenYVariante(dto.idAlmacen, dto.idVarianteProducto);
     if (existente) throw new ConflictException('Esa variante ya esta registrada en el almacen');
+
+    // Con costo, el stock inicial entra al promedio como una compra (antes de existir la fila, asi no se cuenta dos veces).
+    if (dto.costoUnitario !== undefined && (dto.stockDisponible ?? 0) > 0) {
+      await registrarCostoDeEntrada(this.varianteRepo.manager, variante.id, dto.stockDisponible ?? 0, dto.costoUnitario);
+    }
 
     const inventario = this.inventarioRepo.create({
       idAlmacen: dto.idAlmacen,

@@ -2,6 +2,12 @@ import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, t
 import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Producto } from './producto.entity.js';
 
+/** Postgres devuelve NUMERIC como string; lo convertimos a number en ambos sentidos. */
+const TRANSFORMER_DECIMAL = {
+  to: (valor: number | null) => valor,
+  from: (valor: string | null) => (valor === null ? null : Number(valor)),
+};
+
 @Index('uq_variante_empresa_sku', ['idEmpresa', 'sku'], { unique: true })
 @Entity('variante_producto')
 export class VarianteProducto {
@@ -37,4 +43,11 @@ export class VarianteProducto {
 
   @Column({ type: 'boolean', default: true })
   activo: boolean;
+
+  /**
+   * Costo promedio ponderado de una unidad (compras y stock inicial, ver costo.util). null = todavia sin costo
+   * conocido: las ventas de esa variante quedan sin costo y el margen no se puede calcular.
+   */
+  @Column({ name: 'costo_promedio', type: 'decimal', precision: 12, scale: 4, nullable: true, transformer: TRANSFORMER_DECIMAL })
+  costoPromedio: number | null;
 }
