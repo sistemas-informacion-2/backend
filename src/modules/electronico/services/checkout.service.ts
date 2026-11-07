@@ -27,6 +27,7 @@ import type {
   PagoTarjetaDto,
 } from '../dto/checkout.dto.js';
 import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 
 const METODOS_SOPORTADOS: CodigoMetodoOnline[] = ['QR', 'STRIPE', 'TARJETA'];
 const VIGENCIA_QR_MS = 15 * 60 * 1000;
@@ -66,6 +67,12 @@ interface LineaCompra {
   precioUnitario: number;
   costoUnitario: number | null;
   subtotal: number;
+}
+
+/** Unidades descontadas de una fila de inventario, con su stock ya actualizado (para el kardex). */
+interface PorcionDescontada {
+  cantidad: number;
+  fila: { idAlmacen: number; idVarianteProducto: number; stockDisponible: number; stockReservado: number };
 }
 
 interface ResumenCarrito {
@@ -350,8 +357,10 @@ export class CheckoutService {
     // El stock sale unicamente de la sucursal que el cliente tenia elegida en el catalogo al armar
     // el carrito: nunca de otra, aunque esa otra tenga mas unidades (por eso ya no se reparte ni se
     // "adivina" la sucursal mas conveniente — se evita despachar desde una ciudad que el cliente ni vio).
+    // Las salidas van al kardex cuando la nota ya tiene id (mas abajo), en esta misma transaccion.
+    const salidas: Array<{ linea: LineaCompra; porciones: PorcionDescontada[] }> = [];
     for (const linea of resumen.lineas) {
-      await this.descontarStock(manager, linea, resumen.idSucursal);
+      salidas.push({ linea, porciones: await this.descontarStock(manager, linea, resumen.idSucursal) });
     }
 
     const ahora = new Date();
@@ -399,6 +408,19 @@ export class CheckoutService {
         }),
       ),
     );
+
+    for (const { linea, porciones } of salidas) {
+      for (const { fila, cantidad } of porciones) {
+        await registrarMovimiento(manager, fila, {
+          tipo: 'SALIDA_VENTA',
+          cantidad: -cantidad,
+          costoUnitario: linea.costoUnitario,
+          referenciaTipo: 'NOTA_VENTA',
+          referenciaId: nota.id,
+          idUsuario: idCliente,
+        });
+      }
+    }
 
     // El indice unico de referencia_externa frena aqui un segundo intento del mismo cobro (doble clic, recarga).
     const pagoRepo = manager.getRepository(Pago);
@@ -478,9 +500,9 @@ export class CheckoutService {
    * pero nunca de otra sucursal): la que el cliente eligió en el catálogo. Si
    * ahí no alcanza, no se reparte con otra sucursal — se avisa y no se cobra.
    */
-  private async descontarStock(manager: EntityManager, linea: LineaCompra, idSucursal: number): Promise<void> {
-    const filas = await manager.query<Array<{ id: number; stock_disponible: number }>>(
-      `SELECT i.id, i.stock_disponible
+  private async descontarStock(manager: EntityManager, linea: LineaCompra, idSucursal: number): Promise<PorcionDescontada[]> {
+    const filas = await manager.query<Array<{ id: number; id_almacen: number; stock_disponible: number; stock_reservado: number }>>(
+      `SELECT i.id, i.id_almacen, i.stock_disponible, i.stock_reservado
          FROM inventario i
          JOIN almacen a ON a.id = i.id_almacen
          JOIN sucursal s ON s.id = a.id_sucursal
@@ -499,10 +521,21 @@ export class CheckoutService {
     );
 
     let restante = linea.cantidad;
+    const porciones: PorcionDescontada[] = [];
     for (const fila of filas) {
       if (restante === 0) break;
       const tomar = Math.min(fila.stock_disponible, restante);
       await manager.query('UPDATE inventario SET stock_disponible = stock_disponible - $1 WHERE id = $2', [tomar, fila.id]);
+      // La fila esta bloqueada (FOR UPDATE): el stock resultante es exacto sin volver a leerla.
+      porciones.push({
+        cantidad: tomar,
+        fila: {
+          idAlmacen: fila.id_almacen,
+          idVarianteProducto: linea.idVarianteProducto,
+          stockDisponible: fila.stock_disponible - tomar,
+          stockReservado: fila.stock_reservado,
+        },
+      });
       restante -= tomar;
     }
 
@@ -511,6 +544,7 @@ export class CheckoutService {
         `Ya no hay stock suficiente de ${linea.descripcion} en tu sucursal. No se te cobró nada; ajusta tu carrito o cambia de sucursal`,
       );
     }
+    return porciones;
   }
 
   private async resumenCarrito(manager: EntityManager, idCliente: number): Promise<ResumenCarrito> {

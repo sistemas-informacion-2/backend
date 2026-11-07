@@ -9,6 +9,7 @@ import { VarianteProducto } from '../../inventario/entities/variante-producto.en
 import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { registrarCostoDeEntrada } from '../../inventario/utils/costo.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { EmpleadoSucursal } from '../../operaciones/entities/empleado-sucursal.entity.js';
 import { Caja } from '../entities/caja.entity.js';
@@ -120,7 +121,7 @@ export class ComprasService {
 
       // El costo se pondera contra el stock de ANTES de esta compra: primero el costo, despues las unidades.
       await this.registrarCostos(manager, dto.detalles);
-      await this.incrementarStock(manager.getRepository(Inventario), dto.detalles);
+      await this.incrementarStock(manager, dto.detalles, compra.id, usuario.sub);
 
       if (dto.pagarEnCaja) {
         const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal: dto.idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
@@ -202,8 +203,9 @@ export class ComprasService {
     }
   }
 
-  /** Suma la cantidad comprada al stock del almacen; si la variante aun no tenia registro, lo abre. */
-  private async incrementarStock(inventarioRepo: Repository<Inventario>, detalles: CrearDetalleCompraDto[]): Promise<void> {
+  /** Suma la cantidad comprada al stock del almacen (y al kardex); si la variante aun no tenia registro, lo abre. */
+  private async incrementarStock(manager: EntityManager, detalles: CrearDetalleCompraDto[], idCompra: number, idUsuario: number): Promise<void> {
+    const inventarioRepo = manager.getRepository(Inventario);
     // Orden fijo para que dos compras concurrentes bloqueen las filas en el mismo orden y no se interbloqueen.
     const lineas = [...detalles].sort((a, b) => a.idAlmacen - b.idAlmacen || a.idVarianteProducto - b.idVarianteProducto);
 
@@ -213,11 +215,12 @@ export class ComprasService {
         lock: { mode: 'pessimistic_write' },
       });
 
+      let fila: Inventario;
       if (existente) {
         existente.stockDisponible += linea.cantidad;
-        await inventarioRepo.save(existente);
+        fila = await inventarioRepo.save(existente);
       } else {
-        await inventarioRepo.save(
+        fila = await inventarioRepo.save(
           inventarioRepo.create({
             idAlmacen: linea.idAlmacen,
             idVarianteProducto: linea.idVarianteProducto,
@@ -228,6 +231,14 @@ export class ComprasService {
           }),
         );
       }
+      await registrarMovimiento(manager, fila, {
+        tipo: 'ENTRADA_COMPRA',
+        cantidad: linea.cantidad,
+        costoUnitario: linea.precioUnitario,
+        referenciaTipo: 'NOTA_COMPRA',
+        referenciaId: idCompra,
+        idUsuario,
+      });
     }
   }
 

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { MovimientoInventario } from '../../inventario/entities/movimiento-inventario.entity.js';
 import { DevolucionesService } from './devoluciones.service.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
@@ -115,8 +116,11 @@ function crearService(escenario: Escenario = {}) {
   });
   repos.set(EmpleadoSucursal, { findOne: vi.fn().mockResolvedValue({ idEmpleado: 5, idSucursal: 1, activo: true }) });
 
+  const kardex = { create: vi.fn((datos: unknown) => datos), save: vi.fn(async (datos: unknown) => datos) };
   const manager = {
     getRepository: (entidad: unknown) => {
+      // El kardex se escribe en todos los movimientos de stock; aqui solo se acepta.
+      if (entidad === MovimientoInventario && !repos.has(entidad)) return kardex;
       const repo = repos.get(entidad);
       if (!repo) throw new Error(`Repo no mockeado: ${(entidad as { name: string }).name}`);
       return repo;

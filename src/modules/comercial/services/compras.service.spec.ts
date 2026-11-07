@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { MovimientoInventario } from '../../inventario/entities/movimiento-inventario.entity.js';
 import { ComprasService } from './compras.service.js';
 import { NotaCompra } from '../entities/nota-compra.entity.js';
 import { DetalleNotaCompra } from '../entities/detalle-nota-compra.entity.js';
@@ -98,6 +99,7 @@ function crearService(
     [DetalleNotaCompra, detalleRepo],
     [Inventario, inventarioRepo],
     [VarianteProducto, varianteTxRepo],
+    [MovimientoInventario, { create: vi.fn((datos: unknown) => datos), save: vi.fn(async (datos: unknown) => datos) }],
     [Caja, cajaRepo],
     [MovimientoCaja, movimientoRepo],
   ]);

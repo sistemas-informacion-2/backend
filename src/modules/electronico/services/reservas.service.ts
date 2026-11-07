@@ -43,6 +43,7 @@ import {
   type ReservasQueryDto,
 } from '../dto/reservas.dto.js';
 import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
+import { registrarMovimiento, type DatosMovimiento } from '../../inventario/utils/kardex.util.js';
 
 /** Un cliente no puede acaparar stock: como maximo tiene este numero de reservas vivas a la vez. */
 export const MAX_RESERVAS_ACTIVAS_CLIENTE = 3;
@@ -191,8 +192,9 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       }
       if (montoAnticipo > montoTotal) throw new BadRequestException('El anticipo no puede superar el total de la reserva');
 
+      const apartados: Array<{ linea: LineaReserva; porciones: Array<{ inventario: Inventario; cantidad: number }> }> = [];
       for (const linea of lineas) {
-        await this.apartarStock(manager, idSucursal, linea);
+        apartados.push({ linea, porciones: await this.apartarStock(manager, idSucursal, linea) });
       }
 
       const ahora = new Date();
@@ -228,6 +230,20 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
           }),
         ),
       );
+
+      for (const { linea, porciones } of apartados) {
+        for (const { inventario, cantidad } of porciones) {
+          await registrarMovimiento(manager, inventario, {
+            tipo: 'RESERVA',
+            cantidad: -cantidad,
+            deltaReservado: cantidad,
+            costoUnitario: linea.variante.costoPromedio,
+            referenciaTipo: 'RESERVA',
+            referenciaId: reserva.id,
+            idUsuario: usuario.sub,
+          });
+        }
+      }
 
       return reserva.id;
     });
@@ -355,7 +371,13 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
 
       // stock_disponible ya se descontó al reservar: aqui solo sale de lo reservado.
       for (const detalle of [...detalles].sort((a, b) => a.idVarianteProducto - b.idVarianteProducto)) {
-        await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, false);
+        await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, false, {
+          tipo: 'SALIDA_RESERVA',
+          costoUnitario: detalle.variante?.costoPromedio ?? null,
+          referenciaTipo: 'NOTA_VENTA',
+          referenciaId: nota.id,
+          idUsuario: usuario.sub,
+        });
       }
 
       if (movimiento) {
@@ -395,7 +417,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') {
         throw new ConflictException(`La reserva ya esta ${reserva.estado.toLowerCase()}`);
       }
-      await this.liberarReserva(manager, reserva, dto.motivo?.trim() || 'Cancelada manualmente');
+      await this.liberarReserva(manager, reserva, dto.motivo?.trim() || 'Cancelada manualmente', usuario.sub);
     });
 
     return this.obtener(id, usuario);
@@ -416,7 +438,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
         if (!reserva || (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') || reserva.fechaLimite >= new Date()) {
           return false;
         }
-        await this.liberarReserva(manager, reserva, 'Cancelada automaticamente por vencimiento');
+        await this.liberarReserva(manager, reserva, 'Cancelada automaticamente por vencimiento', null);
         return true;
       }));
       if (cancelada) canceladas += 1;
@@ -433,10 +455,17 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async liberarReserva(manager: EntityManager, reserva: Reserva, motivo: string): Promise<void> {
+  /** `idUsuario` null = la cancelo el sistema (vencimiento). */
+  private async liberarReserva(manager: EntityManager, reserva: Reserva, motivo: string, idUsuario: number | null): Promise<void> {
     const detalles = await manager.getRepository(DetalleReserva).find({ where: { idReserva: reserva.id }, order: { idVarianteProducto: 'ASC' } });
     for (const detalle of detalles) {
-      await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, true);
+      await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, true, {
+        tipo: 'LIBERACION_RESERVA',
+        referenciaTipo: 'RESERVA',
+        referenciaId: reserva.id,
+        idUsuario,
+        motivo,
+      });
     }
     reserva.estado = 'CANCELADA';
     reserva.observaciones = [reserva.observaciones, `[${motivo}]`].filter(Boolean).join(' ');
@@ -470,8 +499,9 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** stock_disponible -> stock_reservado, repartido entre los almacenes activos de la sucursal. */
-  private async apartarStock(manager: EntityManager, idSucursal: number, linea: LineaReserva): Promise<void> {
+  /** stock_disponible -> stock_reservado, repartido entre los almacenes activos de la sucursal. Devuelve lo apartado por fila. */
+  private async apartarStock(manager: EntityManager, idSucursal: number, linea: LineaReserva): Promise<Array<{ inventario: Inventario; cantidad: number }>> {
+    const porciones: Array<{ inventario: Inventario; cantidad: number }> = [];
     const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal, activo: true }, select: { id: true } });
     const inventarios = await this.inventariosBloqueados(manager, almacenes, linea.variante.id);
 
@@ -484,6 +514,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       inventario.stockReservado += tomar;
       restante -= tomar;
       await manager.getRepository(Inventario).save(inventario);
+      porciones.push({ inventario, cantidad: tomar });
     }
 
     if (restante > 0) {
@@ -491,15 +522,17 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
         `Stock insuficiente en esta sucursal para ${linea.variante.producto.nombre} (${linea.variante.talla}/${linea.variante.color})`,
       );
     }
+    return porciones;
   }
 
-  /** Reduce stock_reservado; con `devolver` el stock vuelve a stock_disponible (cancelacion). */
+  /** Reduce stock_reservado; con `devolver` el stock vuelve a stock_disponible (cancelacion). Cada porcion va al kardex. */
   private async moverStockReservado(
     manager: EntityManager,
     idSucursal: number,
     idVarianteProducto: number,
     cantidad: number,
     devolver: boolean,
+    kardex: Omit<DatosMovimiento, 'cantidad' | 'deltaReservado'>,
   ): Promise<void> {
     const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal }, select: { id: true } });
     const inventarios = await this.inventariosBloqueados(manager, almacenes, idVarianteProducto);
@@ -513,6 +546,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (devolver) inventario.stockDisponible += tomar;
       restante -= tomar;
       await manager.getRepository(Inventario).save(inventario);
+      await registrarMovimiento(manager, inventario, { ...kardex, cantidad: devolver ? tomar : 0, deltaReservado: -tomar });
     }
 
     // Nunca debe pasar (el stock reservado solo lo mueven las reservas), pero no debe bloquear cancelar ni liquidar.

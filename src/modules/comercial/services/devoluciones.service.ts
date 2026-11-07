@@ -31,6 +31,7 @@ import {
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 
 /** Valores por defecto de INVENTARIO cuando la devolucion abre el registro de una variante en un almacen. */
 const STOCK_MINIMO_INICIAL = 5;
@@ -208,7 +209,7 @@ export class DevolucionesService {
       const detalleRepo = manager.getRepository(DetalleNotaDevolucion);
       await detalleRepo.save(lineas.map((linea) => detalleRepo.create({ ...linea, idNotaDevolucion: devolucion.id })));
 
-      await this.reingresarStock(manager, lineas);
+      await this.reingresarStock(manager, lineas, devolucion.id, usuario.sub);
 
       if (total > 0) {
         const pagoRepo = manager.getRepository(Pago);
@@ -444,8 +445,11 @@ export class DevolucionesService {
     ];
   }
 
-  /** Solo las prendas en estado REINGRESO_INVENTARIO vuelven a stock_disponible; la merma no toca el stock vendible. */
-  private async reingresarStock(manager: EntityManager, lineas: LineaDevolucion[]): Promise<void> {
+  /**
+   * Solo las prendas en estado REINGRESO_INVENTARIO vuelven a stock_disponible; la merma no toca el stock vendible,
+   * pero queda en el kardex (cantidad 0) para saber cuanto se perdio por fallas.
+   */
+  private async reingresarStock(manager: EntityManager, lineas: LineaDevolucion[], idDevolucion: number, idUsuario: number): Promise<void> {
     const inventarioRepo = manager.getRepository(Inventario);
     // Orden fijo para que devoluciones simultaneas bloqueen las filas en el mismo orden y no se interbloqueen.
     const reingresos = lineas
@@ -457,11 +461,12 @@ export class DevolucionesService {
         where: { idAlmacen: linea.idAlmacen as number, idVarianteProducto: linea.idVarianteProducto as number },
         lock: { mode: 'pessimistic_write' },
       });
+      let fila: Inventario;
       if (existente) {
         existente.stockDisponible += linea.cantidad;
-        await inventarioRepo.save(existente);
+        fila = await inventarioRepo.save(existente);
       } else {
-        await inventarioRepo.save(
+        fila = await inventarioRepo.save(
           inventarioRepo.create({
             idAlmacen: linea.idAlmacen as number,
             idVarianteProducto: linea.idVarianteProducto as number,
@@ -472,6 +477,27 @@ export class DevolucionesService {
           }),
         );
       }
+      await registrarMovimiento(manager, fila, {
+        tipo: 'DEVOLUCION_REINGRESO',
+        cantidad: linea.cantidad,
+        referenciaTipo: 'NOTA_DEVOLUCION',
+        referenciaId: idDevolucion,
+        idUsuario,
+      });
+    }
+
+    const mermas = lineas.filter((linea) => linea.estadoProducto === 'MERMA_DEFECTUOSO' && linea.idAlmacen !== null && linea.idVarianteProducto !== null);
+    for (const linea of mermas) {
+      const fila = await inventarioRepo.findOne({ where: { idAlmacen: linea.idAlmacen as number, idVarianteProducto: linea.idVarianteProducto as number } });
+      if (!fila) continue;
+      await registrarMovimiento(manager, fila, {
+        tipo: 'MERMA',
+        cantidad: 0,
+        referenciaTipo: 'NOTA_DEVOLUCION',
+        referenciaId: idDevolucion,
+        idUsuario,
+        motivo: `${linea.cantidad} unidad(es) devueltas con falla`,
+      });
     }
   }
 

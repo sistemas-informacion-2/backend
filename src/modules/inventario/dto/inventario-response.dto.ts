@@ -1,3 +1,19 @@
+/** Una linea del kardex de una fila de stock. */
+export interface MovimientoInventarioResponseDto {
+  id: number;
+  tipo: string;
+  cantidad: number;
+  deltaReservado: number;
+  stockResultante: number;
+  reservadoResultante: number;
+  costoUnitario: number | null;
+  referenciaTipo: string | null;
+  referenciaId: number | null;
+  idUsuario: number | null;
+  motivo: string | null;
+  fechaHora: Date;
+}
+
 export class InventarioResponseDto {
   id: number;
   idAlmacen: number;

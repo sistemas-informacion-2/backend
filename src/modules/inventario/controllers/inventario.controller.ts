@@ -2,12 +2,14 @@ import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put, Query } f
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequireAnyPermission } from '../../../common/decorators/require-any-permission.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { InventarioService } from '../services/inventario.service.js';
 import { CrearStockDto } from '../dto/crear-stock.dto.js';
 import { ActualizarStockDto } from '../dto/actualizar-stock.dto.js';
 import { AjustarStockDto } from '../dto/ajustar-stock.dto.js';
 import { InventarioQueryDto } from '../dto/inventario-query.dto.js';
-import type { InventarioPaginatedResponseDto, InventarioResponseDto } from '../dto/inventario-response.dto.js';
+import type { InventarioPaginatedResponseDto, InventarioResponseDto, MovimientoInventarioResponseDto } from '../dto/inventario-response.dto.js';
 
 @ApiTags('Inventario')
 @Controller('inventario/stock')
@@ -31,8 +33,15 @@ export class InventarioController {
 
   @Post()
   @ApiOperation({ summary: 'Registra una variante en un almacen' })
-  registrar(@Body() dto: CrearStockDto): Promise<InventarioResponseDto> {
-    return this.inventarioService.registrar(dto);
+  registrar(@Body() dto: CrearStockDto, @CurrentUser() usuario: ActiveUser): Promise<InventarioResponseDto> {
+    return this.inventarioService.registrar(dto, usuario);
+  }
+
+  @Get(':id/movimientos')
+  @RequireAnyPermission('inventario:almacen:gestionar', 'inventario:almacen:leer')
+  @ApiOperation({ summary: 'Kardex de un registro de stock: entradas, salidas, reservas y ajustes' })
+  movimientos(@Param('id', ParseIntPipe) id: number): Promise<MovimientoInventarioResponseDto[]> {
+    return this.inventarioService.movimientos(id);
   }
 
   @Put(':id')
@@ -49,7 +58,8 @@ export class InventarioController {
   ajustar(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AjustarStockDto,
+    @CurrentUser() usuario: ActiveUser,
   ): Promise<InventarioResponseDto> {
-    return this.inventarioService.ajustar(id, dto);
+    return this.inventarioService.ajustar(id, dto, usuario);
   }
 }

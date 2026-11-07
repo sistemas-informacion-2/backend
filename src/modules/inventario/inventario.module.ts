@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MovimientoInventario } from './entities/movimiento-inventario.entity.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Sucursal } from '../operaciones/entities/sucursal.entity.js';
 import { Categoria } from './entities/categoria.entity.js';
@@ -41,6 +42,7 @@ import { TemporadaSeederService } from './seeders/temporada-seeder.service.js';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      MovimientoInventario,
       Categoria,
       Proveedor,
       Temporada,

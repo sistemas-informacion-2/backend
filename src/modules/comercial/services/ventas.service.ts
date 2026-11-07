@@ -10,6 +10,7 @@ import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 import { Caja } from '../entities/caja.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
@@ -191,6 +192,14 @@ export class VentasService {
         for (const { inventario, cantidad } of linea.asignaciones) {
           inventario.stockDisponible -= cantidad;
           await inventarioRepo.save(inventario);
+          await registrarMovimiento(manager, inventario, {
+            tipo: 'SALIDA_VENTA',
+            cantidad: -cantidad,
+            costoUnitario: linea.costoUnitario,
+            referenciaTipo: 'NOTA_VENTA',
+            referenciaId: venta.id,
+            idUsuario: usuario.sub,
+          });
         }
       }
 
