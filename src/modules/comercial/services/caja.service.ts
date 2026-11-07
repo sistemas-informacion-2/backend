@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CATEGORIAS_MANUALES } from '../entities/movimiento-caja.entity.js';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -50,7 +51,7 @@ export class CajaService {
     const abierta = await this.cajaRepo.findAbiertaPorSucursal(dto.idSucursal);
     if (abierta) throw new ConflictException('La sucursal ya tiene una caja abierta');
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const caja = this.cajaRepo.create({
       idSucursal: dto.idSucursal,
       // La caja queda atada al cajero que la abre. El administrador no tiene
@@ -72,7 +73,7 @@ export class CajaService {
     await this.validarAccesoSucursal(usuario, caja.idSucursal);
     if (caja.estado !== 'Abierta') throw new ConflictException('La caja ya esta cerrada');
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const esperado = this.montoEsperado(caja);
     caja.montoFinal = (dto.montoFinal ?? esperado).toFixed(2);
     caja.fechaCierre = ahora;
@@ -113,7 +114,7 @@ export class CajaService {
       concepto: dto.concepto.trim(),
       monto: dto.monto.toFixed(2),
       observaciones: dto.observaciones?.trim() || null,
-      fechaHora: new Date(),
+      fechaHora: relojAhora(),
     });
     await this.movimientoRepo.save(movimiento);
 

@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import {
   BadRequestException,
   ConflictException,
@@ -197,7 +198,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
         apartados.push({ linea, porciones: await this.apartarStock(manager, idSucursal, linea) });
       }
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       const horas = dto.horasLimite ?? HORAS_LIMITE_POR_DEFECTO;
       const reservaRepo = manager.getRepository(Reserva);
       const reserva = await reservaRepo.save(
@@ -269,7 +270,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (monto > 0) {
         const caja = await this.obtenerCajaAbierta(manager, reserva.idSucursal);
         await this.validarPasarelaPresencial(manager, dto.idPasarela);
-        const ahora = new Date();
+        const ahora = relojAhora();
         const movimiento = await this.registrarIngreso(manager, caja, 'ANTICIPO_RESERVA', `Anticipo reserva ${reserva.codigoReserva}`, monto, ahora);
         await manager.getRepository(Pago).save(
           manager.getRepository(Pago).create({
@@ -314,7 +315,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       const montoTotal = Number(reserva.montoTotal);
       const saldo = Math.max(0, redondear(montoTotal - anticipoPagado));
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       let movimiento: MovimientoCaja | null = null;
       if (saldo > 0) {
         if (!dto.idPasarela) throw new BadRequestException('Elige el metodo de pago con el que se cobra el saldo');
@@ -428,14 +429,14 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
    * las de todas las empresas (corre tambien desde el temporizador, sin request), pero cada una se procesa dentro
    * del contexto de su empresa, asi que las consultas quedan limitadas a ella como en cualquier request.
    */
-  async vencerVencidas(): Promise<number> {
-    const vencidas = await this.reservaRepo.findVencidas(new Date());
+  async vencerVencidas(soloEmpresa?: number): Promise<number> {
+    const vencidas = await this.reservaRepo.findVencidas(relojAhora(), soloEmpresa);
     let canceladas = 0;
     for (const { id, idEmpresa } of vencidas) {
       const cancelada = await this.tenant.ejecutarParaEmpresa(idEmpresa, () => this.dataSource.transaction(async (manager) => {
         const reserva = await manager.getRepository(Reserva).findOne({ where: { id, idEmpresa }, lock: { mode: 'pessimistic_write' } });
         // Pudo cambiar (liquidarse/cancelarse) entre la consulta y el bloqueo.
-        if (!reserva || (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') || reserva.fechaLimite >= new Date()) {
+        if (!reserva || (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') || reserva.fechaLimite >= relojAhora()) {
           return false;
         }
         await this.liberarReserva(manager, reserva, 'Cancelada automaticamente por vencimiento', null);
@@ -572,7 +573,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
   }
 
   private validarVigente(reserva: Reserva): void {
-    if (reserva.fechaLimite < new Date()) throw new ConflictException('La reserva ya vencio');
+    if (reserva.fechaLimite < relojAhora()) throw new ConflictException('La reserva ya vencio');
   }
 
   private async obtenerCajaAbierta(manager: EntityManager, idSucursal: number): Promise<Caja> {

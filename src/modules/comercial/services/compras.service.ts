@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -96,7 +97,7 @@ export class ComprasService {
           idSucursal: dto.idSucursal,
           idMovimientoCaja: null,
           nroFactura,
-          fechaEmision: new Date(),
+          fechaEmision: relojAhora(),
           fechaEntregaProgramada: dto.fechaEntregaProgramada ?? null,
           fechaPago: null,
           subtotal: total.toFixed(2),
@@ -135,7 +136,7 @@ export class ComprasService {
             concepto: `Compra ${nroFactura ?? `#${compra.id}`} - ${proveedor.empresa}`.slice(0, 150),
             monto: total.toFixed(2),
             observaciones: null,
-            fechaHora: new Date(),
+            fechaHora: relojAhora(),
           }),
         );
         compra.idMovimientoCaja = movimiento.id;

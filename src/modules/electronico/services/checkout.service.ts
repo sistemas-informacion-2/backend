@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { ConfigService } from '@nestjs/config';
@@ -301,7 +302,7 @@ export class CheckoutService {
     const monto = Number(reserva.montoAnticipo);
     opciones.validar?.(monto);
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const pagoRepo = manager.getRepository(Pago);
     await pagoRepo.save(
       pagoRepo.create({
@@ -363,7 +364,7 @@ export class CheckoutService {
       salidas.push({ linea, porciones: await this.descontarStock(manager, linea, resumen.idSucursal) });
     }
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const notaRepo = manager.getRepository(NotaVenta);
     const nota = await notaRepo.save(
       notaRepo.create({
@@ -487,7 +488,7 @@ export class CheckoutService {
     if (!reserva || reserva.idCliente !== idCliente) throw new NotFoundException('Reserva no encontrada');
     if (reserva.estado === 'PAGADA') throw new ConflictException('El anticipo de esta reserva ya esta pagado');
     if (reserva.estado !== 'PENDIENTE') throw new ConflictException(`La reserva esta ${reserva.estado.toLowerCase()}; no admite pagos`);
-    if (reserva.fechaLimite.getTime() < Date.now()) throw new ConflictException('La reserva ya vencio; haz una nueva');
+    if (reserva.fechaLimite.getTime() < relojAhora().getTime()) throw new ConflictException('La reserva ya vencio; haz una nueva');
     if (Number(reserva.montoAnticipo) <= 0) throw new ConflictException('Esta reserva no tiene anticipo por pagar');
   }
 

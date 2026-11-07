@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
@@ -61,7 +62,7 @@ export class CajaRepository {
       .andWhere('pago.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .andWhere('(nota.id_sucursal = :idSucursal OR reserva.id_sucursal = :idSucursal)', { idSucursal: caja.idSucursal })
       .andWhere('(pago.fecha_pago + pago.hora_pago) >= :desde', { desde: caja.fechaApertura })
-      .andWhere('(pago.fecha_pago + pago.hora_pago) <= :hasta', { hasta: caja.fechaCierre ?? new Date() })
+      .andWhere('(pago.fecha_pago + pago.hora_pago) <= :hasta', { hasta: caja.fechaCierre ?? relojAhora() })
       .orderBy('pago.id', 'ASC')
       .getMany();
   }

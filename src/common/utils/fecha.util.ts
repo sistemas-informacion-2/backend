@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from './reloj.js';
 /**
  * Fechas y horas del negocio, siempre en la zona de Bolivia: una venta de las
  * 21:00 en La Paz es de ese dia aunque en UTC ya sea el siguiente. Usa Intl
@@ -24,12 +25,12 @@ const FORMATO_HORA = new Intl.DateTimeFormat('en-GB', {
 });
 
 /** Fecha de calendario en Bolivia: 'AAAA-MM-DD'. */
-export function fechaLocal(fecha: Date = new Date()): string {
+export function fechaLocal(fecha: Date = relojAhora()): string {
   return FORMATO_FECHA.format(fecha);
 }
 
 /** Hora en Bolivia: 'HH:mm:ss' (00-23). */
-export function horaLocal(fecha: Date = new Date()): string {
+export function horaLocal(fecha: Date = relojAhora()): string {
   return FORMATO_HORA.format(fecha);
 }
 

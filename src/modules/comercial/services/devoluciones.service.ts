@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
@@ -173,7 +174,7 @@ export class DevolucionesService {
           : this.construirLineaReserva(origen);
       const total = redondear(lineas.reduce((suma, linea) => suma + linea.montoSubtotal, 0));
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       const referencia = origen.tipo === 'PRODUCTO_ENTREGADO' ? origen.nota.codigoNota : origen.reserva.codigoReserva;
       const movimientoRepo = manager.getRepository(MovimientoCaja);
       const movimiento = await movimientoRepo.save(
@@ -370,7 +371,7 @@ export class DevolucionesService {
   }
 
   private dentroDePlazo(nota: NotaVenta): boolean {
-    return Date.now() - this.fechaEmision(nota).getTime() <= PLAZO_DEVOLUCION_DIAS * MS_POR_DIA;
+    return relojAhora().getTime() - this.fechaEmision(nota).getTime() <= PLAZO_DEVOLUCION_DIAS * MS_POR_DIA;
   }
 
   private validarMotivo(tipo: TipoDevolucion, motivo: CrearDevolucionDto['motivoDevolucion']): void {

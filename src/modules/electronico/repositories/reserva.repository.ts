@@ -74,10 +74,11 @@ export class ReservaRepository {
    * Reservas que siguen apartando stock (PENDIENTE/PAGADA) y ya pasaron su fecha limite, de todas las empresas:
    * la usa el vencimiento automatico, que procesa cada una dentro del contexto de su empresa.
    */
-  findVencidas(ahora: Date): Promise<Array<{ id: number; idEmpresa: number }>> {
+  /** Sin `idEmpresa`, las de todas las empresas (el temporizador). */
+  findVencidas(ahora: Date, idEmpresa?: number): Promise<Array<{ id: number; idEmpresa: number }>> {
     return this.repo.find({
       select: { id: true, idEmpresa: true },
-      where: { estado: In<EstadoReserva>(['PENDIENTE', 'PAGADA']), fechaLimite: LessThan(ahora) },
+      where: { estado: In<EstadoReserva>(['PENDIENTE', 'PAGADA']), fechaLimite: LessThan(ahora), ...(idEmpresa === undefined ? {} : { idEmpresa }) },
       order: { id: 'ASC' },
     });
   }

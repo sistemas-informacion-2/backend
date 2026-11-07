@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
@@ -62,6 +63,6 @@ export class CarritoRepository {
 
   /** Marca la ultima modificacion (CU14 pide actualizar `fecha_actualizacion` al cambiar el carrito). */
   async tocar(idCarrito: number): Promise<void> {
-    await this.carritoRepo.update({ id: idCarrito }, { fechaActualizacion: new Date() });
+    await this.carritoRepo.update({ id: idCarrito }, { fechaActualizacion: relojAhora() });
   }
 }

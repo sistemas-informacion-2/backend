@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'node:crypto';
@@ -124,7 +125,7 @@ export class VentasService {
       const montoTotal = redondear(subtotal - descuento + impuesto);
       if (montoTotal < 0) throw new BadRequestException('El total de la venta no puede ser negativo');
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       // Igual que la venta en linea y la liquidacion de reservas, el codigo sale del id (NV-000123): un conteo
       // de notas chocaria con esos codigos y, con codigos unicos por empresa, entre empresas. Hasta tener el id,
       // la nota y su movimiento llevan un codigo provisional unico.
