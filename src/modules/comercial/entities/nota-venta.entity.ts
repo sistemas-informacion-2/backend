@@ -1,12 +1,5 @@
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  ManyToOne,
-  OneToMany,
-  PrimaryGeneratedColumn,
-  type Relation,
-} from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { Empleado } from '../../operaciones/entities/empleado.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
@@ -34,12 +27,22 @@ const TRANSFORMER_DECIMAL = {
  * caja abierta (CU15) y descuenta existencias del almacén elegido en el momento
  * de la venta.
  */
+@Index('uq_nota_venta_empresa_codigo', ['idEmpresa', 'codigoNota'], { unique: true })
+@Index('uq_nota_venta_empresa_factura', ['idEmpresa', 'nroFactura'], { unique: true })
 @Entity('nota_venta')
 export class NotaVenta {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'codigo_nota', type: 'varchar', length: 20, unique: true })
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
+
+  @Column({ name: 'codigo_nota', type: 'varchar', length: 20 })
   codigoNota: string;
 
   @Column({ name: 'id_cliente', type: 'int' })
@@ -99,7 +102,7 @@ export class NotaVenta {
   @Column({ name: 'tipo_venta', type: 'enum', enum: ['DIRECTA_PRESENCIAL', 'ANTICIPO_RESERVA', 'PRESENCIAL_LIQUIDACION', 'E_COMMERCE'], enumName: 'tipo_nota_venta_enum' })
   tipoVenta: TipoNotaVenta;
 
-  @Column({ name: 'nro_factura', type: 'varchar', length: 50, nullable: true, unique: true })
+  @Column({ name: 'nro_factura', type: 'varchar', length: 50, nullable: true })
   nroFactura: string | null;
 
   @Column({ name: 'nit_razon_social', type: 'varchar', length: 50, nullable: true })

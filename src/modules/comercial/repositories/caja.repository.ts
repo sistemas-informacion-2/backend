@@ -3,10 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Caja, type EstadoCaja } from '../entities/caja.entity.js';
 import { Pago } from '../entities/pago.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class CajaRepository {
-  constructor(@InjectRepository(Caja) private readonly repo: Repository<Caja>) {}
+  constructor(
+    @InjectRepository(Caja) private readonly repo: Repository<Caja>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   findWithFilters(query: {
     idSucursal?: number;
@@ -29,12 +33,12 @@ export class CajaRepository {
   }
 
   findByIdConDetalle(id: number): Promise<Caja | null> {
-    return this.detalleQuery().where('caja.id = :id', { id }).getOne();
+    return this.detalleQuery().andWhere('caja.id = :id', { id }).getOne();
   }
 
   findAbiertaPorSucursal(idSucursal: number): Promise<Caja | null> {
     return this.detalleQuery()
-      .where('caja.id_sucursal = :idSucursal', { idSucursal })
+      .andWhere('caja.id_sucursal = :idSucursal', { idSucursal })
       .andWhere('caja.estado = :estado', { estado: 'Abierta' })
       .getOne();
   }
@@ -54,6 +58,7 @@ export class CajaRepository {
       .andWhere('pago.id_pasarela IS NOT NULL')
       .andWhere('pago.monto > 0')
       .andWhere("pago.concepto IN ('PAGO_TOTAL', 'ANTICIPO_RESERVA')")
+      .andWhere('pago.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .andWhere('(nota.id_sucursal = :idSucursal OR reserva.id_sucursal = :idSucursal)', { idSucursal: caja.idSucursal })
       .andWhere('(pago.fecha_pago + pago.hora_pago) >= :desde', { desde: caja.fechaApertura })
       .andWhere('(pago.fecha_pago + pago.hora_pago) <= :hasta', { hasta: caja.fechaCierre ?? new Date() })
@@ -75,6 +80,8 @@ export class CajaRepository {
       .leftJoinAndSelect('caja.sucursal', 'sucursal')
       .leftJoinAndSelect('caja.cajero', 'cajero')
       .leftJoinAndSelect('cajero.usuario', 'cajeroUsuario')
-      .leftJoinAndSelect('caja.movimientos', 'movimiento');
+      .leftJoinAndSelect('caja.movimientos', 'movimiento')
+      // Toda consulta de cajas parte de aqui: siempre limitada a la empresa actual.
+      .where('caja.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() });
   }
 }

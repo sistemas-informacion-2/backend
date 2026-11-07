@@ -107,7 +107,6 @@ function crearService(config: {
   const notaVentaRepo = {
     findPage: vi.fn(),
     findByIdConDetalle: vi.fn().mockResolvedValue(config.ventaDetalle === undefined ? ventaBase() : config.ventaDetalle),
-    count: vi.fn().mockResolvedValue(0),
     create: vi.fn((datos) => ({ ...datos, id: 99 })),
     save: vi.fn((x) => Promise.resolve(x)),
   };
@@ -222,7 +221,7 @@ describe('VentasService', () => {
 
     expect(notaVentaRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        codigoNota: 'NV-000001',
+        codigoNota: expect.stringMatching(/^TMP-/),
         idCliente: 1,
         idCajero: 5,
         idSucursal: 1,
@@ -237,6 +236,11 @@ describe('VentasService', () => {
       expect.objectContaining({ idCaja: 10, tipo: 'INGRESO', monto: '100.00' }),
       expect.anything(),
     );
+    // El codigo definitivo sale del id de la nota (99), como en la venta en linea y la liquidacion de reservas.
+    const notaGuardada = notaVentaRepo.save.mock.calls.at(-1)?.[0] as { codigoNota: string };
+    expect(notaGuardada.codigoNota).toBe('NV-000099');
+    const movimientoGuardado = movimientoCajaRepo.save.mock.calls.at(-1)?.[0] as { concepto: string };
+    expect(movimientoGuardado.concepto).toBe('Venta presencial NV-000099');
     expect(pagoRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ idNotaVenta: 99, monto: 100, concepto: 'PAGO_TOTAL' }),
       expect.anything(),

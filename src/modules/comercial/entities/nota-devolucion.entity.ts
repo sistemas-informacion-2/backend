@@ -1,4 +1,5 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { Empleado } from '../../operaciones/entities/empleado.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
@@ -20,12 +21,21 @@ const TRANSFORMER_DECIMAL = {
  * Devolución (CU24) de una nota de venta o de una reserva cancelada con anticipo.
  * El reembolso sale como EGRESO de la caja del cajero (`id_movimiento_caja`).
  */
+@Index('uq_nota_devolucion_empresa_codigo', ['idEmpresa', 'codigoDevolucion'], { unique: true })
 @Entity('nota_devolucion')
 export class NotaDevolucion {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'codigo_devolucion', type: 'varchar', length: 20, unique: true })
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
+
+  @Column({ name: 'codigo_devolucion', type: 'varchar', length: 20 })
   codigoDevolucion: string;
 
   @Column({ name: 'id_cliente', type: 'int' })

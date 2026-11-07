@@ -56,7 +56,7 @@ function crearService(config: { repos?: Map<unknown, RepoStub>; reserva?: Reserv
     findNotaVenta: vi.fn().mockResolvedValue(null),
   };
   const empleadoSucursalRepo = { find: vi.fn().mockResolvedValue([{ idSucursal: 1 }]) };
-  const service = new ReservasService(reservaRepo as never, dataSource as never, {} as never, empleadoSucursalRepo as never);
+  const service = new ReservasService(reservaRepo as never, dataSource as never, {} as never, empleadoSucursalRepo as never, { empresaId: () => 1 } as never);
   return { service, repos, reservaRepo, dataSource, empleadoSucursalRepo };
 }
 

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { NotaCompra } from '../entities/nota-compra.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type { ComprasQueryDto } from '../dto/compras-query.dto.js';
 
 export interface FiltrosCompra extends Omit<ComprasQueryDto, 'idSucursal'> {
@@ -12,7 +13,10 @@ export interface FiltrosCompra extends Omit<ComprasQueryDto, 'idSucursal'> {
 
 @Injectable()
 export class CompraRepository {
-  constructor(@InjectRepository(NotaCompra) private readonly repo: Repository<NotaCompra>) {}
+  constructor(
+    @InjectRepository(NotaCompra) private readonly repo: Repository<NotaCompra>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async findPage(filtros: FiltrosCompra): Promise<{ items: NotaCompra[]; total: number }> {
     const builder = this.repo
@@ -20,7 +24,8 @@ export class CompraRepository {
       .leftJoinAndSelect('compra.proveedor', 'proveedor')
       .leftJoinAndSelect('compra.sucursal', 'sucursal')
       // Se traen las lineas solo para contarlas; el listado no las expone (ver toCompraResponseDto).
-      .leftJoinAndSelect('compra.detalles', 'detalle');
+      .leftJoinAndSelect('compra.detalles', 'detalle')
+      .where('compra.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() });
 
     if (filtros.idsSucursal) builder.andWhere('compra.id_sucursal IN (:...idsSucursal)', { idsSucursal: filtros.idsSucursal });
     if (filtros.idSucursal !== undefined) builder.andWhere('compra.id_sucursal = :idSucursal', { idSucursal: filtros.idSucursal });
@@ -47,7 +52,7 @@ export class CompraRepository {
 
   findByIdConDetalle(id: number): Promise<NotaCompra | null> {
     return this.repo.findOne({
-      where: { id },
+      where: { id, idEmpresa: this.tenant.empresaId() },
       relations: {
         proveedor: true,
         sucursal: true,
@@ -60,6 +65,7 @@ export class CompraRepository {
     return this.repo
       .createQueryBuilder('compra')
       .where('compra.id_proveedor = :idProveedor', { idProveedor })
+      .andWhere('compra.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .andWhere('LOWER(compra.nro_factura) = :nroFactura', { nroFactura: nroFactura.toLowerCase() })
       .getOne();
   }

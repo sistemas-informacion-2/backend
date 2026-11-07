@@ -14,6 +14,7 @@ import type { CrearMovimientoCajaDto } from '../dto/crear-movimiento-caja.dto.js
 import type { CajasQueryDto } from '../dto/cajas-query.dto.js';
 import type { CajaResponseDto } from '../dto/caja-response.dto.js';
 import type { MovimientoCajaResponseDto } from '../dto/movimiento-caja-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class CajaService {
@@ -22,6 +23,7 @@ export class CajaService {
     private readonly movimientoRepo: MovimientoCajaRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: CajasQueryDto): Promise<CajaResponseDto[]> {
@@ -110,7 +112,7 @@ export class CajaService {
   }
 
   private async validarSucursal(idSucursal: number): Promise<void> {
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
   }

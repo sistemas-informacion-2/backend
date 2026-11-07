@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type Repository } from 'typeorm';
 import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class PasarelaRepository {
-  constructor(@InjectRepository(PasarelaPago) private readonly repo: Repository<PasarelaPago>) {}
+  constructor(
+    @InjectRepository(PasarelaPago) private readonly repo: Repository<PasarelaPago>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   findWithFilters(query: {
     search?: string;
@@ -13,7 +17,10 @@ export class PasarelaRepository {
     disponiblePresencial?: boolean;
     disponibleLinea?: boolean;
   }): Promise<PasarelaPago[]> {
-    const builder = this.repo.createQueryBuilder('pasarela').orderBy('pasarela.id', 'ASC');
+    const builder = this.repo
+      .createQueryBuilder('pasarela')
+      .where('pasarela.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
+      .orderBy('pasarela.id', 'ASC');
 
     if (query.search?.trim()) {
       const search = `%${query.search.trim().toLowerCase()}%`;
@@ -39,19 +46,19 @@ export class PasarelaRepository {
   }
 
   findPresencial(): Promise<PasarelaPago[]> {
-    return this.repo.find({ where: { disponiblePresencial: true }, order: { id: 'ASC' } });
+    return this.repo.find({ where: { disponiblePresencial: true, idEmpresa: this.tenant.empresaId() }, order: { id: 'ASC' } });
   }
 
   findLinea(): Promise<PasarelaPago[]> {
-    return this.repo.find({ where: { disponibleLinea: true }, order: { id: 'ASC' } });
+    return this.repo.find({ where: { disponibleLinea: true, idEmpresa: this.tenant.empresaId() }, order: { id: 'ASC' } });
   }
 
   findById(id: number): Promise<PasarelaPago | null> {
-    return this.repo.findOne({ where: { id } });
+    return this.repo.findOne({ where: { id, idEmpresa: this.tenant.empresaId() } });
   }
 
   findByCodigo(codigo: string): Promise<PasarelaPago | null> {
-    return this.repo.findOne({ where: { codigo } });
+    return this.repo.findOne({ where: { codigo, idEmpresa: this.tenant.empresaId() } });
   }
 
   create(datos: Partial<PasarelaPago>): PasarelaPago {

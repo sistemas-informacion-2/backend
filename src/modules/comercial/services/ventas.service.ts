@@ -119,14 +119,16 @@ export class VentasService {
       if (montoTotal < 0) throw new BadRequestException('El total de la venta no puede ser negativo');
 
       const ahora = new Date();
-      const secuencia = (await this.notaVentaRepo.count(manager)) + 1;
-      const codigoNota = `NV-${String(secuencia).padStart(6, '0')}`;
+      // Igual que la venta en linea y la liquidacion de reservas, el codigo sale del id (NV-000123): un conteo
+      // de notas chocaria con esos codigos y, con codigos unicos por empresa, entre empresas. Hasta tener el id,
+      // la nota y su movimiento llevan un codigo provisional unico.
+      const codigoProvisional = `TMP-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
       const movimiento = this.movimientoCajaRepo.create(
         {
           idCaja: caja.id,
           tipo: 'INGRESO',
-          concepto: `Venta presencial ${codigoNota}`,
+          concepto: `Venta presencial ${codigoProvisional}`,
           monto: montoTotal.toFixed(2),
           observaciones: null,
           fechaHora: ahora,
@@ -137,7 +139,7 @@ export class VentasService {
 
       const venta = this.notaVentaRepo.create(
         {
-          codigoNota,
+          codigoNota: codigoProvisional,
           idCliente,
           idCajero: usuario.tipoUsuario === 'E' ? usuario.sub : null,
           idSucursal,
@@ -159,6 +161,10 @@ export class VentasService {
         manager,
       );
       await this.notaVentaRepo.save(venta, manager);
+      venta.codigoNota = `NV-${String(venta.id).padStart(6, '0')}`;
+      await this.notaVentaRepo.save(venta, manager);
+      movimiento.concepto = `Venta presencial ${venta.codigoNota}`;
+      await this.movimientoCajaRepo.save(movimiento, manager);
 
       const detalleRepo = manager.getRepository(DetalleNotaVenta);
       const inventarioRepo = manager.getRepository(Inventario);
@@ -235,24 +241,24 @@ export class VentasService {
   }
 
   private async validarCliente(manager: EntityManager, idCliente: number): Promise<void> {
-    const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente } });
+    const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente, usuario: { idEmpresa: this.tenant.empresaId() } } });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
   }
 
   private async validarSucursal(manager: EntityManager, idSucursal: number): Promise<void> {
-    const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+    const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
   }
 
   private async obtenerCajaAbierta(manager: EntityManager, idSucursal: number): Promise<Caja> {
-    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta' } });
+    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
     if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta');
     return caja;
   }
 
   private async validarPasarela(manager: EntityManager, idPasarela: number): Promise<void> {
-    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela } });
+    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela) throw new NotFoundException('Metodo de pago no encontrado');
     if (!pasarela.disponiblePresencial) {
       throw new BadRequestException('El metodo de pago no esta habilitado para caja');
@@ -275,7 +281,7 @@ export class VentasService {
 
     for (const item of items) {
       const variante = await varianteRepo.findOne({
-        where: { id: item.idVarianteProducto },
+        where: { id: item.idVarianteProducto, idEmpresa: this.tenant.empresaId() },
         relations: { producto: true },
       });
       if (!variante) throw new NotFoundException(`Variante ${item.idVarianteProducto} no encontrada`);

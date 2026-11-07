@@ -78,6 +78,7 @@ function crearService(overrides: {
       movimientoRepo as never,
       sucursalRepo as never,
       empleadoSucursalRepo as never,
+      { empresaId: () => 1 } as never,
     ),
     cajaRepo,
     movimientoRepo,

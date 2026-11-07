@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -121,12 +122,13 @@ export class CheckoutService {
     private readonly disponibilidad: DisponibilidadService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly notificaciones: NotificacionesService,
+    private readonly tenant: TenantContext,
   ) {}
 
   /** Metodos habilitados para pagar en linea (CU17) que este servidor sabe procesar. */
   async metodos(usuario: ActiveUser): Promise<MetodoPagoOnlineDto[]> {
     this.idCliente(usuario);
-    const pasarelas = await this.pasarelaRepo.find({ where: { disponibleLinea: true }, order: { id: 'ASC' } });
+    const pasarelas = await this.pasarelaRepo.find({ where: { disponibleLinea: true, idEmpresa: this.tenant.empresaId() }, order: { id: 'ASC' } });
     return pasarelas
       .filter((pasarela) => this.esOfrecible(pasarela))
       .map((pasarela) => ({
@@ -572,7 +574,7 @@ export class CheckoutService {
   }
 
   private async pasarelaOnline(codigo: CodigoMetodoOnline): Promise<PasarelaPago> {
-    const pasarela = await this.pasarelaRepo.findOne({ where: { codigo, disponibleLinea: true } });
+    const pasarela = await this.pasarelaRepo.findOne({ where: { codigo, disponibleLinea: true, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela || !this.esOfrecible(pasarela)) throw new ConflictException('Este metodo de pago no esta disponible por ahora');
     return pasarela;
   }

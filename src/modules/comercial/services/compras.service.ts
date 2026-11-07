@@ -18,6 +18,7 @@ import { toCompraResponseDto } from '../mappers/compra.mapper.js';
 import type { CrearCompraDto, CrearDetalleCompraDto } from '../dto/crear-compra.dto.js';
 import type { ComprasQueryDto } from '../dto/compras-query.dto.js';
 import type { CompraResponseDto, ComprasPaginatedResponseDto } from '../dto/compra-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 /** Valores por defecto de INVENTARIO cuando la compra abre el registro de una variante en un almacen. */
 const STOCK_MINIMO_INICIAL = 5;
@@ -38,6 +39,7 @@ export class ComprasService {
     @InjectRepository(Almacen) private readonly almacenRepo: Repository<Almacen>,
     @InjectRepository(VarianteProducto) private readonly varianteRepo: Repository<VarianteProducto>,
     @InjectRepository(ProductoSucursal) private readonly productoSucursalRepo: Repository<ProductoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: ComprasQueryDto, usuario: ActiveUser): Promise<ComprasPaginatedResponseDto> {
@@ -65,11 +67,11 @@ export class ComprasService {
   }
 
   async registrar(dto: CrearCompraDto, usuario: ActiveUser): Promise<CompraResponseDto> {
-    const proveedor = await this.proveedorRepo.findOne({ where: { id: dto.idProveedor } });
+    const proveedor = await this.proveedorRepo.findOne({ where: { id: dto.idProveedor, idEmpresa: this.tenant.empresaId() } });
     if (!proveedor) throw new NotFoundException('Proveedor no encontrado');
     if (!proveedor.activo) throw new ConflictException('El proveedor esta inactivo');
 
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: dto.idSucursal } });
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: dto.idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
     await this.validarAccesoSucursal(usuario, dto.idSucursal);
@@ -117,7 +119,7 @@ export class ComprasService {
       await this.incrementarStock(manager.getRepository(Inventario), dto.detalles);
 
       if (dto.pagarEnCaja) {
-        const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal: dto.idSucursal, estado: 'Abierta' } });
+        const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal: dto.idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
         if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta para registrar el egreso');
 
         const movimiento = await manager.getRepository(MovimientoCaja).save(
@@ -147,7 +149,7 @@ export class ComprasService {
    */
   private async validarDetalles(idSucursal: number, detalles: CrearDetalleCompraDto[]): Promise<void> {
     const idsAlmacen = [...new Set(detalles.map((linea) => linea.idAlmacen))];
-    const almacenes = await this.almacenRepo.find({ where: { id: In(idsAlmacen) } });
+    const almacenes = await this.almacenRepo.find({ where: { id: In(idsAlmacen), idEmpresa: this.tenant.empresaId() } });
     for (const idAlmacen of idsAlmacen) {
       const almacen = almacenes.find((candidato) => candidato.id === idAlmacen);
       if (!almacen) throw new NotFoundException(`Almacen ${idAlmacen} no encontrado`);
@@ -158,7 +160,7 @@ export class ComprasService {
     }
 
     const idsVariante = [...new Set(detalles.map((linea) => linea.idVarianteProducto))];
-    const variantes = await this.varianteRepo.find({ where: { id: In(idsVariante) } });
+    const variantes = await this.varianteRepo.find({ where: { id: In(idsVariante), idEmpresa: this.tenant.empresaId() } });
     for (const idVariante of idsVariante) {
       const variante = variantes.find((candidata) => candidata.id === idVariante);
       if (!variante) throw new NotFoundException(`Variante ${idVariante} no encontrada`);

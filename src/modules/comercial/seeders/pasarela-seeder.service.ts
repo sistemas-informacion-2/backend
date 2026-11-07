@@ -4,6 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import type { AppConfig } from '../../../config/configuration.js';
 import { PasarelaPago, type IntegracionPago } from '../entities/pasarela-pago.entity.js';
+// Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
+import { ID_EMPRESA_INICIAL } from '../../../database/migraciones.util.js';
 
 interface MetodoPagoBase {
   codigo: string;
@@ -38,10 +40,11 @@ export class PasarelaSeederService {
 
   async run(): Promise<void> {
     for (const base of METODOS_PAGO_BASE) {
-      const existente = await this.pasarelaRepo.findOne({ where: { codigo: base.codigo } });
+      const existente = await this.pasarelaRepo.findOne({ where: { codigo: base.codigo, idEmpresa: ID_EMPRESA_INICIAL } });
       if (!existente) {
         await this.pasarelaRepo.save(
           this.pasarelaRepo.create({
+            idEmpresa: ID_EMPRESA_INICIAL,
             codigo: base.codigo,
             metodo: base.metodo,
             descripcion: null,
@@ -83,7 +86,7 @@ export class PasarelaSeederService {
    * checkout en linea para que el panel no la muestre como disponible.
    */
   private async retirarPaypal(): Promise<void> {
-    const paypal = await this.pasarelaRepo.findOne({ where: { codigo: 'PAYPAL' } });
+    const paypal = await this.pasarelaRepo.findOne({ where: { codigo: 'PAYPAL', idEmpresa: ID_EMPRESA_INICIAL } });
     if (!paypal?.disponibleLinea) return;
 
     paypal.disponibleLinea = false;
@@ -99,7 +102,7 @@ export class PasarelaSeederService {
     const secretKey = this.config.get('stripe.secretKey', { infer: true });
     if (!secretKey) return;
 
-    const stripe = await this.pasarelaRepo.findOne({ where: { codigo: 'STRIPE' } });
+    const stripe = await this.pasarelaRepo.findOne({ where: { codigo: 'STRIPE', idEmpresa: ID_EMPRESA_INICIAL } });
     if (!stripe || stripe.descripcion !== null) return;
 
     stripe.descripcion = secretKey.startsWith('sk_test_') ? 'Paga con tarjeta en Stripe (modo de pruebas)' : 'Paga con tarjeta en Stripe';

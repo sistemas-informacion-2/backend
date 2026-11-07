@@ -29,6 +29,7 @@ import {
   type OrigenDevolucionResponseDto,
 } from '../dto/devoluciones.dto.js';
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 /** Valores por defecto de INVENTARIO cuando la devolucion abre el registro de una variante en un almacen. */
 const STOCK_MINIMO_INICIAL = 5;
@@ -90,6 +91,7 @@ export class DevolucionesService {
     private readonly devolucionRepo: DevolucionRepository,
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: DevolucionesQueryDto, usuario: ActiveUser): Promise<DevolucionesPaginatedResponseDto> {
@@ -154,7 +156,7 @@ export class DevolucionesService {
     }
 
     const idDevolucion = await this.dataSource.transaction(async (manager) => {
-      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
       if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
       if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
       await this.validarAccesoSucursal(usuario, idSucursal);
@@ -167,7 +169,7 @@ export class DevolucionesService {
         );
       }
 
-      const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta' } });
+      const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
       if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta para entregar el reembolso');
       const idCajero = await this.resolverCajero(manager, usuario, dto.idCajero ?? caja.idCajero, idSucursal);
       if (dto.idPasarela !== undefined) await this.validarPasarelaPresencial(manager, dto.idPasarela);
@@ -261,7 +263,7 @@ export class DevolucionesService {
 
     if (notaCodigo) {
       const nota = await manager.getRepository(NotaVenta).findOne({
-        where: { codigoNota: notaCodigo },
+        where: { codigoNota: notaCodigo, idEmpresa: this.tenant.empresaId() },
         relations: { cliente: { usuario: true }, sucursal: true, detalles: { variante: true } },
       });
       if (!nota) throw new NotFoundException('Nota de venta no encontrada');
@@ -273,7 +275,7 @@ export class DevolucionesService {
     }
 
     const reserva = await manager.getRepository(Reserva).findOne({
-      where: { codigoReserva: reservaCodigo },
+      where: { codigoReserva: reservaCodigo, sucursal: { idEmpresa: this.tenant.empresaId() } },
       relations: { cliente: { usuario: true }, sucursal: true },
     });
     if (!reserva) throw new NotFoundException('Reserva no encontrada');
@@ -411,7 +413,7 @@ export class DevolucionesService {
         throw new BadRequestException('Elige el almacen que recibe las prendas que vuelven al inventario');
       }
       if (item.idAlmacen !== undefined && !almacenes.has(item.idAlmacen)) {
-        const almacen = await manager.getRepository(Almacen).findOne({ where: { id: item.idAlmacen } });
+        const almacen = await manager.getRepository(Almacen).findOne({ where: { id: item.idAlmacen, idEmpresa: this.tenant.empresaId() } });
         if (!almacen) throw new NotFoundException(`Almacen ${item.idAlmacen} no encontrado`);
         if (!almacen.activo) throw new ConflictException(`El almacen "${almacen.nombre}" esta inactivo`);
         if (almacen.idSucursal !== idSucursal) {
@@ -501,7 +503,7 @@ export class DevolucionesService {
   }
 
   private async validarPasarelaPresencial(manager: EntityManager, idPasarela: number): Promise<void> {
-    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela } });
+    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela) throw new NotFoundException('Metodo de pago no encontrado');
     if (!pasarela.disponiblePresencial) throw new BadRequestException('El metodo de pago no esta habilitado para caja');
   }

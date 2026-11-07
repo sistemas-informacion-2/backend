@@ -29,6 +29,7 @@ import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { DetalleReserva } from '../entities/detalle-reserva.entity.js';
 import { Reserva } from '../entities/reserva.entity.js';
 import { ReservaRepository } from '../repositories/reserva.repository.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { toReservaResponseDto } from '../mappers/reserva.mapper.js';
 import {
   HORAS_LIMITE_POR_DEFECTO,
@@ -92,6 +93,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   onModuleInit(): void {
@@ -538,13 +540,13 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async obtenerCajaAbierta(manager: EntityManager, idSucursal: number): Promise<Caja> {
-    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta' } });
+    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
     if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta');
     return caja;
   }
 
   private async validarPasarelaPresencial(manager: EntityManager, idPasarela: number): Promise<void> {
-    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela } });
+    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela) throw new NotFoundException('Metodo de pago no encontrado');
     if (!pasarela.disponiblePresencial) throw new BadRequestException('El metodo de pago no esta habilitado para caja');
   }
