@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import {
   OPERADORES_POR_TIPO,
   OPERADOR_SQL,
@@ -28,7 +29,10 @@ const OPERADORES_DIRECTOS: ReadonlySet<OperadorFiltro> = new Set(['eq', 'ne', 'g
  */
 @Injectable()
 export class ReportBuilderService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
+  ) {}
 
   catalogo(): ReportTypeDefinitionDto[] {
     return FUENTES_REPORTE.map((fuente) => ({
@@ -103,7 +107,9 @@ export class ReportBuilderService {
     const combinador = request.matchType === 'OR' ? ' OR ' : ' AND ';
     const grupoFiltros =
       whereFiltros.length > 1 && request.matchType === 'OR' ? `(${whereFiltros.join(combinador)})` : whereFiltros.join(combinador);
-    const where = [...whereFechas, ...(grupoFiltros ? [grupoFiltros] : [])];
+    // La empresa va siempre y al final: no altera la numeracion de los filtros del usuario ni se puede quitar con un OR.
+    const whereEmpresa = clausula(fuente.columnaEmpresa, '=', this.tenant.empresaId());
+    const where = [...whereFechas, ...(grupoFiltros ? [grupoFiltros] : []), whereEmpresa];
 
     let ordenes: string[] = [];
     if (request.sort) {

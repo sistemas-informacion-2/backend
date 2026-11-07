@@ -4,7 +4,7 @@ function crearNlp(nombresSucursales: string[]) {
   const dataSource = {
     query: vi.fn().mockResolvedValue(nombresSucursales.map((nombre) => ({ nombre }))),
   } as never;
-  return new ReporteNlpService(dataSource);
+  return new ReporteNlpService(dataSource, { empresaId: () => 1 } as never);
 }
 
 describe('ReporteNlpService', () => {

@@ -5,7 +5,7 @@ function crearBuilder(respuestas: unknown[]) {
   const query = vi.fn();
   respuestas.forEach((respuesta) => query.mockResolvedValueOnce(respuesta));
   const dataSource = { query } as never;
-  return { service: new ReportBuilderService(dataSource), query };
+  return { service: new ReportBuilderService(dataSource, { empresaId: () => 7 } as never), query };
 }
 
 describe('ReportBuilderService', () => {
@@ -45,7 +45,8 @@ describe('ReportBuilderService', () => {
     expect(sql).toContain('SUM(nv.monto_total)::float8');
     expect(sql).toContain('GROUP BY nv.fecha_emision, sc.nombre');
     expect(sql).toContain('ORDER BY SUM(nv.monto_total) DESC');
-    expect(sql).toContain('LIMIT $1 OFFSET $2');
+    expect(sql).toContain('WHERE nv.id_empresa = $1');
+    expect(sql).toContain('LIMIT $2 OFFSET $3');
     expect(resultado.columns).toEqual(['fecha_emision', 'sucursal', 'monto_total', 'cantidad']);
     expect(resultado.columnLabels).toEqual(['Fecha', 'Sucursal', 'Monto total', 'Cantidad']);
     expect(resultado.total).toBe(3);
@@ -89,7 +90,35 @@ describe('ReportBuilderService', () => {
     const [sql, parametros] = query.mock.calls[1] as [string, unknown[]];
     expect(sql).toContain('nv.monto_total >= $1');
     expect(sql).toContain(`JOIN sucursal sc`);
-    expect(parametros).toEqual([100, 25, 0]);
+    expect(parametros).toEqual([100, 7, 25, 0]);
+  });
+
+  it('siempre limita a la empresa actual, tambien el conteo y aunque los filtros se combinen con OR', async () => {
+    const { service, query } = crearBuilder([[{ total: 0 }], []]);
+
+    await service.ejecutar({
+      reportType: 'COMPRAS',
+      selectedFields: ['total'],
+      filters: [
+        { campo: 'total', operador: 'gte', valor: 1 },
+        { campo: 'total', operador: 'lte', valor: 9 },
+      ],
+      matchType: 'OR',
+    });
+
+    for (const [sql, parametros] of query.mock.calls as Array<[string, unknown[]]>) {
+      expect(sql).toContain('WHERE (nc.total >= $1 OR nc.total <= $2) AND nc.id_empresa = $3');
+      expect(parametros[2]).toBe(7);
+    }
+  });
+
+  it('INVENTARIO filtra la empresa por el almacen', async () => {
+    const { service, query } = crearBuilder([[{ total: 0 }], []]);
+
+    await service.ejecutar({ reportType: 'INVENTARIO', selectedFields: ['producto'] });
+
+    expect(query.mock.calls[1][0]).toContain('JOIN almacen alm');
+    expect(query.mock.calls[1][0]).toContain('WHERE alm.id_empresa = $1');
   });
 
   it('matchType "AND" (o ausente) combina los filtros con AND, sin paréntesis', async () => {

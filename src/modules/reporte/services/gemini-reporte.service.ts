@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type { AppConfig } from '../../../config/configuration.js';
 import { FUENTES_REPORTE, type FuenteReporte } from '../catalog/reporte-catalog.constants.js';
 import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
@@ -119,6 +120,7 @@ export class GeminiReporteService {
   constructor(
     private readonly config: ConfigService<AppConfig, true>,
     private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
   ) {
     this.apiKey = this.config.get('gemini.apiKey', { infer: true });
     this.modelo = this.config.get('gemini.model', { infer: true }) || MODELO_DEFECTO;
@@ -278,7 +280,10 @@ export class GeminiReporteService {
   }
 
   private async obtenerSucursalesActivas(): Promise<string[]> {
-    const filas = await this.dataSource.query<Array<{ nombre: string }>>('SELECT nombre FROM sucursal WHERE activo = true ORDER BY nombre');
+    const filas = await this.dataSource.query<Array<{ nombre: string }>>(
+      'SELECT nombre FROM sucursal WHERE activo = true AND id_empresa = $1 ORDER BY nombre',
+      [this.tenant.empresaId()],
+    );
     return filas.map((fila) => fila.nombre);
   }
 

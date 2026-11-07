@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { normalizarTexto } from '../catalog/reporte-catalog.constants.js';
 import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
 
@@ -76,7 +77,10 @@ const ETIQUETAS: Record<string, string> = {
  */
 @Injectable()
 export class ReporteNlpService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async interpretar(promptUsuario: string): Promise<InterpretacionPrompt> {
     const prompt = normalizarTexto(promptUsuario.trim() || '');
@@ -171,7 +175,8 @@ export class ReporteNlpService {
     const esCritico = tipo === 'INVENTARIO' && /critico/.test(prompt);
 
     const sucursales = await this.dataSource.query<Array<{ nombre: string }>>(
-      'SELECT nombre FROM sucursal WHERE activo = true ORDER BY nombre',
+      'SELECT nombre FROM sucursal WHERE activo = true AND id_empresa = $1 ORDER BY nombre',
+      [this.tenant.empresaId()],
     );
     let sucursal: string | undefined;
     for (const sucursalActual of sucursales) {

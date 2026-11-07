@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type {
   StockCriticoItemDto,
   TendenciaVentaDto,
@@ -16,10 +17,14 @@ const LIMITE_TOP_VARIANTES = 5;
  * tablas de ventas (NOTA_VENTA / DETALLE_NOTA_VENTA) pertenecen a CU13 y no
  * tienen entidad todavia; asi el dashboard funciona antes y despues de CU13.
  * Los casts `::float8` / `::int` evitan que Postgres devuelva NUMERIC y BIGINT como string.
+ * Toda consulta se limita a la empresa actual (id_empresa de la tabla o de su almacen/sucursal).
  */
 @Injectable()
 export class DashboardRepository {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async tablasVentasExisten(): Promise<boolean> {
     const [fila] = await this.dataSource.query<Array<{ existen: boolean }>>(
@@ -34,8 +39,9 @@ export class DashboardRepository {
       `SELECT COALESCE(SUM(monto_total), 0)::float8 AS total, COUNT(*)::int AS cantidad
          FROM nota_venta
         WHERE fecha_emision = CURRENT_DATE
-          AND ($1::int IS NULL OR id_sucursal = $1)`,
-      [idSucursal],
+          AND ($1::int IS NULL OR id_sucursal = $1)
+          AND id_empresa = $2`,
+      [idSucursal, this.tenant.empresaId()],
     );
     return { total: fila?.total ?? 0, cantidadNotas: fila?.cantidad ?? 0 };
   }
@@ -45,8 +51,9 @@ export class DashboardRepository {
       `SELECT COUNT(*)::int AS total
          FROM caja
         WHERE estado = 'Abierta'
-          AND ($1::int IS NULL OR id_sucursal = $1)`,
-      [idSucursal],
+          AND ($1::int IS NULL OR id_sucursal = $1)
+          AND id_empresa = $2`,
+      [idSucursal, this.tenant.empresaId()],
     );
     return fila?.total ?? 0;
   }
@@ -57,8 +64,9 @@ export class DashboardRepository {
          FROM inventario i
          JOIN almacen a ON a.id = i.id_almacen
         WHERE i.stock_disponible <= i.stock_minimo
-          AND ($1::int IS NULL OR a.id_sucursal = $1)`,
-      [idSucursal],
+          AND ($1::int IS NULL OR a.id_sucursal = $1)
+          AND a.id_empresa = $2`,
+      [idSucursal, this.tenant.empresaId()],
     );
     return fila?.total ?? 0;
   }
@@ -88,9 +96,10 @@ export class DashboardRepository {
          JOIN producto p ON p.id = v.id_producto
         WHERE i.stock_disponible <= i.stock_minimo
           AND ($1::int IS NULL OR a.id_sucursal = $1)
+          AND a.id_empresa = $2
         ORDER BY (i.stock_disponible - i.stock_minimo) ASC, p.nombre ASC
         LIMIT ${LIMITE_STOCK_CRITICO}`,
-      [idSucursal],
+      [idSucursal, this.tenant.empresaId()],
     );
     return filas.map((fila) => ({
       idInventario: fila.id,
@@ -117,10 +126,11 @@ export class DashboardRepository {
          JOIN producto p ON p.id = v.id_producto
         WHERE n.fecha_emision >= CURRENT_DATE - ($1::int - 1)
           AND ($2::int IS NULL OR n.id_sucursal = $2)
+          AND n.id_empresa = $3
         GROUP BY v.id, v.sku, p.nombre, v.talla, v.color
         ORDER BY cantidad DESC, p.nombre ASC
         LIMIT ${LIMITE_TOP_VARIANTES}`,
-      [dias, idSucursal],
+      [dias, idSucursal, this.tenant.empresaId()],
     );
     return filas.map((fila) => ({
       idVariante: fila.id,
@@ -132,7 +142,7 @@ export class DashboardRepository {
     }));
   }
 
-  /** Comparativo entre todas las sucursales activas; no se filtra por sucursal a proposito. */
+  /** Comparativo entre todas las sucursales activas de la empresa; no se filtra por sucursal a proposito. */
   async ventasPorSucursal(dias: number): Promise<VentasSucursalDto[]> {
     const filas = await this.dataSource.query<Array<{ id: number; nombre: string; total: number; cantidad: number }>>(
       `SELECT s.id, s.nombre, COALESCE(SUM(n.monto_total), 0)::float8 AS total, COUNT(n.id)::int AS cantidad
@@ -141,9 +151,10 @@ export class DashboardRepository {
                 ON n.id_sucursal = s.id
                AND n.fecha_emision >= CURRENT_DATE - ($1::int - 1)
         WHERE s.activo = true
+          AND s.id_empresa = $2
         GROUP BY s.id, s.nombre
         ORDER BY total DESC, s.nombre ASC`,
-      [dias],
+      [dias, this.tenant.empresaId()],
     );
     return filas.map((fila) => ({
       idSucursal: fila.id,
@@ -161,9 +172,10 @@ export class DashboardRepository {
          LEFT JOIN nota_venta n
                 ON n.fecha_emision = d.dia::date
                AND ($2::int IS NULL OR n.id_sucursal = $2)
+               AND n.id_empresa = $3
         GROUP BY d.dia
         ORDER BY d.dia`,
-      [dias, idSucursal],
+      [dias, idSucursal, this.tenant.empresaId()],
     );
   }
 }

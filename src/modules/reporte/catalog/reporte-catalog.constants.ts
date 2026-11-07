@@ -64,6 +64,11 @@ export interface FuenteReporte {
   joinsSiempre: string[];
   /** Columna DATE del rango desde/hasta; null = el reporte no filtra por fechas. */
   campoFechas: string | null;
+  /**
+   * Columna con la empresa duena de cada fila (multiempresa). El builder la filtra siempre; debe salir de
+   * tablaBase o de un join de joinsSiempre.
+   */
+  columnaEmpresa: string;
   campos: CampoReporte[];
 }
 
@@ -74,6 +79,7 @@ const VENTAS: FuenteReporte = {
     'Notas de venta con detalle por producto, categoría, cliente y sucursal. Las medidas de cabecera (monto total, descuento e impuesto) se calculan por nota de venta.',
   tablaBase: 'nota_venta nv',
   campoFechas: 'nv.fecha_emision',
+  columnaEmpresa: 'nv.id_empresa',
   joins: {
     SUCURSAL: 'LEFT JOIN sucursal sc ON sc.id = nv.id_sucursal',
     CLIENTE: 'LEFT JOIN usuario clu ON clu.id = nv.id_cliente',
@@ -118,6 +124,8 @@ const INVENTARIO: FuenteReporte = {
     'Existencias actuales por sucursal, almacén y variante, con alertas de stock crítico. No admite rango de fechas porque es una foto del momento.',
   tablaBase: 'inventario inv',
   campoFechas: null,
+  // El inventario no tiene empresa propia: es la de su almacen (ALMACEN esta en joinsSiempre).
+  columnaEmpresa: 'alm.id_empresa',
   joins: {
     ALMACEN: 'JOIN almacen alm ON alm.id = inv.id_almacen',
     SUCURSAL: 'JOIN sucursal sc ON sc.id = alm.id_sucursal',
@@ -151,6 +159,7 @@ const COMPRAS: FuenteReporte = {
   descripcion: 'Órdenes de compra a proveedores por sucursal y estado. Las medidas de cabecera se calculan por nota de compra.',
   tablaBase: 'nota_compra nc',
   campoFechas: 'nc.fecha_emision',
+  columnaEmpresa: 'nc.id_empresa',
   joins: {
     SUCURSAL: 'LEFT JOIN sucursal sc ON sc.id = nc.id_sucursal',
     PROVEEDOR: 'LEFT JOIN proveedor pv ON pv.id = nc.id_proveedor',
