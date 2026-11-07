@@ -283,7 +283,7 @@ describe('CheckoutService', () => {
       await service.pagarTarjeta(cliente, TARJETA);
 
       const consultaStock = consultas.find((c) => c.sql.includes('FOR UPDATE'));
-      expect(consultaStock?.params).toEqual([3, 2]); // idVarianteProducto, idSucursal — nunca ranking entre sucursales.
+      expect(consultaStock?.params).toEqual([3, 2, 1]); // idVarianteProducto, idSucursal, idEmpresa — nunca ranking entre sucursales.
       expect(consultas.filter((c) => c.sql.startsWith('UPDATE')).map((c) => c.params)).toEqual([[1, 90], [1, 91]]);
       expect(guardados.notas[0]).toMatchObject({ idSucursal: 2 });
     });

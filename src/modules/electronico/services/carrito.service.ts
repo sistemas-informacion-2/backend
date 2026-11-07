@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
@@ -26,6 +27,7 @@ export class CarritoService {
     private readonly disponibilidad: DisponibilidadService,
     @InjectRepository(VarianteProducto) private readonly varianteRepo: Repository<VarianteProducto>,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async obtener(usuario: ActiveUser): Promise<CarritoResponseDto> {
@@ -125,7 +127,7 @@ export class CarritoService {
   }
 
   private async buscarVarianteVendible(idVariante: number): Promise<VarianteProducto> {
-    const variante = await this.varianteRepo.findOne({ where: { id: idVariante }, relations: { producto: true } });
+    const variante = await this.varianteRepo.findOne({ where: { id: idVariante, idEmpresa: this.tenant.empresaId() }, relations: { producto: true } });
     if (!variante || !variante.activo || !variante.producto?.activo) {
       throw new NotFoundException('La variante ya no esta disponible');
     }
@@ -133,7 +135,7 @@ export class CarritoService {
   }
 
   private async validarSucursal(idSucursal: number): Promise<void> {
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal || !sucursal.activo) throw new BadRequestException('La sucursal elegida no existe o ya no está activa');
   }
 

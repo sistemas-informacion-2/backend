@@ -171,10 +171,10 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     const items = consolidarItems(dto.items);
 
     const idReserva = await this.dataSource.transaction(async (manager) => {
-      const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente } });
+      const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente, usuario: { idEmpresa: this.tenant.empresaId() } } });
       if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
       if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
       if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
       if (usuario.tipoUsuario === 'E') await this.validarAccesoSucursal(usuario, idSucursal);
@@ -403,20 +403,24 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     return this.obtener(id, usuario);
   }
 
-  /** Cancela las reservas cuya fecha limite ya paso y devuelve el stock apartado. Devuelve cuantas cancelo. */
+  /**
+   * Cancela las reservas cuya fecha limite ya paso y devuelve el stock apartado. Devuelve cuantas cancelo. Revisa
+   * las de todas las empresas (corre tambien desde el temporizador, sin request), pero cada una se procesa dentro
+   * del contexto de su empresa, asi que las consultas quedan limitadas a ella como en cualquier request.
+   */
   async vencerVencidas(): Promise<number> {
-    const ids = await this.reservaRepo.findIdsVencidas(new Date());
+    const vencidas = await this.reservaRepo.findVencidas(new Date());
     let canceladas = 0;
-    for (const id of ids) {
-      const cancelada = await this.dataSource.transaction(async (manager) => {
-        const reserva = await manager.getRepository(Reserva).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+    for (const { id, idEmpresa } of vencidas) {
+      const cancelada = await this.tenant.ejecutarParaEmpresa(idEmpresa, () => this.dataSource.transaction(async (manager) => {
+        const reserva = await manager.getRepository(Reserva).findOne({ where: { id, idEmpresa }, lock: { mode: 'pessimistic_write' } });
         // Pudo cambiar (liquidarse/cancelarse) entre la consulta y el bloqueo.
         if (!reserva || (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') || reserva.fechaLimite >= new Date()) {
           return false;
         }
         await this.liberarReserva(manager, reserva, 'Cancelada automaticamente por vencimiento');
         return true;
-      });
+      }));
       if (cancelada) canceladas += 1;
     }
     if (canceladas > 0) this.logger.log(`${canceladas} reserva(s) vencida(s) cancelada(s)`);
@@ -447,7 +451,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     items: Array<{ idVarianteProducto: number; cantidad: number }>,
   ): Promise<LineaReserva[]> {
     const variantes = await manager.getRepository(VarianteProducto).find({
-      where: { id: In(items.map((item) => item.idVarianteProducto)) },
+      where: { id: In(items.map((item) => item.idVarianteProducto)), idEmpresa: this.tenant.empresaId() },
       relations: { producto: true },
     });
     const activados = await manager.getRepository(ProductoSucursal).find({
@@ -530,7 +534,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async bloquear(manager: EntityManager, id: number): Promise<Reserva> {
-    const reserva = await manager.getRepository(Reserva).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+    const reserva = await manager.getRepository(Reserva).findOne({ where: { id, idEmpresa: this.tenant.empresaId() }, lock: { mode: 'pessimistic_write' } });
     if (!reserva) throw new NotFoundException('Reserva no encontrada');
     return reserva;
   }

@@ -1,4 +1,5 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Usuario } from '../../acceso/entities/usuario.entity.js';
 
 /**
@@ -6,10 +7,19 @@ import { Usuario } from '../../acceso/entities/usuario.entity.js';
  * clientes se materializa como fan-out: una fila por destinatario, ya que
  * `id_usuario` es obligatorio.
  */
+@Index('idx_notificacion_push_empresa', ['idEmpresa'])
 @Entity('notificacion_push')
 export class NotificacionPush {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
 
   @Column({ name: 'id_usuario', type: 'int' })
   idUsuario: number;

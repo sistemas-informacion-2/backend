@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, LessThan, type Repository } from 'typeorm';
 import { NotaVenta } from '../../comercial/entities/nota-venta.entity.js';
 import { Reserva, type EstadoReserva } from '../entities/reserva.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 export interface FiltrosReservas {
   page: number;
@@ -24,7 +25,10 @@ const RELACIONES_DETALLE = {
 
 @Injectable()
 export class ReservaRepository {
-  constructor(@InjectRepository(Reserva) private readonly repo: Repository<Reserva>) {}
+  constructor(
+    @InjectRepository(Reserva) private readonly repo: Repository<Reserva>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async findPage(query: FiltrosReservas): Promise<{ items: Reserva[]; total: number }> {
     const builder = this.repo
@@ -33,6 +37,7 @@ export class ReservaRepository {
       .leftJoinAndSelect('cliente.usuario', 'clienteUsuario')
       .leftJoinAndSelect('reserva.sucursal', 'sucursal')
       .leftJoinAndSelect('reserva.pagos', 'pago')
+      .where('reserva.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('reserva.id', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
@@ -58,21 +63,23 @@ export class ReservaRepository {
   }
 
   findByIdConDetalle(id: number): Promise<Reserva | null> {
-    return this.repo.findOne({ where: { id }, relations: RELACIONES_DETALLE });
+    return this.repo.findOne({ where: { id, idEmpresa: this.tenant.empresaId() }, relations: RELACIONES_DETALLE });
   }
 
   findByCliente(idCliente: number): Promise<Reserva[]> {
     return this.repo.find({ where: { idCliente }, relations: RELACIONES_DETALLE, order: { id: 'DESC' } });
   }
 
-  /** Reservas que siguen apartando stock (PENDIENTE/PAGADA) y ya pasaron su fecha limite. */
-  async findIdsVencidas(ahora: Date): Promise<number[]> {
-    const vencidas = await this.repo.find({
-      select: { id: true },
+  /**
+   * Reservas que siguen apartando stock (PENDIENTE/PAGADA) y ya pasaron su fecha limite, de todas las empresas:
+   * la usa el vencimiento automatico, que procesa cada una dentro del contexto de su empresa.
+   */
+  findVencidas(ahora: Date): Promise<Array<{ id: number; idEmpresa: number }>> {
+    return this.repo.find({
+      select: { id: true, idEmpresa: true },
       where: { estado: In<EstadoReserva>(['PENDIENTE', 'PAGADA']), fechaLimite: LessThan(ahora) },
       order: { id: 'ASC' },
     });
-    return vencidas.map((reserva) => reserva.id);
   }
 
   findNotaVenta(idReserva: number): Promise<NotaVenta | null> {

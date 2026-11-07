@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 import type { EstadoEmpresa } from '../../modules/plataforma/entities/empresa.entity.js';
+import { EmpresaResolver } from './empresa-resolver.service.js';
 
 /** Lo minimo de la empresa que necesita cualquier capa durante un request. */
 export interface EmpresaActual {
@@ -19,7 +20,10 @@ const CLAVE_EMPRESA = 'empresa';
  */
 @Injectable()
 export class TenantContext {
-  constructor(private readonly cls: ClsService) {}
+  constructor(
+    private readonly cls: ClsService,
+    private readonly resolver: EmpresaResolver,
+  ) {}
 
   establecer(empresa: EmpresaActual): void {
     this.cls.set(CLAVE_EMPRESA, empresa);
@@ -49,5 +53,12 @@ export class TenantContext {
       this.establecer(empresa);
       return tarea();
     });
+  }
+
+  /** Como `ejecutarComo`, a partir del id de la empresa (p. ej. el de una fila que procesa un trabajo en segundo plano). */
+  async ejecutarParaEmpresa<T>(idEmpresa: number, tarea: () => Promise<T>): Promise<T> {
+    const empresa = await this.resolver.porId(idEmpresa);
+    if (!empresa) throw new InternalServerErrorException(`La empresa ${idEmpresa} no existe`);
+    return this.ejecutarComo(empresa, tarea);
   }
 }

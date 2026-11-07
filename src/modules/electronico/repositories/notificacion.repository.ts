@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
 import { NotificacionPush } from '../entities/notificacion-push.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 interface FiltrosNotificacion {
   page: number;
@@ -15,7 +16,10 @@ interface FiltrosNotificacion {
 
 @Injectable()
 export class NotificacionRepository {
-  constructor(@InjectRepository(NotificacionPush) private readonly repo: Repository<NotificacionPush>) {}
+  constructor(
+    @InjectRepository(NotificacionPush) private readonly repo: Repository<NotificacionPush>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async findPage(
     query: FiltrosNotificacion,
@@ -25,6 +29,7 @@ export class NotificacionRepository {
       .getRepository(NotificacionPush)
       .createQueryBuilder('notificacion')
       .leftJoinAndSelect('notificacion.usuario', 'usuario')
+      .where('notificacion.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('notificacion.fecha_envio', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
@@ -60,7 +65,7 @@ export class NotificacionRepository {
   }
 
   findById(id: number): Promise<NotificacionPush | null> {
-    return this.repo.findOne({ where: { id } });
+    return this.repo.findOne({ where: { id, idEmpresa: this.tenant.empresaId() } });
   }
 
   async marcarTodasLeidas(idUsuario: number): Promise<number> {

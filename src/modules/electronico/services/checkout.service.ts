@@ -295,7 +295,7 @@ export class CheckoutService {
     opciones: OpcionesFinalizar,
   ): Promise<CompraOnlineResponseDto> {
     // Se bloquea la reserva: una cancelacion o el vencimiento simultaneos no pueden cruzarse con este cobro.
-    const reserva = await manager.getRepository(Reserva).findOne({ where: { id: idReserva }, lock: { mode: 'pessimistic_write' } });
+    const reserva = await manager.getRepository(Reserva).findOne({ where: { id: idReserva, idEmpresa: this.tenant.empresaId() }, lock: { mode: 'pessimistic_write' } });
     this.validarReservaPagable(reserva, idCliente);
     const monto = Number(reserva.montoAnticipo);
     opciones.validar?.(monto);
@@ -451,7 +451,7 @@ export class CheckoutService {
   /** Lo que se cobrara ahora: el total del carrito (con aviso de stock) o el anticipo de la reserva. */
   private async montoAPagar(idCliente: number, idReserva?: number): Promise<{ monto: number; descripcion: string }> {
     if (idReserva !== undefined) {
-      const reserva = await this.dataSource.getRepository(Reserva).findOne({ where: { id: idReserva } });
+      const reserva = await this.dataSource.getRepository(Reserva).findOne({ where: { id: idReserva, idEmpresa: this.tenant.empresaId() } });
       this.validarReservaPagable(reserva, idCliente);
       return { monto: Number(reserva.montoAnticipo), descripcion: `Anticipo de la reserva ${reserva.codigoReserva} en FashionStore` };
     }
@@ -492,12 +492,13 @@ export class CheckoutService {
            ON ps.id_producto = v.id_producto AND ps.id_sucursal = a.id_sucursal AND ps.activo = true
         WHERE i.id_variante_producto = $1
           AND a.id_sucursal = $2
+          AND a.id_empresa = $3
           AND a.activo = true
           AND s.activo = true
           AND i.stock_disponible > 0
         ORDER BY i.stock_disponible DESC, i.id ASC
           FOR UPDATE OF i`,
-      [linea.idVarianteProducto, idSucursal],
+      [linea.idVarianteProducto, idSucursal, this.tenant.empresaId()],
     );
 
     let restante = linea.cantidad;
