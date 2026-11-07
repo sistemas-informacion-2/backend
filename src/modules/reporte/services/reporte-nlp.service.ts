@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { fechaLocal, sumarDias, sumarMeses } from '../../../common/utils/fecha.util.js';
 import { DataSource } from 'typeorm';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { normalizarTexto } from '../catalog/reporte-catalog.constants.js';
@@ -124,20 +125,14 @@ export class ReporteNlpService {
   }
 
   private detectarPeriodo(prompt: string): { desde?: string; hasta?: string; periodoTexto?: string } {
-    const hoy = new Date();
-    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
-    const diasAtras = (dias: number) => {
-      const fecha = new Date(hoy);
-      fecha.setDate(fecha.getDate() - dias);
-      return iso(fecha);
-    };
+    // Fechas de calendario en Bolivia: "hoy" a las 21:00 en La Paz sigue siendo hoy aunque en UTC ya sea manana.
+    const hoy = fechaLocal();
+    const diasAtras = (dias: number) => sumarDias(hoy, -dias);
 
-    if (/hoy/.test(prompt)) return { desde: iso(hoy), hasta: iso(hoy), periodoTexto: 'hoy' };
+    if (/hoy/.test(prompt)) return { desde: hoy, hasta: hoy, periodoTexto: 'hoy' };
 
     if (/mes/.test(prompt) && /ultimo|pasado/.test(prompt)) {
-      const haceUnMes = new Date(hoy);
-      haceUnMes.setMonth(haceUnMes.getMonth() - 1);
-      return { desde: iso(haceUnMes), hasta: iso(hoy), periodoTexto: 'el último mes' };
+      return { desde: sumarMeses(hoy, -1), hasta: hoy, periodoTexto: 'el último mes' };
     }
 
     // "dos semanas" también hay que reconocerlo: antes solo se fijaba en si
@@ -150,16 +145,16 @@ export class ReporteNlpService {
     if (coincidenciaSemanas) {
       const semanas = Math.max(1, numeroDeTexto(coincidenciaSemanas[1]));
       const dias = Math.min(365, semanas * 7);
-      return { desde: diasAtras(dias - 1), hasta: iso(hoy), periodoTexto: `las últimas ${semanas} semana${semanas === 1 ? '' : 's'}` };
+      return { desde: diasAtras(dias - 1), hasta: hoy, periodoTexto: `las últimas ${semanas} semana${semanas === 1 ? '' : 's'}` };
     }
 
     const coincidenciaDias = prompt.match(new RegExp(`${PATRON_NUMERO}\\s*dias?`));
     if (coincidenciaDias) {
       const dias = Math.max(1, Math.min(365, numeroDeTexto(coincidenciaDias[1])));
-      return { desde: diasAtras(dias - 1), hasta: iso(hoy), periodoTexto: `los últimos ${dias} días` };
+      return { desde: diasAtras(dias - 1), hasta: hoy, periodoTexto: `los últimos ${dias} días` };
     }
 
-    if (/semana/.test(prompt)) return { desde: diasAtras(6), hasta: iso(hoy), periodoTexto: 'la última semana' };
+    if (/semana/.test(prompt)) return { desde: diasAtras(6), hasta: hoy, periodoTexto: 'la última semana' };
     return {};
   }
 

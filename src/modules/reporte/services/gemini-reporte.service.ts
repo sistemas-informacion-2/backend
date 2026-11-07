@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
@@ -289,7 +290,7 @@ export class GeminiReporteService {
 
   private construirInstrucciones(sucursales: string[]): string {
     const catalogo = FUENTES_REPORTE.map((fuente) => this.describirFuente(fuente)).join('\n\n');
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = fechaLocal();
 
     return [
       'Eres el motor de reportes generativos del backoffice de FashionStore (tienda de ropa boliviana, sucursales físicas y e-commerce).',

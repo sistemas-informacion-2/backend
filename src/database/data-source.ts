@@ -1,3 +1,5 @@
+// Primero: fija la zona horaria del proceso antes de que se cree cualquier Date.
+import '../config/zona-horaria.js';
 import 'reflect-metadata';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

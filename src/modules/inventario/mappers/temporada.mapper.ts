@@ -1,8 +1,9 @@
 import type { Temporada } from '../entities/temporada.entity.js';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import type { EstadoTemporada, TemporadaResponseDto } from '../dto/temporada-response.dto.js';
 
 function calcularEstado(fechaInicio: string, fechaFin: string): EstadoTemporada {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = fechaLocal();
   if (hoy < fechaInicio) return 'PROXIMA';
   if (hoy > fechaFin) return 'FINALIZADA';
   return 'VIGENTE';

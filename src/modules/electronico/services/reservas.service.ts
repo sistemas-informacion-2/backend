@@ -42,6 +42,7 @@ import {
   type ReservasPaginatedResponseDto,
   type ReservasQueryDto,
 } from '../dto/reservas.dto.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
 
 /** Un cliente no puede acaparar stock: como maximo tiene este numero de reservas vivas a la vez. */
 export const MAX_RESERVAS_ACTIVAS_CLIENTE = 3;
@@ -49,17 +50,6 @@ const INTERVALO_VENCIMIENTO_MS = 5 * 60 * 1000;
 
 function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
-}
-
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
 }
 
 /** Codigo provisorio (<= 20 caracteres) mientras se conoce el id de la fila; evita carreras por conteo. */
@@ -269,8 +259,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
             idReserva: reserva.id,
             monto,
             concepto: 'ANTICIPO_RESERVA',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           }),
         );
       }
@@ -328,8 +318,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
           tipoVenta: 'PRESENCIAL_LIQUIDACION',
           nroFactura: dto.nroFactura?.trim() || null,
           nitRazonSocial: dto.nitRazonSocial?.trim() || null,
-          fechaEmision: formatearFecha(ahora),
-          horaEmision: formatearHora(ahora),
+          fechaEmision: fechaLocal(ahora),
+          horaEmision: horaLocal(ahora),
           subtotal: montoTotal,
           montoAnticipoAplicado: anticipoPagado,
           descuento: 0,
@@ -369,8 +359,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
             idReserva: reserva.id,
             monto: saldo,
             concepto: 'SALDO_LIQUIDACION',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           }),
         );
       }

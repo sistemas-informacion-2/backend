@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, type Repository } from 'typeorm';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
@@ -133,7 +134,7 @@ export class ComprasService {
           }),
         );
         compra.idMovimientoCaja = movimiento.id;
-        compra.fechaPago = new Date().toISOString().slice(0, 10);
+        compra.fechaPago = fechaLocal();
         await manager.getRepository(NotaCompra).save(compra);
       }
 

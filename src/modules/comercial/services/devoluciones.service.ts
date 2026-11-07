@@ -30,6 +30,7 @@ import {
 } from '../dto/devoluciones.dto.js';
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
 
 /** Valores por defecto de INVENTARIO cuando la devolucion abre el registro de una variante en un almacen. */
 const STOCK_MINIMO_INICIAL = 5;
@@ -38,17 +39,6 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
 function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
-}
-
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
 }
 
 function normalizarCodigo(codigo?: string): string | undefined {
@@ -230,8 +220,8 @@ export class DevolucionesService {
             idReserva: origen.tipo === 'CANCELACION_RESERVA' ? origen.reserva.id : null,
             monto: total,
             concepto: 'REEMBOLSO',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           }),
         );
       }

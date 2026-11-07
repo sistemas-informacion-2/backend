@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { DashboardRepository } from '../repositories/dashboard.repository.js';
 import { DIAS_DASHBOARD_POR_DEFECTO, type DashboardQueryDto } from '../dto/dashboard-query.dto.js';
 import type { DashboardResumenResponseDto } from '../dto/dashboard-resumen-response.dto.js';
@@ -28,7 +29,7 @@ export class DashboardService {
       : [{ total: 0, cantidadNotas: 0 }, [], [], []];
 
     return {
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: fechaLocal(),
       idSucursal,
       dias,
       ventasDisponibles,

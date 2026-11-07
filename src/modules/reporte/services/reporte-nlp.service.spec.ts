@@ -1,4 +1,5 @@
 import { ReporteNlpService } from './reporte-nlp.service.js';
+import { fechaLocal, sumarDias } from '../../../common/utils/fecha.util.js';
 
 function crearNlp(nombresSucursales: string[]) {
   const dataSource = {
@@ -47,14 +48,10 @@ describe('ReporteNlpService', () => {
 
   it('"dos semanas" cubre 14 días, no 7', async () => {
     const nlp = crearNlp([]);
-    const hoy = new Date();
-    const hace14Dias = new Date(hoy);
-    hace14Dias.setDate(hace14Dias.getDate() - 13);
-    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
 
     const { request, interpretacion } = await nlp.interpretar('Ventas de las últimas dos semanas');
 
-    expect(request.dateFrom).toBe(iso(hace14Dias));
+    expect(request.dateFrom).toBe(sumarDias(fechaLocal(), -13));
     expect(interpretacion).toContain('2 semanas');
   });
 

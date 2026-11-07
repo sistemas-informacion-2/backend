@@ -26,6 +26,7 @@ import type {
   MetodoPagoOnlineDto,
   PagoTarjetaDto,
 } from '../dto/checkout.dto.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
 
 const METODOS_SOPORTADOS: CodigoMetodoOnline[] = ['QR', 'STRIPE', 'TARJETA'];
 const VIGENCIA_QR_MS = 15 * 60 * 1000;
@@ -34,17 +35,6 @@ const TARJETA_RECHAZADA = '4000000000000002';
 
 function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
-}
-
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
 }
 
 function esViolacionUnica(error: unknown): boolean {
@@ -312,8 +302,8 @@ export class CheckoutService {
         monto,
         concepto: 'ANTICIPO_RESERVA',
         referenciaExterna: referencia,
-        fechaPago: formatearFecha(ahora),
-        horaPago: formatearHora(ahora),
+        fechaPago: fechaLocal(ahora),
+        horaPago: horaLocal(ahora),
       }),
     );
 
@@ -377,8 +367,8 @@ export class CheckoutService {
         tipoVenta: 'E_COMMERCE',
         nroFactura: null,
         nitRazonSocial: null,
-        fechaEmision: formatearFecha(ahora),
-        horaEmision: formatearHora(ahora),
+        fechaEmision: fechaLocal(ahora),
+        horaEmision: horaLocal(ahora),
         subtotal: resumen.total,
         montoAnticipoAplicado: 0,
         descuento: 0,
@@ -415,8 +405,8 @@ export class CheckoutService {
         monto: resumen.total,
         concepto: 'PAGO_TOTAL',
         referenciaExterna: referencia,
-        fechaPago: formatearFecha(ahora),
-        horaPago: formatearHora(ahora),
+        fechaPago: fechaLocal(ahora),
+        horaPago: horaLocal(ahora),
       }),
     );
 

@@ -23,6 +23,7 @@ import type { VentasQueryDto } from '../dto/ventas-query.dto.js';
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
 import type { VentaPaginatedResponseDto, VentaResponseDto } from '../dto/venta-response.dto.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
 
 /**
  * NOTA_VENTA.id_cliente es obligatorio, pero en una venta de mostrador no se pide registrar al comprador. Esas ventas
@@ -149,8 +150,8 @@ export class VentasService {
           tipoVenta: 'DIRECTA_PRESENCIAL',
           nroFactura: dto.nroFactura?.trim() || null,
           nitRazonSocial: dto.nitRazonSocial?.trim() || null,
-          fechaEmision: formatearFecha(ahora),
-          horaEmision: formatearHora(ahora),
+          fechaEmision: fechaLocal(ahora),
+          horaEmision: horaLocal(ahora),
           subtotal,
           montoAnticipoAplicado: 0,
           descuento,
@@ -194,8 +195,8 @@ export class VentasService {
             idNotaVenta: venta.id,
             monto: montoTotal,
             concepto: 'PAGO_TOTAL',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           },
           manager,
         ),
@@ -343,13 +344,3 @@ function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
-}

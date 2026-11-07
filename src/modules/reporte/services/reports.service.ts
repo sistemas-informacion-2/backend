@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { fechaLocal, inicioDeMes, sumarDias } from '../../../common/utils/fecha.util.js';
 import type {
   CreateReportTemplateDto,
   FormatoExportacion,
@@ -96,20 +97,15 @@ export class ReportsService {
   }
 
   private resolverRango(rango: RangoPredefinido): { desde?: string; hasta?: string } {
-    const iso = (fecha: Date) => fecha.toISOString().slice(0, 10);
-    const hoy = new Date();
+    // Fechas de calendario en Bolivia (ver fecha.util).
+    const hoy = fechaLocal();
     switch (rango.tipo) {
       case 'HOY':
-        return { desde: iso(hoy), hasta: iso(hoy) };
-      case 'ULTIMOS_N_DIAS': {
-        const desde = new Date(hoy);
-        desde.setDate(desde.getDate() - (rango.dias - 1));
-        return { desde: iso(desde), hasta: iso(hoy) };
-      }
-      case 'MES_ACTUAL': {
-        const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        return { desde: iso(inicio), hasta: iso(hoy) };
-      }
+        return { desde: hoy, hasta: hoy };
+      case 'ULTIMOS_N_DIAS':
+        return { desde: sumarDias(hoy, -(rango.dias - 1)), hasta: hoy };
+      case 'MES_ACTUAL':
+        return { desde: inicioDeMes(hoy), hasta: hoy };
       case 'NINGUNO':
       default:
         return {};

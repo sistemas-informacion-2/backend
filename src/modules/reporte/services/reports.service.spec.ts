@@ -1,4 +1,5 @@
 import { GeminiReporteService } from './gemini-reporte.service.js';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { ReportBuilderService } from './report-builder.service.js';
 import { ReporteNlpService } from './reporte-nlp.service.js';
 import { ReportsService } from './reports.service.js';
@@ -73,7 +74,7 @@ describe('ReportsService', () => {
 
   it('ejecutarPredefinido de VENTAS_HOY resuelve dateFrom/dateTo al dia de hoy', async () => {
     const { service, builder } = crearService();
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = fechaLocal();
 
     const respuesta = await service.ejecutarPredefinido('VENTAS_HOY');
 

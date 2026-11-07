@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { fechaDeColumna } from '../../../common/utils/fecha.util.js';
 import { DataSource } from 'typeorm';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import {
@@ -207,7 +208,7 @@ export class ReportBuilderService {
 
   private serializar(valor: unknown): string | number | boolean {
     if (valor === null || valor === undefined) return '';
-    if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+    if (valor instanceof Date) return fechaDeColumna(valor);
     if (typeof valor === 'number' || typeof valor === 'boolean' || typeof valor === 'string') return valor;
     return String(valor);
   }

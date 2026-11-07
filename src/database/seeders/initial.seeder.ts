@@ -1,3 +1,5 @@
+// Primero: fija la zona horaria del proceso antes de que se cree cualquier Date.
+import '../../config/zona-horaria.js';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../app.module.js';
 import { InitialSeederService } from './initial-seeder.service.js';

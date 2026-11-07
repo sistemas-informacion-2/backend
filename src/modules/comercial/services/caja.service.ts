@@ -15,6 +15,7 @@ import type { CajasQueryDto } from '../dto/cajas-query.dto.js';
 import type { CajaResponseDto } from '../dto/caja-response.dto.js';
 import type { MovimientoCajaResponseDto } from '../dto/movimiento-caja-response.dto.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { horaLocal } from '../../../common/utils/fecha.util.js';
 
 @Injectable()
 export class CajaService {
@@ -55,7 +56,7 @@ export class CajaService {
       // legajo de empleado, por eso se registra sin cajero.
       idCajero: usuario.tipoUsuario === 'E' ? usuario.sub : null,
       fechaApertura: ahora,
-      horaApertura: formatearHora(ahora),
+      horaApertura: horaLocal(ahora),
       montoInicial: dto.montoInicial.toFixed(2),
       estado: 'Abierta',
     });
@@ -74,7 +75,7 @@ export class CajaService {
     const esperado = this.montoEsperado(caja);
     caja.montoFinal = (dto.montoFinal ?? esperado).toFixed(2);
     caja.fechaCierre = ahora;
-    caja.horaCierre = formatearHora(ahora);
+    caja.horaCierre = horaLocal(ahora);
     caja.estado = 'Cerrada';
     await this.cajaRepo.save(caja);
 
@@ -137,6 +138,3 @@ export class CajaService {
   }
 }
 
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
-}

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 import { Temporada } from '../entities/temporada.entity.js';
@@ -25,9 +26,9 @@ const fecha = (anio: number, mes: number, dia: number): string => `${anio}-${pad
  * (la que ya pasó o la que sigue) según en qué mes del año se ejecute esto.
  */
 function construirTaxonomia(hoy: Date): TemporadaSemilla[] {
-  const anio = hoy.getUTCFullYear();
+  const hoyIso = fechaLocal(hoy);
+  const anio = Number(hoyIso.slice(0, 4));
   const finVeranoEsteAnio = fecha(anio, 3, 20);
-  const hoyIso = hoy.toISOString().slice(0, 10);
   // Antes/durante el verano que terminó este marzo -> esa ocurrencia (dic del año pasado a marzo de este).
   // Después -> la próxima (dic de este año a marzo del que viene).
   const veranoEsteAnioTerminado = hoyIso > finVeranoEsteAnio;
