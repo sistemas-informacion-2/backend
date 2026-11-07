@@ -134,6 +134,7 @@ export class VentasService {
         {
           idCaja: caja.id,
           tipo: 'INGRESO',
+          categoria: 'VENTA',
           concepto: `Venta presencial ${codigoProvisional}`,
           monto: montoTotal.toFixed(2),
           observaciones: null,

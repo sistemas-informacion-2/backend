@@ -270,7 +270,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
         const caja = await this.obtenerCajaAbierta(manager, reserva.idSucursal);
         await this.validarPasarelaPresencial(manager, dto.idPasarela);
         const ahora = new Date();
-        const movimiento = await this.registrarIngreso(manager, caja, `Anticipo reserva ${reserva.codigoReserva}`, monto, ahora);
+        const movimiento = await this.registrarIngreso(manager, caja, 'ANTICIPO_RESERVA', `Anticipo reserva ${reserva.codigoReserva}`, monto, ahora);
         await manager.getRepository(Pago).save(
           manager.getRepository(Pago).create({
             idMovimientoCaja: movimiento.id,
@@ -320,7 +320,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
         if (!dto.idPasarela) throw new BadRequestException('Elige el metodo de pago con el que se cobra el saldo');
         const caja = await this.obtenerCajaAbierta(manager, reserva.idSucursal);
         await this.validarPasarelaPresencial(manager, dto.idPasarela);
-        movimiento = await this.registrarIngreso(manager, caja, `Saldo reserva ${reserva.codigoReserva}`, saldo, ahora);
+        movimiento = await this.registrarIngreso(manager, caja, 'SALDO_RESERVA', `Saldo reserva ${reserva.codigoReserva}`, saldo, ahora);
       }
 
       const notaRepo = manager.getRepository(NotaVenta);
@@ -587,10 +587,17 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     if (!pasarela.disponiblePresencial) throw new BadRequestException('El metodo de pago no esta habilitado para caja');
   }
 
-  private registrarIngreso(manager: EntityManager, caja: Caja, concepto: string, monto: number, fechaHora: Date): Promise<MovimientoCaja> {
+  private registrarIngreso(
+    manager: EntityManager,
+    caja: Caja,
+    categoria: 'ANTICIPO_RESERVA' | 'SALDO_RESERVA',
+    concepto: string,
+    monto: number,
+    fechaHora: Date,
+  ): Promise<MovimientoCaja> {
     const repo = manager.getRepository(MovimientoCaja);
     return repo.save(
-      repo.create({ idCaja: caja.id, tipo: 'INGRESO', concepto: concepto.slice(0, 150), monto: monto.toFixed(2), observaciones: null, fechaHora }),
+      repo.create({ idCaja: caja.id, tipo: 'INGRESO', categoria, concepto: concepto.slice(0, 150), monto: monto.toFixed(2), observaciones: null, fechaHora }),
     );
   }
 

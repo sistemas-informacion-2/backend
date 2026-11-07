@@ -131,6 +131,7 @@ export class ComprasService {
           manager.getRepository(MovimientoCaja).create({
             idCaja: caja.id,
             tipo: 'EGRESO',
+            categoria: 'COMPRA',
             concepto: `Compra ${nroFactura ?? `#${compra.id}`} - ${proveedor.empresa}`.slice(0, 150),
             monto: total.toFixed(2),
             observaciones: null,

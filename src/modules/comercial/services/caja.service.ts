@@ -1,4 +1,5 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { CATEGORIAS_MANUALES } from '../entities/movimiento-caja.entity.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
@@ -98,10 +99,17 @@ export class CajaService {
     if (!caja) throw new NotFoundException('Caja no encontrada');
     await this.validarAccesoSucursal(usuario, caja.idSucursal);
     if (caja.estado !== 'Abierta') throw new ConflictException('La caja esta cerrada');
+    if (!CATEGORIAS_MANUALES[dto.tipo].includes(dto.categoria)) {
+      throw new BadRequestException(`La categoria ${dto.categoria} no corresponde a un ${dto.tipo === 'INGRESO' ? 'ingreso' : 'egreso'}`);
+    }
+    const esGasto = dto.categoria === 'GASTO_OPERATIVO';
+    if (esGasto && !dto.subcategoriaGasto) throw new BadRequestException('Indica de que es el gasto operativo (alquiler, sueldos, servicios...)');
 
     const movimiento = this.movimientoRepo.create({
       idCaja: id,
       tipo: dto.tipo,
+      categoria: dto.categoria,
+      subcategoriaGasto: esGasto ? (dto.subcategoriaGasto ?? null) : null,
       concepto: dto.concepto.trim(),
       monto: dto.monto.toFixed(2),
       observaciones: dto.observaciones?.trim() || null,

@@ -178,6 +178,7 @@ export class DevolucionesService {
         movimientoRepo.create({
           idCaja: caja.id,
           tipo: 'EGRESO',
+          categoria: 'REEMBOLSO',
           concepto: `Reembolso devolucion ${referencia}`.slice(0, 150),
           monto: total.toFixed(2),
           observaciones: null,
