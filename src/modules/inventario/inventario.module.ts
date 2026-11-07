@@ -12,6 +12,7 @@ import { VarianteProducto } from './entities/variante-producto.entity.js';
 import { ProductoSucursal } from './entities/producto-sucursal.entity.js';
 import { Almacen } from './entities/almacen.entity.js';
 import { Inventario } from './entities/inventario.entity.js';
+import { TransferenciaInventario } from './entities/transferencia-inventario.entity.js';
 import { CategoriasController } from './controllers/categorias.controller.js';
 import { ProveedoresController } from './controllers/proveedores.controller.js';
 import { TemporadasController } from './controllers/temporadas.controller.js';
@@ -19,12 +20,14 @@ import { ProductosController } from './controllers/productos.controller.js';
 import { ArchivosController } from './controllers/archivos.controller.js';
 import { AlmacenesController } from './controllers/almacenes.controller.js';
 import { InventarioController } from './controllers/inventario.controller.js';
+import { TransferenciasController } from './controllers/transferencias.controller.js';
 import { CategoriasService } from './services/categorias.service.js';
 import { ProveedoresService } from './services/proveedores.service.js';
 import { TemporadasService } from './services/temporadas.service.js';
 import { ProductosService } from './services/productos.service.js';
 import { AlmacenesService } from './services/almacenes.service.js';
 import { InventarioService } from './services/inventario.service.js';
+import { TransferenciasService } from './services/transferencias.service.js';
 import { DisponibilidadService } from './services/disponibilidad.service.js';
 import { CategoriaRepository } from './repositories/categoria.repository.js';
 import { ProveedorRepository } from './repositories/proveedor.repository.js';
@@ -53,10 +56,11 @@ import { TemporadaSeederService } from './seeders/temporada-seeder.service.js';
       ProductoSucursal,
       Almacen,
       Inventario,
+      TransferenciaInventario,
       Sucursal,
     ]),
   ],
-  controllers: [CategoriasController, ProveedoresController, TemporadasController, ProductosController, ArchivosController, AlmacenesController, InventarioController],
+  controllers: [CategoriasController, ProveedoresController, TemporadasController, ProductosController, ArchivosController, AlmacenesController, InventarioController, TransferenciasController],
   providers: [
     CategoriasService,
     ProveedoresService,
@@ -64,6 +68,7 @@ import { TemporadaSeederService } from './seeders/temporada-seeder.service.js';
     ProductosService,
     AlmacenesService,
     InventarioService,
+    TransferenciasService,
     DisponibilidadService,
     CategoriaRepository,
     ProveedorRepository,
