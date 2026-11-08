@@ -87,14 +87,30 @@ Además, ningún hecho apunta a dimensiones de otra empresa.
 
 `dw.etl_ejecucion`: una fila por carga, con empresa, origen (`PROGRAMADO` o `MANUAL`), estado, inicio y fin, filas por tabla, error y usuario que la pidió.
 
+## Resultados de los modelos (`dw.ml_*`)
+
+Los escribe el servicio `ml/` (Python) después de cada carga, por empresa. Cada modelo reemplaza sus filas en una transacción.
+
+| Tabla | Contenido |
+|---|---|
+| `ml_ejecucion` | Una fila por entrenamiento: estado (`OK`, `PARCIAL`, `ERROR`) y métricas de cada modelo |
+| `ml_pronostico` | Ventas futuras por período (total, sucursal o categoría; semanal o mensual), con intervalo del 80 % y el modelo elegido |
+| `ml_sugerencia_compra` | Variante y sucursal: demanda esperada a 2 meses, stock, stock de seguridad y cantidad sugerida |
+| `ml_riesgo_abandono` | Cliente: probabilidad de no comprar en 90 días, nivel y principales factores |
+| `ml_segmento_cliente` | Cliente: segmento, recencia, frecuencia y monto |
+| `ml_asociacion` | Productos que se compran juntos: soporte, confianza y lift |
+| `ml_anomalia` | Días atípicos por sucursal, medidos en tickets presenciales: valor real, esperado y desviación |
+
 ## Rol de solo lectura
 
 La migración crea el rol **`bi_lector`** (sin login), con `SELECT` sobre todo `dw`, incluidas las tablas futuras. Los servicios que solo leen el DW (como el de machine learning) se conectan con un usuario que pertenece a ese rol.
 
-Para crear ese usuario (una vez, como administrador de la base):
+El rol **`bi_entrenador`** (sin login) hereda esa lectura y además puede escribir, solo, en las tablas `dw.ml_*`. Lo usa el servicio de machine learning.
+
+Para crear su usuario (una vez, como administrador de la base):
 
 ```sql
-CREATE ROLE bi_ml LOGIN PASSWORD '<una contraseña segura>' IN ROLE bi_lector;
+CREATE ROLE bi_ml LOGIN PASSWORD '<una contraseña segura>' IN ROLE bi_entrenador;
 ```
 
 La contraseña va en el `.env` del servicio, nunca en el repositorio.

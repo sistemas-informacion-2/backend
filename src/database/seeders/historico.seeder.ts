@@ -43,8 +43,8 @@ const opciones = {
   ventasPorDia: Number(argumento('ventas-dia', '6')),
   semilla: Number(argumento('semilla', '20261107')),
 };
-if (!/^[a-z0-9-]{3,40}$/.test(opciones.slug) || !(opciones.meses >= 1 && opciones.meses <= 24) || !(opciones.ventasPorDia > 0)) {
-  console.error('Argumentos invalidos: --slug (a-z, 0-9, -), --meses entre 1 y 24, --ventas-dia > 0');
+if (!/^[a-z0-9-]{3,40}$/.test(opciones.slug) || !(opciones.meses >= 1 && opciones.meses <= 36) || !(opciones.ventasPorDia > 0)) {
+  console.error('Argumentos invalidos: --slug (a-z, 0-9, -), --meses entre 1 y 36, --ventas-dia > 0');
   process.exit(1);
 }
 

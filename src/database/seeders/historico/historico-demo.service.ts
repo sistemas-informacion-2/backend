@@ -23,6 +23,7 @@ import { AprovisionamientoService } from '../../../modules/plataforma/services/a
 import { Aleatorio } from './aleatorio.js';
 import {
   APELLIDOS_DEMO,
+  COMPANERAS_DEMO,
   FACTOR_DIA,
   FACTOR_MES,
   NOMBRES_DEMO,
@@ -77,6 +78,10 @@ interface Evento {
 const PASSWORD_DEMO = 'Demo123!';
 const PUNTO_DE_REPOSICION = 6;
 const MS_DIA = 24 * 60 * 60 * 1000;
+/** Probabilidad de que un comprador acompanie su prenda con la que suele ir con ella. */
+const PROBABILIDAD_COMPANERA = 0.3;
+/** Cada mes, parte de los clientes deja de comprar para siempre: da abandono real que predecir. */
+const ABANDONO_MENSUAL = 0.05;
 
 /**
  * R10. Genera meses de operacion de una tienda de demostracion usando los services reales con el reloj simulado: asi
@@ -92,6 +97,9 @@ export class HistoricoDemoService {
   private ejemplosFalla: string[] = [];
   /** Eventos programados para dias futuros (liquidar reservas, devoluciones), por fecha AAAA-MM-DD. */
   private agenda = new Map<string, Evento[]>();
+  /** Factor de demanda de dias excepcionales ('AAAA-MM-DD:idSucursal'): bloqueos que vacian la tienda o ferias que la llenan. */
+  private anomalias = new Map<string, number>();
+  private clientesIdos = new Set<number>();
 
   constructor(
     private readonly dataSource: DataSource,
@@ -162,6 +170,7 @@ export class HistoricoDemoService {
     const variantes = await this.crearCatalogo(idEmpresa, sucursales);
     const clientes: ActiveUser[] = [];
     await this.sumarClientes(clientes, idEmpresa, 40);
+    this.planificarAnomalias(inicio, fin, sucursales);
 
     // Stock inicial: todo el catalogo en las dos sucursales.
     for (const sucursal of sucursales) await this.reponer(sucursal, variantes, idsProveedor, admin, 0, true);
@@ -170,6 +179,7 @@ export class HistoricoDemoService {
     for (let d = 0; d < totalDias; d++) {
       const dia = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + d);
       const mesIndice = (dia.getFullYear() - inicio.getFullYear()) * 12 + dia.getMonth() - inicio.getMonth();
+      if (dia.getDate() === 1 && d > 0) this.clientesQueSeVan(clientes);
       const eventos = this.eventosDelDia(dia, mesIndice, sucursales, variantes, clientes, idsProveedor, admin, pasarelas, opciones);
       eventos.push(...(this.agenda.get(clave(dia)) ?? []));
       this.agenda.delete(clave(dia));
@@ -206,6 +216,25 @@ export class HistoricoDemoService {
       if (dia.getDate() === 1 || d === totalDias - 1) {
         this.logger.log(`${clave(dia)}: ${JSON.stringify(this.conteo)}`);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- patrones para los modelos
+
+  private planificarAnomalias(inicio: Date, fin: Date, sucursales: SucursalDemo[]): void {
+    for (let mes = new Date(inicio); mes <= fin; mes = new Date(mes.getFullYear(), mes.getMonth() + 1, 1)) {
+      if (!this.azar.probabilidad(0.4)) continue;
+      const dia = new Date(mes.getFullYear(), mes.getMonth(), this.azar.entero(3, 26));
+      const sucursal = this.azar.elegir(sucursales);
+      const factor = this.azar.elegir([0.1, 0.15, 3, 3.5]);
+      this.anomalias.set(`${clave(dia)}:${sucursal.id}`, factor);
+      this.logger.log(`Dia anomalo planificado: ${clave(dia)} sucursal ${sucursal.id} factor ${factor}`);
+    }
+  }
+
+  private clientesQueSeVan(clientes: ActiveUser[]): void {
+    for (const cliente of clientes) {
+      if (!this.clientesIdos.has(cliente.sub) && this.azar.probabilidad(ABANDONO_MENSUAL)) this.clientesIdos.add(cliente.sub);
     }
   }
 
@@ -297,7 +326,7 @@ export class HistoricoDemoService {
     const demanda = FACTOR_MES[mes] * FACTOR_DIA[dia.getDay()] * tendencia;
     const pesoVariante = (v: Variante) => v.prenda.popularidad * factorTemporada(v.prenda.temporada, mes);
     // Clientes frecuentes: los primeros (los mas antiguos) compran mas.
-    const elegirCliente = () => this.azar.ponderado(clientes, (c) => 1 / Math.pow(clientes.indexOf(c) + 1, 0.6));
+    const elegirCliente = () => this.azar.ponderado(clientes, (c) => (this.clientesIdos.has(c.sub) ? 0 : 1 / Math.pow(clientes.indexOf(c) + 1, 0.6)));
 
     // Liquidacion de fin de temporada: enero y julio con descuento en la ropa de la temporada que termina.
     if (dia.getDate() === 1 && (mes === 0 || mes === 6 || mes === 2 || mes === 8)) {
@@ -323,7 +352,8 @@ export class HistoricoDemoService {
       }
 
       // Ventas de mostrador.
-      const cantidadVentas = this.azar.poisson(opciones.ventasPorDia * sucursal.factor * demanda);
+      const factorDelDia = this.anomalias.get(`${clave(dia)}:${sucursal.id}`) ?? 1;
+      const cantidadVentas = this.azar.poisson(opciones.ventasPorDia * sucursal.factor * demanda * factorDelDia);
       for (let v = 0; v < cantidadVentas; v++) {
         const items = this.elegirItems(variantes, pesoVariante);
         const conCliente = clientes.length > 0 && this.azar.probabilidad(0.35);
@@ -420,6 +450,14 @@ export class HistoricoDemoService {
       const previa = elegidas.get(variante.id);
       if (previa) previa.cantidad++;
       else elegidas.set(variante.id, { variante, cantidad: this.azar.probabilidad(0.1) ? 2 : 1 });
+    }
+    // Una foto de las elegidas: lo que se agrega abajo no debe sumar a su vez su propia companera.
+    const principales = Array.from(elegidas.values());
+    for (const { variante } of principales) {
+      const companera = COMPANERAS_DEMO[variante.prenda.codigo];
+      if (!companera || !this.azar.probabilidad(PROBABILIDAD_COMPANERA)) continue;
+      const otra = this.azar.elegir(variantes.filter((v) => v.prenda.codigo === companera));
+      if (!elegidas.has(otra.id)) elegidas.set(otra.id, { variante: otra, cantidad: 1 });
     }
     return [...elegidas.values()];
   }

@@ -56,6 +56,15 @@ export const PRENDAS_DEMO: PrendaDemo[] = [
   { codigo: 'VES-PUN', nombre: 'Vestido de punto', categoria: 'vestidos', precio: 269, tallas: ['S', 'M'], colores: ['Negro', 'Vino'], corte: 'Ajustado', temporada: 'INVIERNO', popularidad: 0.8, proveedor: 2, margenCosto: 0.5 },
 ];
 
+/** Prendas que se suelen llevar juntas (por codigo), para que la canasta de mercado tenga que descubrir. */
+export const COMPANERAS_DEMO: Record<string, string> = {
+  'JEA-SKI': 'POL-BAS',
+  'BLU-SED': 'FAL-PLI',
+  'CAM-OXF': 'PAN-VES',
+  'PAN-JOG': 'POL-EST',
+  'ABR-PAR': 'SUE-ALP',
+};
+
 export const NOMBRES_DEMO = ['Ana', 'Luis', 'Carla', 'Jorge', 'Maria', 'Diego', 'Lucia', 'Pablo', 'Sofia', 'Mateo', 'Valeria', 'Andres', 'Camila', 'Rodrigo', 'Paola', 'Miguel', 'Daniela', 'Fernando', 'Gabriela', 'Ricardo', 'Natalia', 'Sergio', 'Andrea', 'Marco'];
 export const APELLIDOS_DEMO = ['Mamani', 'Quispe', 'Flores', 'Vargas', 'Rojas', 'Gutierrez', 'Choque', 'Lopez', 'Torrez', 'Rodriguez', 'Fernandez', 'Mendoza', 'Condori', 'Arce', 'Suarez', 'Salazar', 'Guzman', 'Rivera'];
 
