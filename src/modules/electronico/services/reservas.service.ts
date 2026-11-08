@@ -26,8 +26,6 @@ import { PasarelaPago } from '../../comercial/entities/pasarela-pago.entity.js';
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { EmpleadoSucursal } from '../../operaciones/entities/empleado-sucursal.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
-import { Carrito } from '../entities/carrito.entity.js';
-import { DetalleCarrito } from '../entities/detalle-carrito.entity.js';
 import { DetalleReserva } from '../entities/detalle-reserva.entity.js';
 import { Reserva } from '../entities/reserva.entity.js';
 import { ReservaRepository } from '../repositories/reserva.repository.js';
@@ -43,13 +41,6 @@ import {
   type ReservasPaginatedResponseDto,
   type ReservasQueryDto,
 } from '../dto/reservas.dto.js';
-import {
-  CODIGO_LIMITE_RESERVAS,
-  CODIGO_STOCK_AGOTADO_COLISION,
-  type ItemSinStockDto,
-  type PedidoOfflineSincronizadoDto,
-  type SincronizarPedidoOfflineDto,
-} from '../dto/pedido-offline.dto.js';
 
 /** Un cliente no puede acaparar stock: como maximo tiene este numero de reservas vivas a la vez. */
 export const MAX_RESERVAS_ACTIVAS_CLIENTE = 3;
@@ -77,10 +68,6 @@ function codigoProvisional(): string {
 
 function codigoDefinitivo(prefijo: string, id: number): string {
   return `${prefijo}-${String(id).padStart(6, '0')}`;
-}
-
-function esViolacionUnica(error: unknown): boolean {
-  return (error as { driverError?: { code?: string } }).driverError?.code === '23505';
 }
 
 interface LineaReserva {
@@ -250,126 +237,6 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     });
 
     return this.obtener(idReserva, usuario);
-  }
-
-  /**
-   * RF-SYNC-01. Pedido hecho sin conexion que llega diferido por la cola de Background Sync. Como sin red no se
-   * pudo cobrar, se convierte en una reserva PENDIENTE para retiro: el cliente paga el anticipo en linea o todo al
-   * retirar, y si no lo hace vence como cualquier reserva. Idempotente por `idLocal`.
-   *
-   * Todas las filas de INVENTARIO involucradas se bloquean (pessimistic_write) y se miden antes de apartar nada:
-   * si el stock se agoto mientras el cliente estaba sin red, el 409 lista cada variante afectada, no solo la primera.
-   */
-  async sincronizarPedidoOffline(dto: SincronizarPedidoOfflineDto, usuario: ActiveUser): Promise<PedidoOfflineSincronizadoDto> {
-    const idCliente = this.idCliente(usuario);
-    const previa = await this.pedidoOfflinePrevio(dto.idLocal, usuario);
-    if (previa) return previa;
-
-    const items = consolidarItems(dto.detalles.map((detalle) => ({ idVarianteProducto: detalle.idVariante, cantidad: detalle.cantidad })));
-    const preciosVistos = new Map(dto.detalles.map((detalle) => [detalle.idVariante, Number(detalle.precioUnitario)]));
-    let preciosActualizados = false;
-
-    let idReserva: number;
-    try {
-      idReserva = await this.dataSource.transaction(async (manager) => {
-        const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: dto.idSucursal } });
-        if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
-        if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva; elige otra para retirar tu pedido');
-
-        const activas = await manager.getRepository(Reserva).count({ where: { idCliente, estado: In(['PENDIENTE', 'PAGADA']) } });
-        if (activas >= MAX_RESERVAS_ACTIVAS_CLIENTE) {
-          const mensaje = `Ya tienes ${MAX_RESERVAS_ACTIVAS_CLIENTE} reservas activas; completa o cancela alguna para registrar este pedido`;
-          throw new ConflictException({ message: mensaje, error: 'Conflict', codigo_error: CODIGO_LIMITE_RESERVAS, mensaje });
-        }
-
-        const lineas = await this.construirLineas(manager, dto.idSucursal, items);
-        const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal: dto.idSucursal, activo: true }, select: { id: true } });
-
-        // Las lineas vienen ordenadas por variante: las filas se bloquean siempre en el mismo orden (sin interbloqueos).
-        const afectados: ItemSinStockDto[] = [];
-        for (const linea of lineas) {
-          const inventarios = await this.inventariosBloqueados(manager, almacenes, linea.variante.id);
-          const stockActual = inventarios.reduce((suma, inventario) => suma + inventario.stockDisponible, 0);
-          if (stockActual < linea.cantidad) {
-            afectados.push({ id_variante: linea.variante.id, stock_solicitado: linea.cantidad, stock_actual: stockActual });
-          }
-        }
-        if (afectados.length > 0) {
-          const mensaje = 'No hay stock suficiente para procesar la orden efectuada offline.';
-          throw new ConflictException({
-            message: mensaje,
-            error: 'Conflict',
-            codigo_error: CODIGO_STOCK_AGOTADO_COLISION,
-            mensaje,
-            items_afectados: afectados,
-          });
-        }
-
-        for (const linea of lineas) {
-          await this.apartarStock(manager, dto.idSucursal, linea);
-          const visto = preciosVistos.get(linea.variante.id);
-          if (visto !== undefined && Math.abs(visto - linea.precioUnitario) > 0.005) preciosActualizados = true;
-        }
-
-        const montoTotal = redondear(lineas.reduce((suma, linea) => suma + linea.subtotal, 0));
-        const ahora = new Date();
-        const reservaRepo = manager.getRepository(Reserva);
-        const reserva = await reservaRepo.save(
-          reservaRepo.create({
-            codigoReserva: codigoProvisional(),
-            idCliente,
-            idSucursal: dto.idSucursal,
-            fechaReserva: ahora,
-            fechaLimite: new Date(ahora.getTime() + HORAS_LIMITE_POR_DEFECTO * 60 * 60 * 1000),
-            estado: 'PENDIENTE',
-            montoAnticipo: redondear((montoTotal * PORCENTAJE_ANTICIPO_MINIMO) / 100),
-            montoTotal,
-            observaciones: `Pedido sin conexion (${dto.idLocal}) confirmado el ${new Date(dto.fechaCreacion).toLocaleString('es-BO')}${preciosActualizados ? '; reservado al precio vigente' : ''}`,
-            idLocalOffline: dto.idLocal,
-          }),
-        );
-        reserva.codigoReserva = codigoDefinitivo('RS', reserva.id);
-        await reservaRepo.save(reserva);
-
-        const detalleRepo = manager.getRepository(DetalleReserva);
-        await detalleRepo.save(
-          lineas.map((linea) =>
-            detalleRepo.create({
-              idReserva: reserva.id,
-              idVarianteProducto: linea.variante.id,
-              precioUnitario: linea.precioUnitario,
-              cantidad: linea.cantidad,
-              subtotal: linea.subtotal,
-            }),
-          ),
-        );
-
-        // Lo reservado sale del carrito: si no, el cliente lo veria todavia ahi y podria pagarlo dos veces.
-        const carrito = await manager.getRepository(Carrito).findOne({ where: { idCliente } });
-        if (carrito) {
-          await manager.getRepository(DetalleCarrito).delete({ idCarrito: carrito.id, idVarianteProducto: In(items.map((item) => item.idVarianteProducto)) });
-        }
-
-        return reserva.id;
-      });
-    } catch (error) {
-      // La pagina y el Service Worker pueden enviar el mismo pedido a la vez: el indice unico deja pasar solo uno.
-      if (esViolacionUnica(error)) {
-        const repetida = await this.pedidoOfflinePrevio(dto.idLocal, usuario);
-        if (repetida) return repetida;
-      }
-      throw error;
-    }
-
-    return { idLocal: dto.idLocal, estadoSincronizacion: 'SINCRONIZADO', duplicado: false, preciosActualizados, reserva: await this.obtener(idReserva, usuario) };
-  }
-
-  private async pedidoOfflinePrevio(idLocal: string, usuario: ActiveUser): Promise<PedidoOfflineSincronizadoDto | null> {
-    const reserva = await this.dataSource.getRepository(Reserva).findOne({ where: { idLocalOffline: idLocal } });
-    if (!reserva) return null;
-    // Un id local ajeno no debe revelar nada de la reserva de otro cliente.
-    if (reserva.idCliente !== usuario.sub) throw new ConflictException('Ese identificador de pedido ya fue usado');
-    return { idLocal, estadoSincronizacion: 'SINCRONIZADO', duplicado: true, preciosActualizados: false, reserva: await this.obtener(reserva.id, usuario) };
   }
 
   /** B. Cobra el anticipo en caja: INGRESO + PAGO(ANTICIPO_RESERVA) y la reserva pasa a PAGADA. */

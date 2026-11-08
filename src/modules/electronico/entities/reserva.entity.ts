@@ -63,8 +63,8 @@ export class Reserva {
   observaciones: string | null;
 
   /**
-   * RF-SYNC-01: id que el navegador le dio al pedido hecho sin conexion. Unico: si la cola de Background Sync
-   * reenvia el mismo pedido (p. ej. se perdio la respuesta), se devuelve esta reserva en vez de crear otra.
+   * Historico: pedidos sin conexion que antes se convertian en reserva. Ya no se llena; se conserva por los registros
+   * existentes (RF-SYNC-01 ahora genera una Nota de Venta).
    */
   @Column({ name: 'id_local_offline', type: 'varchar', length: 40, nullable: true, unique: true })
   idLocalOffline: string | null;

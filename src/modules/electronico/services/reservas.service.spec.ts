@@ -8,8 +8,6 @@ import { Caja } from '../../comercial/entities/caja.entity.js';
 import { Pago } from '../../comercial/entities/pago.entity.js';
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
-import { Carrito } from '../entities/carrito.entity.js';
-import { DetalleCarrito } from '../entities/detalle-carrito.entity.js';
 import { DetalleReserva } from '../entities/detalle-reserva.entity.js';
 import { Reserva } from '../entities/reserva.entity.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
@@ -313,87 +311,6 @@ describe('ReservasService', () => {
 
       await expect(service.vencerVencidas()).resolves.toBe(0);
       expect(reserva.estado).toBe('COMPLETADA');
-    });
-  });
-
-  describe('sincronizarPedidoOffline (RF-SYNC-01)', () => {
-    const pedido = {
-      idLocal: 'off_169823412',
-      idSucursal: 1,
-      detalles: [{ idVariante: 3, cantidad: 2, precioUnitario: 100 }],
-      fechaCreacion: '2026-11-05T10:15:00.000Z',
-    };
-
-    /** Repos de `crear` mas lo que usa la sincronizacion: busqueda por idLocal y el carrito del cliente. */
-    function reposParaSincronizar(inventario: { stockDisponible: number; stockReservado: number }, opciones: { activas?: number; previa?: Reserva | null } = {}) {
-      const base = reposParaCrear(inventario, opciones.activas ?? 0);
-      base.repos.get(Reserva)!.findOne = vi.fn().mockResolvedValue(opciones.previa ?? null);
-      const carritoBorrado = vi.fn();
-      base.repos.set(Carrito, { findOne: vi.fn().mockResolvedValue({ id: 4, idCliente: 7 }) });
-      base.repos.set(DetalleCarrito, { delete: carritoBorrado });
-      return { ...base, carritoBorrado };
-    }
-
-    it('crea una reserva PENDIENTE con el idLocal, aparta el stock y lo quita del carrito', async () => {
-      const inventario = { stockDisponible: 5, stockReservado: 0 };
-      const { repos, guardadas, carritoBorrado } = reposParaSincronizar(inventario);
-      const { service } = crearService({ repos });
-
-      const respuesta = await service.sincronizarPedidoOffline(pedido, cliente);
-
-      expect(inventario).toEqual({ stockDisponible: 3, stockReservado: 2 });
-      expect(guardadas[0]).toMatchObject({ idCliente: 7, estado: 'PENDIENTE', montoTotal: 200, montoAnticipo: 40, idLocalOffline: 'off_169823412' });
-      expect(carritoBorrado).toHaveBeenCalledWith(expect.objectContaining({ idCarrito: 4 }));
-      expect(respuesta).toMatchObject({ idLocal: 'off_169823412', estadoSincronizacion: 'SINCRONIZADO', duplicado: false, preciosActualizados: false });
-    });
-
-    it('responde 409 STOCK_AGOTADO_COLISION con las variantes afectadas y no aparta nada', async () => {
-      const inventario = { stockDisponible: 0, stockReservado: 0 };
-      const { repos, guardadas } = reposParaSincronizar(inventario);
-      const { service } = crearService({ repos });
-
-      const error = await service.sincronizarPedidoOffline(pedido, cliente).catch((e: unknown) => e);
-
-      expect(error).toBeInstanceOf(ConflictException);
-      expect((error as ConflictException).getResponse()).toMatchObject({
-        codigo_error: 'STOCK_AGOTADO_COLISION',
-        items_afectados: [{ id_variante: 3, stock_solicitado: 2, stock_actual: 0 }],
-      });
-      expect(inventario).toEqual({ stockDisponible: 0, stockReservado: 0 });
-      expect(guardadas).toHaveLength(0);
-    });
-
-    it('marca preciosActualizados si el precio cambio mientras estaba sin conexion', async () => {
-      const { repos } = reposParaSincronizar({ stockDisponible: 5, stockReservado: 0 });
-      const { service } = crearService({ repos });
-
-      const respuesta = await service.sincronizarPedidoOffline({ ...pedido, detalles: [{ idVariante: 3, cantidad: 1, precioUnitario: 80 }] }, cliente);
-
-      expect(respuesta.preciosActualizados).toBe(true);
-    });
-
-    it('es idempotente: un reenvio del mismo idLocal devuelve la reserva ya creada', async () => {
-      const { repos } = reposParaSincronizar({ stockDisponible: 5, stockReservado: 0 }, { previa: reservaBase({ idLocalOffline: pedido.idLocal }) });
-      const { service, dataSource } = crearService({ repos });
-
-      const respuesta = await service.sincronizarPedidoOffline(pedido, cliente);
-
-      expect(respuesta).toMatchObject({ duplicado: true, reserva: { codigoReserva: 'RS-000010' } });
-      expect(dataSource.transaction).not.toHaveBeenCalled();
-    });
-
-    it('rechaza con LIMITE_RESERVAS si el cliente ya tiene el maximo de reservas activas', async () => {
-      const { repos } = reposParaSincronizar({ stockDisponible: 5, stockReservado: 0 }, { activas: 3 });
-      const { service } = crearService({ repos });
-
-      const error = await service.sincronizarPedidoOffline(pedido, cliente).catch((e: unknown) => e);
-
-      expect((error as ConflictException).getResponse()).toMatchObject({ codigo_error: 'LIMITE_RESERVAS' });
-    });
-
-    it('solo un cliente puede sincronizar pedidos', async () => {
-      const { service } = crearService();
-      await expect(service.sincronizarPedidoOffline(pedido, admin)).rejects.toThrow(ForbiddenException);
     });
   });
 });

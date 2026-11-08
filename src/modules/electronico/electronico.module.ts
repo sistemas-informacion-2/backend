@@ -11,6 +11,7 @@ import { DetalleReserva } from './entities/detalle-reserva.entity.js';
 import { EmpleadoSucursal } from '../operaciones/entities/empleado-sucursal.entity.js';
 import { Sucursal } from '../operaciones/entities/sucursal.entity.js';
 import { ReservaRepository } from './repositories/reserva.repository.js';
+import { ComprasOfflineService } from './services/compras-offline.service.js';
 import { ReservasService } from './services/reservas.service.js';
 import { PasarelaPago } from '../comercial/entities/pasarela-pago.entity.js';
 import { StripeService } from './services/stripe.service.js';
@@ -42,6 +43,7 @@ import { PushService } from './services/push.service.js';
     CarritoService,
     CarritoRepository,
     ReservasService,
+    ComprasOfflineService,
     ReservaRepository,
     StripeService,
     CheckoutService,
