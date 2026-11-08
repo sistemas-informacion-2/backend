@@ -40,6 +40,49 @@ Del 2020-01-01 al 2032-12-31. Cada día tiene:
 
 Lo genera `src/database/dw/calendario.ts`.
 
+## ETL (`modules/bi/etl`)
+
+**Cómo se ejecuta:**
+- **Una empresa a la vez, en una sola transacción.** Si algo falla, el DW de esa empresa queda como estaba.
+- **Dimensiones:** `INSERT … ON CONFLICT DO UPDATE` (nunca se borran).
+- **Hechos:** se borran las filas de la empresa y se recargan enteras con `INSERT … SELECT`. El SQL de cada tabla está en `etl/cargas/*.carga.ts`.
+- **Sin cargas cruzadas:** un bloqueo de Postgres (`pg_try_advisory_xact_lock`) impide dos cargas a la vez de la misma empresa. La segunda recibe 409.
+
+**Cuándo corre:**
+- **Cada noche:** `BI_ETL_CRON`, por defecto `0 2 * * *`, hora de La Paz. Carga todas las empresas activas, y si una falla siguen las demás. `BI_ETL_PROGRAMADO=false` la apaga.
+- **A pedido:** `POST /bi/etl/ejecutar` (permiso `analitica:bi:etl`).
+- **Historial:** `GET /bi/etl/historial` (permiso `analitica:bi:usar`) muestra las últimas cargas.
+
+**Al terminar** avisa al servicio de machine learning (`ML_URL` + `ML_CLAVE_INTERNA`) para que vuelva a entrenar. Si no está configurado, no hace nada. Si el aviso falla, la carga igual queda hecha.
+
+**Reglas de cada tabla** (siguen [BI-METRICAS.md](BI-METRICAS.md)):
+- **`fact_ventas`:**
+  - el canal sale del tipo de venta: `DIRECTA_PRESENCIAL` → MOSTRADOR, `E_COMMERCE` → ONLINE, `PRESENCIAL_LIQUIDACION` → RESERVA;
+  - descuento, impuesto y monto de la nota se reparten según el subtotal de cada línea;
+  - `margen = importe_neto − costo_total`, nulo si la línea no tiene costo.
+- **`fact_devoluciones`:**
+  - solo prendas, no los reembolsos de anticipo;
+  - la fecha y el costo salen de la línea vendida;
+  - el costo es recuperado si la prenda vuelve al stock y perdido si es merma.
+- **`fact_inventario_diario`:**
+  - es la suma acumulada del kardex por día, desde el primer movimiento de cada fila hasta hoy;
+  - solo guarda los días con stock o con movimiento;
+  - las transferencias no cuentan como entradas ni salidas;
+  - `valor_costo` usa el **costo promedio actual** de la variante: es una aproximación, porque el kardex no guarda el promedio de cada día.
+- **`fact_pagos`:** el canal es PRESENCIAL si el pago pasó por caja y ONLINE si no. Los reembolsos van en negativo en `monto_neto`.
+- **`fact_gastos`:** los egresos manuales de caja: `GASTO_OPERATIVO`, `OTRO_EGRESO` y `RETIRO`.
+- **`fact_reservas`:**
+  - el desenlace es la nota de liquidación o la liberación del stock (cancelada o vencida);
+  - las reservas activas no tienen desenlace.
+
+**Conciliación:** se probó con la historia de demostración. El DW coincide con el origen al centavo en:
+- ventas, costo, margen y descuentos;
+- devoluciones, compras y kardex;
+- el stock del último día de cada fila;
+- pagos por concepto, gastos por tipo y reservas por estado.
+
+Además, ningún hecho apunta a dimensiones de otra empresa.
+
 ## Control del ETL
 
 `dw.etl_ejecucion`: una fila por carga, con empresa, origen (`PROGRAMADO` o `MANUAL`), estado, inicio y fin, filas por tabla, error y usuario que la pidió.
