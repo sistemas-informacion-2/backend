@@ -28,10 +28,13 @@ import { CarritoController } from './controllers/carrito.controller.js';
 import { DispositivoPush } from './entities/dispositivo-push.entity.js';
 import { DispositivoPushRepository } from './repositories/dispositivo-push.repository.js';
 import { PushService } from './services/push.service.js';
+import { WebPushService } from './services/web-push.service.js';
+import { SuscripcionWebPush } from './entities/suscripcion-web-push.entity.js';
+import { SuscripcionWebPushRepository } from './repositories/suscripcion-web-push.repository.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([NotificacionPush, DispositivoPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
+    TypeOrmModule.forFeature([NotificacionPush, DispositivoPush, SuscripcionWebPush, Usuario, Carrito, DetalleCarrito, VarianteProducto, Reserva, DetalleReserva, EmpleadoSucursal, Sucursal, PasarelaPago]),
     InventarioModule,
   ],
   controllers: [NotificacionesController, CarritoController, ReservasController, CheckoutController, CheckoutOfflineController],
@@ -40,6 +43,8 @@ import { PushService } from './services/push.service.js';
     NotificacionRepository,
     DispositivoPushRepository,
     PushService,
+    WebPushService,
+    SuscripcionWebPushRepository,
     CarritoService,
     CarritoRepository,
     ReservasService,
@@ -48,6 +53,6 @@ import { PushService } from './services/push.service.js';
     StripeService,
     CheckoutService,
   ],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, NotificacionesService],
 })
 export class ElectronicoModule {}

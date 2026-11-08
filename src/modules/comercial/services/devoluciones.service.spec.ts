@@ -130,7 +130,7 @@ function crearService(escenario: Escenario = {}) {
     findPage: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   };
   const empleadoSucursalRepo = { find: vi.fn().mockResolvedValue((escenario.visibles ?? [1]).map((idSucursal) => ({ idSucursal }))) };
-  const service = new DevolucionesService(devolucionRepo as never, dataSource as never, empleadoSucursalRepo as never);
+  const service = new DevolucionesService(devolucionRepo as never, { notificarPorPush: vi.fn() } as never, dataSource as never, empleadoSucursalRepo as never);
   return { service, repos, guardados, inventarioNuevo, devolucionRepo };
 }
 

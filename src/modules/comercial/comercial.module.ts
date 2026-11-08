@@ -1,3 +1,4 @@
+import { ElectronicoModule } from '../electronico/electronico.module.js';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Sucursal } from '../operaciones/entities/sucursal.entity.js';
@@ -44,6 +45,7 @@ import { PasarelaSeederService } from './seeders/pasarela-seeder.service.js';
 
 @Module({
   imports: [
+    ElectronicoModule,
     TypeOrmModule.forFeature([
       PasarelaPago,
       Caja,

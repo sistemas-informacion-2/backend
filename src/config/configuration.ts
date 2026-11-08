@@ -39,6 +39,13 @@ export interface AppConfig {
     /** Access token de Expo; solo hace falta si se activa "enhanced security" para push en EAS. */
     accessToken: string;
   };
+  webPush: {
+    /** Claves VAPID. Vacias = el push web queda desactivado. */
+    publicKey: string;
+    privateKey: string;
+    /** Contacto para los servicios push: `mailto:...` o una URL https. */
+    subject: string;
+  };
   gemini: {
     /** API key de Google AI Studio (generativelanguage.googleapis.com). Vacio = reportes generativos caen al interprete por regex (CU18). */
     apiKey: string;
@@ -80,6 +87,11 @@ export default (): AppConfig => ({
   push: {
     enabled: process.env.PUSH_ENABLED !== 'false',
     accessToken: process.env.PUSH_ACCESS_TOKEN ?? '',
+  },
+  webPush: {
+    publicKey: process.env.VAPID_PUBLIC_KEY?.trim() ?? '',
+    privateKey: process.env.VAPID_PRIVATE_KEY?.trim() ?? '',
+    subject: process.env.VAPID_SUBJECT?.trim() ?? 'mailto:soporte@fashionstore.com',
   },
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',

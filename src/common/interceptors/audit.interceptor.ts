@@ -14,6 +14,8 @@ const CAMPOS_SENSIBLES = [
   'apiKey',
   'apiSecret',
   'clientSecret',
+  'endpoint',
+  'keys',
 ];
 
 /**

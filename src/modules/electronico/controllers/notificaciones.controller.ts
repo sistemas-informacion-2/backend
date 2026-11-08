@@ -6,6 +6,7 @@ import { NotificacionesService } from '../services/notificaciones.service.js';
 import { CrearNotificacionDto } from '../dto/crear-notificacion.dto.js';
 import { NotificacionesQueryDto } from '../dto/notificaciones-query.dto.js';
 import { BajaDispositivoPushDto, RegistrarDispositivoPushDto } from '../dto/dispositivo-push.dto.js';
+import { BajaWebPushDto, RegistrarWebPushDto, type ConfiguracionWebPushDto } from '../dto/web-push.dto.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type {
   DestinatarioResponseDto,
@@ -75,6 +76,33 @@ export class NotificacionesController {
   @ApiOperation({ summary: 'Da de baja el celular del usuario autenticado (al cerrar sesion)' })
   async darDeBajaDispositivo(@CurrentUser() user: ActiveUser, @Body() dto: BajaDispositivoPushDto): Promise<void> {
     await this.notificacionesService.darDeBajaDispositivo(user.sub, dto.token);
+  }
+
+  @Get('web-push/configuracion')
+  @ApiOperation({ summary: 'Clave publica VAPID para suscribir el navegador a las notificaciones' })
+  configuracionWebPush(): ConfiguracionWebPushDto {
+    return this.notificacionesService.configuracionWebPush();
+  }
+
+  @Post('web-push/suscripciones')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Vincula este navegador a la cuenta para recibir notificaciones' })
+  async registrarWebPush(@CurrentUser() user: ActiveUser, @Body() dto: RegistrarWebPushDto): Promise<void> {
+    await this.notificacionesService.registrarWebPush(user.sub, dto);
+  }
+
+  @Delete('web-push/suscripciones')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Desvincula este navegador de la cuenta' })
+  async darDeBajaWebPush(@CurrentUser() user: ActiveUser, @Body() dto: BajaWebPushDto): Promise<void> {
+    await this.notificacionesService.darDeBajaWebPush(user.sub, dto.endpoint);
+  }
+
+  @Post('web-push/prueba')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Envia un aviso de prueba a los navegadores del usuario' })
+  probarWebPush(@CurrentUser() user: ActiveUser): Promise<{ enviados: number }> {
+    return this.notificacionesService.probarWebPush(user.sub);
   }
 
   @Post()
