@@ -55,6 +55,29 @@ export interface AppConfig {
     apiKey: string;
     model: string;
   };
+  bi: {
+    /**
+     * Quien atiende al agente del BI: 'vertex' (Vertex AI en Google Cloud), 'api-key' (Google AI Studio, la misma
+     * GEMINI_API_KEY de los reportes) o 'auto' = Vertex si hay proyecto de Google Cloud, si no la API key.
+     */
+    iaProveedor: 'auto' | 'vertex' | 'api-key';
+    /** Modelo del agente; vacio = el mismo GEMINI_MODEL de los reportes. */
+    modelo: string;
+    /** Proyecto y region de Vertex AI. Las credenciales salen de GOOGLE_APPLICATION_CREDENTIALS (ADC). */
+    vertexProyecto: string;
+    vertexRegion: string;
+    /** Servicio de machine learning (Python) y la clave con que NestJS se identifica ante el. */
+    mlUrl: string;
+    mlClaveInterna: string;
+    /** Carga nocturna del Data Warehouse. */
+    etlProgramado: boolean;
+    etlCron: string;
+  };
+}
+
+function proveedorIa(valor: string | undefined): AppConfig['bi']['iaProveedor'] {
+  const limpio = (valor ?? '').trim().toLowerCase();
+  return limpio === 'vertex' || limpio === 'api-key' ? limpio : 'auto';
 }
 
 export default (): AppConfig => ({
@@ -100,5 +123,15 @@ export default (): AppConfig => ({
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
     model: process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite',
+  },
+  bi: {
+    iaProveedor: proveedorIa(process.env.BI_IA_PROVEEDOR),
+    modelo: (process.env.BI_GEMINI_MODEL ?? '').trim(),
+    vertexProyecto: (process.env.GOOGLE_CLOUD_PROJECT ?? '').trim(),
+    vertexRegion: (process.env.GOOGLE_CLOUD_LOCATION ?? 'us-central1').trim(),
+    mlUrl: (process.env.ML_URL ?? 'http://localhost:8000').replace(/\/+$/, ''),
+    mlClaveInterna: process.env.ML_CLAVE_INTERNA ?? '',
+    etlProgramado: process.env.BI_ETL_PROGRAMADO !== 'false',
+    etlCron: (process.env.BI_ETL_CRON ?? '0 2 * * *').trim(),
   },
 });

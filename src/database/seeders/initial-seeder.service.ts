@@ -36,6 +36,9 @@ const PERMISOS_BASE = [
   'electronico:notificaciones:gestionar',
   'analitica:dashboard:leer',
   'analitica:reportes:gestionar',
+  // BI: usar el asistente y los dashboards; actualizar el Data Warehouse a pedido.
+  'analitica:bi:usar',
+  'analitica:bi:etl',
 ];
 
 /**
@@ -51,7 +54,7 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
     nombre: 'ENCARGADO_SUCURSAL',
     descripcion:
       'Responsable de las operaciones de una sucursal: disponibilidad de prendas, atencion a clientes y supervision del inventario local.',
-    permisos: ['operaciones:sucursales:gestionar', 'acceso:clientes:gestionar', 'comercial:pasarelas:leer', 'comercial:caja:gestionar', 'comercial:ventas:gestionar', 'electronico:reservas:gestionar', 'comercial:devoluciones:gestionar', 'inventario:almacen:leer', 'analitica:reportes:gestionar'],
+    permisos: ['operaciones:sucursales:gestionar', 'acceso:clientes:gestionar', 'comercial:pasarelas:leer', 'comercial:caja:gestionar', 'comercial:ventas:gestionar', 'electronico:reservas:gestionar', 'comercial:devoluciones:gestionar', 'inventario:almacen:leer', 'analitica:reportes:gestionar', 'analitica:bi:usar'],
   },
   {
     nombre: 'VENDEDOR_CAJERO',

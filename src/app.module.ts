@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration.js';
 import { DatabaseModule } from './database/database.module.js';
 import { SeedersModule } from './database/seeders/seeders.module.js';
@@ -12,10 +13,13 @@ import { ComercialModule } from './modules/comercial/comercial.module.js';
 import { ElectronicoModule } from './modules/electronico/electronico.module.js';
 import { ReporteModule } from './modules/reporte/reporte.module.js';
 import { PlataformaModule } from './modules/plataforma/plataforma.module.js';
+import { BiModule } from './modules/bi/bi.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    // Tareas programadas (la carga nocturna del Data Warehouse).
+    ScheduleModule.forRoot(),
     DatabaseModule,
     SeedersModule,
     TenantModule,
@@ -27,6 +31,7 @@ import { PlataformaModule } from './modules/plataforma/plataforma.module.js';
     ReporteModule,
     AccesoModule,
     PlataformaModule,
+    BiModule,
   ],
 })
 export class AppModule {}
