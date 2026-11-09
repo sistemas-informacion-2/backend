@@ -61,8 +61,10 @@ export interface AppConfig {
      * GEMINI_API_KEY de los reportes) o 'auto' = Vertex si hay proyecto de Google Cloud, si no la API key.
      */
     iaProveedor: 'auto' | 'vertex' | 'api-key';
-    /** Modelo del agente; vacio = el mismo GEMINI_MODEL de los reportes. */
+    /** Modelo del agente. Por defecto el Flash-Lite mas barato que admite llamadas a herramientas. */
     modelo: string;
+    /** Tope de preguntas al asistente por empresa en 24 horas: limita el gasto en Gemini. */
+    preguntasPorDia: number;
     /** Proyecto y region de Vertex AI. Las credenciales salen de GOOGLE_APPLICATION_CREDENTIALS (ADC). */
     vertexProyecto: string;
     vertexRegion: string;
@@ -126,7 +128,8 @@ export default (): AppConfig => ({
   },
   bi: {
     iaProveedor: proveedorIa(process.env.BI_IA_PROVEEDOR),
-    modelo: (process.env.BI_GEMINI_MODEL ?? '').trim(),
+    modelo: (process.env.BI_GEMINI_MODEL ?? '').trim() || 'gemini-3.1-flash-lite',
+    preguntasPorDia: Number(process.env.BI_PREGUNTAS_POR_DIA) || 200,
     vertexProyecto: (process.env.GOOGLE_CLOUD_PROJECT ?? '').trim(),
     vertexRegion: (process.env.GOOGLE_CLOUD_LOCATION ?? 'us-central1').trim(),
     mlUrl: (process.env.ML_URL ?? 'http://localhost:8000').replace(/\/+$/, ''),

@@ -246,12 +246,10 @@ export class HistoricoDemoService {
   }
 
   private async crearSucursales(idEmpresa: number, inicio: Date): Promise<SucursalDemo[]> {
-    const ciudades = await this.dataSource.query<Array<{ id: number; nombre: string }>>('SELECT id, nombre FROM ciudad ORDER BY id');
-    if (ciudades.length === 0) throw new Error('No hay ciudades cargadas; corre primero la app o el seed inicial');
     const resultado: SucursalDemo[] = [];
     for (const [i, datos] of SUCURSALES_DEMO.entries()) {
-      const ciudad = ciudades.find((c) => c.nombre.toLowerCase() === datos.ciudadPreferida.toLowerCase()) ?? ciudades[i % ciudades.length];
-      const sucursal = await this.sucursales.crear({ idCiudad: ciudad.id, nombre: datos.nombre, ubicacion: datos.ubicacion, horarioApertura: '09:00', horarioCierre: '21:00' });
+      const idCiudad = await this.ciudadDemo(datos.ciudadPreferida);
+      const sucursal = await this.sucursales.crear({ idCiudad, nombre: datos.nombre, ubicacion: datos.ubicacion, horarioApertura: '09:00', horarioCierre: '21:00' });
       const almacen = await this.almacenes.crear({ idSucursal: sucursal.id, nombre: `Deposito ${datos.nombre}` });
       const cajeros: ActiveUser[] = [];
       for (let c = 0; c < 2; c++) {
@@ -269,6 +267,18 @@ export class HistoricoDemoService {
       resultado.push({ id: sucursal.id, factor: datos.factor, idAlmacen: almacen.id, cajeros, idCaja: null });
     }
     return resultado;
+  }
+
+  /** Las ciudades son globales y una instalacion nueva solo trae departamentos: se crea si falta. */
+  private async ciudadDemo(nombre: string): Promise<number> {
+    const [existente] = await this.dataSource.query<Array<{ id: number }>>('SELECT id FROM ciudad WHERE LOWER(nombre) = LOWER($1) ORDER BY id LIMIT 1', [nombre]);
+    if (existente) return existente.id;
+    const [creada] = await this.dataSource.query<Array<{ id: number }>>(
+      'INSERT INTO ciudad (id_departamento, nombre) SELECT id, nombre FROM departamento WHERE nombre = $1 RETURNING id',
+      [nombre],
+    );
+    if (!creada) throw new Error('No hay departamentos cargados; levanta la app una vez antes de generar la historia');
+    return creada.id;
   }
 
   private async crearCatalogo(idEmpresa: number, sucursales: SucursalDemo[]): Promise<Variante[]> {
