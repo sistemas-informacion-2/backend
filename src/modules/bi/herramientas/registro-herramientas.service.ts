@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Type, type FunctionDeclaration, type Schema } from '@google/genai';
 import { DataSource } from 'typeorm';
-import { ErrorDeParametros, type Fila, type HerramientaRegistrada, type ParametroEsquema, type ResultadoHerramienta } from './herramienta.js';
+import { ErrorDeParametros, type Fila, type HerramientaRegistrada, type ParametroEsquema, type ResultadoHerramienta, type Visual } from './herramienta.js';
 import { HERRAMIENTAS_INVENTARIO } from './inventario.herramientas.js';
 import { MlClienteService } from './ml-cliente.service.js';
 import { HERRAMIENTAS_MODELOS } from './modelos.herramientas.js';
@@ -11,10 +11,18 @@ import { HERRAMIENTAS_VENTAS } from './ventas.herramientas.js';
 const MAX_FILAS = 200;
 const TIMEOUT_CONSULTA_MS = 10_000;
 
+/** Un grafico listo para dibujar, y lo necesario para volver a pedirlo con los datos al dia. */
+export interface GraficoDto extends Visual {
+  herramienta: string;
+  parametros: Record<string, unknown>;
+}
+
 export interface EjecucionHerramienta {
   nombre: string;
   parametros: Record<string, unknown>;
   ok: boolean;
+  /** null si el resultado no se presta a un grafico. No se le manda a Gemini. */
+  grafico: GraficoDto | null;
   /** Completo, para la pantalla. */
   resultado: ResultadoHerramienta | { error: string };
   /** Lo que se le manda a Gemini: sin datos personales y con un tope de filas. */
@@ -80,7 +88,7 @@ export class RegistroHerramientas {
   async ejecutar(nombre: string, argumentos: Record<string, unknown>, idEmpresa: number, hoy: string): Promise<EjecucionHerramienta> {
     const parametros = argumentos ?? {};
     const herramienta = this.herramientas.get(nombre);
-    const fallo = (error: string): EjecucionHerramienta => ({ nombre, parametros, ok: false, resultado: { error }, paraModelo: { error } });
+    const fallo = (error: string): EjecucionHerramienta => ({ nombre, parametros, ok: false, grafico: null, resultado: { error }, paraModelo: { error } });
     if (!herramienta) return fallo(`La herramienta ${nombre} no existe`);
     try {
       this.validar(herramienta, parametros);
@@ -94,12 +102,20 @@ export class RegistroHerramientas {
           ml: this.ml,
         });
       });
-      return { nombre, parametros, ok: true, resultado, paraModelo: this.paraModelo(resultado) };
+      return { nombre, parametros, ok: true, grafico: this.grafico(herramienta, parametros, resultado), resultado, paraModelo: this.paraModelo(resultado) };
     } catch (error) {
       if (error instanceof ErrorDeParametros) return fallo(error.message);
       this.logger.error(`La herramienta ${nombre} fallo: ${error instanceof Error ? error.message : String(error)}`);
       return fallo('No se pudo obtener el dato por un error interno');
     }
+  }
+
+  private grafico(herramienta: HerramientaRegistrada, parametros: Record<string, unknown>, resultado: ResultadoHerramienta): GraficoDto | null {
+    const visual = herramienta.visual?.(parametros as never) ?? null;
+    if (!visual) return null;
+    // Una linea o unas barras con un solo punto no dicen nada.
+    if (resultado.filas.length < (visual.tipo === 'tabla' ? 1 : 2)) return null;
+    return { ...visual, herramienta: herramienta.nombre, parametros };
   }
 
   private validar(herramienta: HerramientaRegistrada, argumentos: Record<string, unknown>): void {

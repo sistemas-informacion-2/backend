@@ -103,6 +103,29 @@ describe('RegistroHerramientas', () => {
     expect(paraModelo.nota).toContain('no se entrenaron');
   });
 
+  it('el grafico sale de reglas fijas y va en la respuesta, pero no a Gemini', async () => {
+    const { registro } = crear([{ grupo: '2026-01', ventas: 1 }, { grupo: '2026-02', ventas: 2 }]);
+    const mes = await registro.ejecutar('ventas_por_periodo', VENTAS, 7, '2026-11-08');
+    expect(mes.grafico).toMatchObject({ tipo: 'linea', titulo: 'Ventas por mes', x: 'grupo', series: ['ventas'], herramienta: 'ventas_por_periodo', parametros: VENTAS });
+    expect(mes.paraModelo).not.toHaveProperty('grafico');
+    expect((await registro.ejecutar('ventas_por_periodo', { ...VENTAS, agrupar_por: 'categoria' }, 7, '2026-11-08')).grafico?.tipo).toBe('barras');
+    expect((await registro.ejecutar('ventas_por_periodo', { ...VENTAS, agrupar_por: 'canal' }, 7, '2026-11-08')).grafico?.tipo).toBe('torta');
+  });
+
+  it('sin grafico para un total o con un solo punto; una tabla basta con una fila', async () => {
+    const dos = crear([{ a: 1 }, { a: 2 }]).registro;
+    const una = crear([{ a: 1 }]).registro;
+    expect((await dos.ejecutar('margen_por', { desde: '2026-01-01', hasta: '2026-01-31', agrupar_por: 'total' }, 7, '2026-11-08')).grafico).toBeNull();
+    expect((await una.ejecutar('ventas_por_periodo', VENTAS, 7, '2026-11-08')).grafico).toBeNull();
+    expect((await una.ejecutar('resultado_del_periodo', { desde: '2026-01-01', hasta: '2026-01-31' }, 7, '2026-11-08')).grafico?.tipo).toBe('tabla');
+    expect((await dos.ejecutar('catalogos', {}, 7, '2026-11-08')).grafico).toBeNull();
+  });
+
+  it('el pronostico lleva su rango', async () => {
+    const { registro } = crear([{ periodo: '2026-11-01', valor: 1, bajo: 0, alto: 2 }, { periodo: '2026-12-01', valor: 2, bajo: 1, alto: 3 }]);
+    expect((await registro.ejecutar('pronosticar_ventas', {}, 7, '2026-11-08')).grafico).toMatchObject({ tipo: 'linea', x: 'periodo', series: ['valor'], rango: { bajo: 'bajo', alto: 'alto' } });
+  });
+
   it('un horizonte mayor al calculado pide el pronostico al servicio de ML, con la empresa del token', async () => {
     const { registro, ml } = crear();
     ml.pronostico.mockResolvedValue({ disponible: true, modelo: 'HOLT', mape: 0.1, puntos: [{ periodo: '2027-01-01', valor: 1, bajo: 0, alto: 2 }] });

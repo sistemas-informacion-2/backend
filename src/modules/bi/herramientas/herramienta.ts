@@ -24,6 +24,18 @@ export interface ResultadoHerramienta {
   columnasPrivadas?: string[];
 }
 
+/** Como se dibuja el resultado de una herramienta. Sale de reglas fijas: no cuesta tokens y Gemini no puede alterarlo. */
+export interface Visual {
+  titulo: string;
+  tipo: 'linea' | 'barras' | 'torta' | 'tabla';
+  /** Columna del eje X o de las etiquetas. */
+  x?: string;
+  /** Columnas numericas a dibujar. */
+  series?: string[];
+  /** Columnas del rango de un pronostico. */
+  rango?: { bajo: string; alto: string };
+}
+
 export interface ParametroEsquema {
   tipo: 'string' | 'integer' | 'number';
   descripcion: string;
@@ -40,6 +52,8 @@ export interface Herramienta<A = Record<string, never>> {
   descripcion: string;
   parametros: Record<string, ParametroEsquema>;
   requeridos?: readonly string[];
+  /** Grafico que le corresponde al resultado, segun los argumentos. */
+  visual?: (argumentos: A) => Visual | null;
   ejecutar: (argumentos: A, contexto: ContextoHerramienta) => Promise<ResultadoHerramienta>;
 }
 
@@ -84,6 +98,17 @@ export class Consulta {
 
 export function validarRango(desde: string, hasta: string): void {
   if (desde > hasta) throw new ErrorDeParametros(`El periodo es invalido: ${desde} es posterior a ${hasta}`);
+}
+
+const AGRUPACIONES_DE_TIEMPO = new Set(['dia', 'semana', 'mes', 'trimestre', 'anio']);
+const AGRUPACIONES_DE_PARTES = new Set(['canal', 'metodo_pago', 'temporada']);
+
+/** Linea si el eje es tiempo, torta si son pocas partes de un todo, barras en lo demas; sin grafico si es un total. */
+export function visualAgrupado(titulo: string, agrupacion: string | undefined, series: string[]): Visual | null {
+  if (!agrupacion || agrupacion === 'total') return null;
+  const tipo = AGRUPACIONES_DE_TIEMPO.has(agrupacion) ? 'linea' : AGRUPACIONES_DE_PARTES.has(agrupacion) ? 'torta' : 'barras';
+  const nombre = agrupacion === 'anio' ? 'año' : agrupacion.replace(/_/g, ' ');
+  return { titulo: `${titulo} por ${nombre}`, tipo, x: 'grupo', series };
 }
 
 /** Expresion SQL de una opcion de agrupacion; los nombres vienen de un enum ya validado, nunca del texto del modelo. */

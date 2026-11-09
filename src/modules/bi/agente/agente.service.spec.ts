@@ -16,7 +16,7 @@ const responde = (text: string) => ({ text, usageMetadata: { promptTokenCount: 2
 function crear(opciones: { ultimaCarga?: string | null; usadasHoy?: number; conversacion?: Partial<BiConversacion> | null; historial?: Array<Partial<BiMensaje>> } = {}) {
   const generar = vi.fn();
   const gemini = { generar, modelo: () => 'gemini-3.1-flash-lite', modo: () => 'API_KEY' };
-  const ejecutar = vi.fn(async (nombre: string, parametros: Record<string, unknown>) => ({ nombre, parametros, ok: true, resultado: { filas: [{ a: 1 }] }, paraModelo: { filas: [{ a: 1 }], total_filas: 1 } }));
+  const ejecutar = vi.fn(async (nombre: string, parametros: Record<string, unknown>) => ({ nombre, parametros, ok: true, grafico: null, resultado: { filas: [{ a: 1 }] }, paraModelo: { filas: [{ a: 1 }], total_filas: 1 } }));
   const registro = { ejecutar, declaraciones: () => [{ name: 'ventas_por_periodo' }] };
   const guardados: { conversaciones: unknown[]; mensajes: Array<Record<string, unknown>> } = { conversaciones: [], mensajes: [] };
   const repoConversaciones = {

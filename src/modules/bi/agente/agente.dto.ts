@@ -20,7 +20,7 @@ export interface RespuestaAgenteDto {
   idConversacion: number;
   texto: string;
   /** Lo que se consulto, con los datos completos, para dibujar graficos y mostrar "Como se calculo". */
-  herramientas: Array<Pick<EjecucionHerramienta, 'nombre' | 'parametros' | 'ok' | 'resultado'>>;
+  herramientas: Array<Pick<EjecucionHerramienta, 'nombre' | 'parametros' | 'ok' | 'resultado' | 'grafico'>>;
   tokens: { entrada: number; salida: number };
 }
 

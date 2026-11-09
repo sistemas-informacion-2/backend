@@ -1,4 +1,4 @@
-import { CATEGORIA, Consulta, DESDE, expresion, HASTA, LIMITE, SUCURSAL, validarRango, type Herramienta } from './herramienta.js';
+import { CATEGORIA, Consulta, DESDE, expresion, HASTA, LIMITE, SUCURSAL, validarRango, visualAgrupado, type Herramienta } from './herramienta.js';
 
 const GRUPOS_STOCK: Record<string, string> = {
   total: "'Total'",
@@ -10,6 +10,7 @@ const GRUPOS_STOCK: Record<string, string> = {
 
 const stockEnFecha: Herramienta<{ fecha: string; agrupar_por?: string; sucursal?: string; categoria?: string; limite?: number }> = {
   nombre: 'stock_en_fecha',
+  visual: (a) => visualAgrupado('Stock', a.agrupar_por, ['stock_disponible']),
   descripcion: 'Stock disponible, reservado y valor a costo al cierre de una fecha (pasada o de hoy), en total o por sucursal, almacen, categoria o producto.',
   parametros: {
     fecha: { tipo: 'string', fecha: true, descripcion: 'Fecha, AAAA-MM-DD' },
@@ -52,6 +53,7 @@ const GRUPOS_ROTACION: Record<string, { ventas: string; inventario: string }> = 
 
 const rotacion: Herramienta<{ desde: string; hasta: string; agrupar_por?: string }> = {
   nombre: 'rotacion_y_dias_inventario',
+  visual: (a) => visualAgrupado('Rotacion', a.agrupar_por, ['rotacion']),
   descripcion: 'Rotacion del inventario (costo de ventas / inventario promedio) y dias de inventario de un periodo.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: Object.keys(GRUPOS_ROTACION) } },
   requeridos: ['desde', 'hasta'],
@@ -85,6 +87,7 @@ const rotacion: Herramienta<{ desde: string; hasta: string; agrupar_por?: string
 
 const quiebres: Herramienta<{ desde: string; hasta: string; sucursal?: string; categoria?: string; limite?: number }> = {
   nombre: 'quiebres_de_stock',
+  visual: () => ({ titulo: 'Quiebres de stock', tipo: 'tabla' }),
   descripcion: 'Variantes que se quedaron sin stock disponible en un periodo y cuantos dias estuvieron asi.',
   parametros: { desde: DESDE, hasta: HASTA, sucursal: SUCURSAL, categoria: CATEGORIA, limite: LIMITE },
   requeridos: ['desde', 'hasta'],
@@ -119,6 +122,7 @@ const GRUPOS_MERMA: Record<string, string> = { total: "'Total'", mes: "to_char(x
 
 const merma: Herramienta<{ desde: string; hasta: string; agrupar_por?: string; limite?: number }> = {
   nombre: 'merma',
+  visual: (a) => visualAgrupado('Merma', a.agrupar_por, ['costo']),
   descripcion: 'Unidades y costo perdidos: prendas devueltas defectuosas y salidas por ajuste de inventario.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: Object.keys(GRUPOS_MERMA) }, limite: LIMITE },
   requeridos: ['desde', 'hasta'],
@@ -148,6 +152,7 @@ const merma: Herramienta<{ desde: string; hasta: string; agrupar_por?: string; l
 
 const candidatosALiquidar: Herramienta<{ sucursal?: string; categoria?: string; dias_cobertura_minimos?: number; limite?: number }> = {
   nombre: 'candidatos_a_liquidar',
+  visual: () => ({ titulo: 'Candidatos a liquidar', tipo: 'tabla' }),
   descripcion: 'Variantes con mucho stock para lo poco que se vende (ultimos 90 dias): candidatas a descuento o transferencia. Hechas con reglas sobre datos, no con un modelo.',
   parametros: {
     sucursal: SUCURSAL,

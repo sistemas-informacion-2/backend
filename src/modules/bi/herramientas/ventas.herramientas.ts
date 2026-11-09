@@ -1,4 +1,4 @@
-import { CATEGORIA, Consulta, DESDE, expresion, HASTA, LIMITE, SUCURSAL, validarRango, type ContextoHerramienta, type Herramienta, type ResultadoHerramienta } from './herramienta.js';
+import { CATEGORIA, Consulta, DESDE, expresion, HASTA, LIMITE, SUCURSAL, validarRango, visualAgrupado, type ContextoHerramienta, type Herramienta, type ResultadoHerramienta } from './herramienta.js';
 
 const FROM_VENTAS = `
   FROM dw.fact_ventas v
@@ -46,6 +46,7 @@ function whereVentas(q: Consulta, filtros: FiltrosVentas): string {
 
 const ventasPorPeriodo: Herramienta<FiltrosVentas & { agrupar_por: string }> = {
   nombre: 'ventas_por_periodo',
+  visual: (a) => visualAgrupado('Ventas', a.agrupar_por, ['ventas']),
   descripcion: 'Ventas (Bs, ya con descuentos e impuestos repartidos), unidades y tickets de un periodo, agrupadas por tiempo o por una dimension. Es la herramienta general para "cuanto vendi".',
   parametros: {
     desde: DESDE,
@@ -122,6 +123,7 @@ const PERIODOS_A_B = {
 
 const compararPeriodos: Herramienta<ArgsComparacion> = {
   nombre: 'comparar_periodos',
+  visual: () => ({ titulo: 'Comparacion de periodos', tipo: 'tabla' }),
   descripcion: 'Compara dos periodos (A = base, B = el que se analiza): ventas, unidades, tickets, margen, ticket promedio, devoluciones y su variacion porcentual.',
   parametros: { ...PERIODOS_A_B, sucursal: SUCURSAL },
   requeridos: ['desde_a', 'hasta_a', 'desde_b', 'hasta_b'],
@@ -141,6 +143,7 @@ const METRICAS_TOP: Record<string, string> = { ventas: 'SUM(v.importe_neto)', un
 
 const topProductos: Herramienta<FiltrosVentas & { por?: string; orden?: string; limite?: number }> = {
   nombre: 'top_productos',
+  visual: (a) => ({ titulo: `Productos por ${a.por ?? 'ventas'}`, tipo: 'barras', x: 'producto', series: [a.por ?? 'ventas'] }),
   descripcion: 'Productos que mas (o menos) venden en un periodo, por ventas, unidades o margen.',
   parametros: {
     desde: DESDE,
@@ -171,6 +174,7 @@ const GRUPOS_SIMPLES: Record<string, string> = { total: "'Total'", mes: GRUPOS.m
 
 const ticketPromedio: Herramienta<FiltrosVentas & { agrupar_por?: string }> = {
   nombre: 'ticket_promedio',
+  visual: (a) => visualAgrupado('Ticket promedio', a.agrupar_por, ['ticket_promedio']),
   descripcion: 'Ticket promedio (ventas / tickets) de un periodo, en total o por mes, sucursal o canal.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: Object.keys(GRUPOS_SIMPLES) }, sucursal: SUCURSAL },
   requeridos: ['desde', 'hasta'],
@@ -191,6 +195,7 @@ const GRUPOS_MARGEN: Record<string, string> = { total: "'Total'", mes: GRUPOS.me
 
 const margenPor: Herramienta<FiltrosVentas & { agrupar_por: string; limite?: number }> = {
   nombre: 'margen_por',
+  visual: (a) => visualAgrupado('Margen', a.agrupar_por, ['margen']),
   descripcion: 'Margen bruto antes de devoluciones (ventas - costo) y su porcentaje, agrupado. Solo cuenta lineas con costo conocido e informa cuantas quedaron fuera.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Como agrupar', enum: Object.keys(GRUPOS_MARGEN) }, sucursal: SUCURSAL, categoria: CATEGORIA, limite: LIMITE },
   requeridos: ['desde', 'hasta', 'agrupar_por'],
@@ -217,6 +222,7 @@ const GRUPOS_DESCUENTO: Record<string, string> = { total: "'Total'", mes: GRUPOS
 
 const descuentosOtorgados: Herramienta<FiltrosVentas & { agrupar_por?: string }> = {
   nombre: 'descuentos_otorgados',
+  visual: (a) => visualAgrupado('Descuentos', a.agrupar_por, ['descuento_total']),
   descripcion: 'Descuentos dados en un periodo (del producto y de la nota) y que porcentaje del precio de lista representan.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: Object.keys(GRUPOS_DESCUENTO) }, sucursal: SUCURSAL },
   requeridos: ['desde', 'hasta'],
@@ -239,6 +245,7 @@ const DIMENSIONES_VARIACION: Record<string, string> = { categoria: GRUPOS.catego
 
 const descomponerVariacion: Herramienta<ArgsComparacion & { dimension: string; limite?: number }> = {
   nombre: 'descomponer_variacion',
+  visual: () => ({ titulo: 'Que explica la variacion', tipo: 'barras', x: 'grupo', series: ['diferencia'] }),
   descripcion: 'Explica una subida o caida de ventas entre dos periodos (A = base, B = analizado): cuanto aporto a la diferencia cada categoria, sucursal, canal o producto. Usar para preguntas de "por que".',
   parametros: { ...PERIODOS_A_B, dimension: { tipo: 'string', descripcion: 'Por donde abrir la diferencia', enum: Object.keys(DIMENSIONES_VARIACION) }, sucursal: SUCURSAL, limite: LIMITE },
   requeridos: ['desde_a', 'hasta_a', 'desde_b', 'hasta_b', 'dimension'],
@@ -271,6 +278,7 @@ const GRUPOS_DEVOLUCION: Record<string, string> = { total: "'Total'", mes: GRUPO
 
 const tasaDevolucion: Herramienta<{ desde: string; hasta: string; agrupar_por?: string; limite?: number }> = {
   nombre: 'tasa_devolucion',
+  visual: (a) => (a.agrupar_por === 'motivo' ? { titulo: 'Devoluciones por motivo', tipo: 'barras', x: 'grupo', series: ['unidades_devueltas'] } : visualAgrupado('Tasa de devolucion', a.agrupar_por, ['tasa_pct'])),
   descripcion: 'Unidades devueltas sobre vendidas y monto reembolsado de un periodo, en total o por mes, categoria, producto o sucursal; con agrupar_por=motivo, cuantas devoluciones hubo por cada motivo.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: [...Object.keys(GRUPOS_DEVOLUCION), 'motivo'] }, limite: LIMITE },
   requeridos: ['desde', 'hasta'],

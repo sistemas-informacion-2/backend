@@ -88,7 +88,7 @@ export class AgenteService {
     return {
       idConversacion,
       texto,
-      herramientas: ejecuciones.map(({ nombre, parametros, ok, resultado }) => ({ nombre, parametros, ok, resultado })),
+      herramientas: ejecuciones.map(({ nombre, parametros, ok, resultado, grafico }) => ({ nombre, parametros, ok, resultado, grafico })),
       tokens,
     };
   }

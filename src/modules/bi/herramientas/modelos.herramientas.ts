@@ -4,6 +4,7 @@ const CALCULADOS = { MENSUAL: 6, SEMANAL: 12 } as const;
 
 const anomaliasRecientes: Herramienta<{ desde?: string; hasta?: string; sucursal?: string; limite?: number }> = {
   nombre: 'anomalias_recientes',
+  visual: () => ({ titulo: 'Dias atipicos', tipo: 'tabla' }),
   descripcion: 'Dias atipicos por sucursal detectados por machine learning (no supervisado): tickets presenciales reales frente a los esperados.',
   parametros: { desde: DESDE, hasta: HASTA, sucursal: SUCURSAL, limite: LIMITE },
   async ejecutar(args, contexto) {
@@ -28,6 +29,7 @@ const anomaliasRecientes: Herramienta<{ desde?: string; hasta?: string; sucursal
 
 const segmentos: Herramienta<object> = {
   nombre: 'segmentos_de_clientes',
+  visual: () => ({ titulo: 'Segmentos de clientes', tipo: 'torta', x: 'segmento', series: ['clientes'] }),
   descripcion: 'Grupos de clientes encontrados por machine learning (no supervisado, K-means sobre recencia, frecuencia y monto), con su tamanio y su comportamiento promedio.',
   parametros: {},
   async ejecutar(_args, contexto) {
@@ -42,6 +44,7 @@ const segmentos: Herramienta<object> = {
 
 const clientesEnRiesgo: Herramienta<{ nivel?: string; limite?: number }> = {
   nombre: 'clientes_en_riesgo',
+  visual: () => ({ titulo: 'Clientes en riesgo', tipo: 'tabla' }),
   descripcion: 'Clientes con mas probabilidad de no volver a comprar en 90 dias (machine learning supervisado), con los principales factores. El resumen trae cuantos hay por nivel. Los clientes llegan por id: refierete a ellos por id.',
   parametros: { nivel: { tipo: 'string', descripcion: 'Filtrar por nivel de riesgo', enum: ['ALTO', 'MEDIO', 'BAJO'] }, limite: LIMITE },
   async ejecutar(args, contexto): Promise<ResultadoHerramienta> {
@@ -76,6 +79,7 @@ interface ArgsPronostico {
 
 const pronosticarVentas: Herramienta<ArgsPronostico> = {
   nombre: 'pronosticar_ventas',
+  visual: () => ({ titulo: 'Pronostico de ventas', tipo: 'linea', x: 'periodo', series: ['valor'], rango: { bajo: 'bajo', alto: 'alto' } }),
   descripcion: 'Ventas futuras en Bs con un rango del 80% (machine learning supervisado), de la empresa, de una sucursal o de una categoria.',
   parametros: {
     frecuencia: { tipo: 'string', descripcion: 'Por defecto MENSUAL', enum: ['MENSUAL', 'SEMANAL'] },
@@ -120,6 +124,7 @@ const pronosticarVentas: Herramienta<ArgsPronostico> = {
 
 const sugerenciaDeCompra: Herramienta<{ sucursal?: string; categoria?: string; limite?: number }> = {
   nombre: 'sugerencia_de_compra',
+  visual: () => ({ titulo: 'Sugerencia de compra', tipo: 'tabla' }),
   descripcion: 'Que variantes reponer y cuantas unidades comprar para los proximos 2 meses, segun el pronostico de demanda, el stock actual y un stock de seguridad.',
   parametros: { sucursal: SUCURSAL, categoria: CATEGORIA, limite: LIMITE },
   async ejecutar(args, contexto) {
@@ -141,6 +146,7 @@ const sugerenciaDeCompra: Herramienta<{ sucursal?: string; categoria?: string; l
 
 const productosJuntos: Herramienta<{ producto?: string; limite?: number }> = {
   nombre: 'productos_que_se_compran_juntos',
+  visual: () => ({ titulo: 'Productos que se compran juntos', tipo: 'tabla' }),
   descripcion: 'Productos que se compran juntos (machine learning no supervisado, Apriori). confianza: probabilidad de llevar B si lleva A. lift mayor a 1: se compran juntos mas de lo esperable por azar.',
   parametros: { producto: { tipo: 'string', descripcion: 'Parte del nombre del producto A. Omitir para ver todos' }, limite: LIMITE },
   async ejecutar(args, contexto) {

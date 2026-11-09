@@ -1,7 +1,8 @@
-import { Consulta, DESDE, HASTA, SUCURSAL, validarRango, type Herramienta } from './herramienta.js';
+import { Consulta, DESDE, HASTA, SUCURSAL, validarRango, visualAgrupado, type Herramienta } from './herramienta.js';
 
 const clientesNuevos: Herramienta<{ desde: string; hasta: string }> = {
   nombre: 'clientes_nuevos_y_recurrencia',
+  visual: () => ({ titulo: 'Clientes nuevos y recurrencia', tipo: 'tabla' }),
   descripcion: 'En un periodo: clientes que compraron, nuevos (su primera compra cae en el periodo), recurrentes (2 o mas compras) y porcentaje de recurrencia. No cuenta al consumidor final.',
   parametros: { desde: DESDE, hasta: HASTA },
   requeridos: ['desde', 'hasta'],
@@ -35,6 +36,7 @@ const GRUPOS_FINANZAS: Record<string, { pagos: string; gastos: string }> = {
 
 const ingresosYGastos: Herramienta<{ desde: string; hasta: string; agrupar_por?: string }> = {
   nombre: 'ingresos_y_gastos',
+  visual: (a) => visualAgrupado('Ingresos y gastos', a.agrupar_por, ['ingresos', 'gastos_operativos']),
   descripcion: 'Dinero cobrado (pagos menos reembolsos, incluida la tienda en linea) frente a gastos operativos. Es flujo de dinero: no incluye el costo de la mercaderia vendida; para ganancia usar resultado_del_periodo.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: Object.keys(GRUPOS_FINANZAS) } },
   requeridos: ['desde', 'hasta'],
@@ -63,6 +65,7 @@ const ingresosYGastos: Herramienta<{ desde: string; hasta: string; agrupar_por?:
 
 const gastosPorTipo: Herramienta<{ desde: string; hasta: string; sucursal?: string }> = {
   nombre: 'gastos_por_tipo',
+  visual: () => ({ titulo: 'Gastos por tipo', tipo: 'barras', x: 'tipo', series: ['monto'] }),
   descripcion: 'Gastos y egresos manuales de caja por categoria y tipo (alquiler, sueldos, servicios, marketing...). Los RETIRO son del duenio y no son gasto del negocio.',
   parametros: { desde: DESDE, hasta: HASTA, sucursal: SUCURSAL },
   requeridos: ['desde', 'hasta'],
@@ -84,6 +87,7 @@ const gastosPorTipo: Herramienta<{ desde: string; hasta: string; sucursal?: stri
 
 const resultado: Herramienta<{ desde: string; hasta: string; sucursal?: string }> = {
   nombre: 'resultado_del_periodo',
+  visual: () => ({ titulo: 'Resultado del periodo', tipo: 'tabla' }),
   descripcion: 'Estado de resultados simplificado: ventas, devoluciones, ventas netas, costo de ventas, costo recuperado, margen bruto, gastos operativos y resultado. Responde "cuanto gane".',
   parametros: { desde: DESDE, hasta: HASTA, sucursal: SUCURSAL },
   requeridos: ['desde', 'hasta'],
