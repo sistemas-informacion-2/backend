@@ -7,12 +7,12 @@ import type { ResultadoHerramienta } from '../herramientas/herramienta.js';
 import { RegistroHerramientas, type EjecucionHerramienta } from '../herramientas/registro-herramientas.service.js';
 
 const MODELOS: Array<Omit<ModeloResumenDto, 'metricas'>> = [
-  { clave: 'pronostico', titulo: 'Pronostico de ventas', tipo: 'SUPERVISADO', tecnica: 'Holt, Holt-Winters o estacional con tendencia: gana el de menor error' },
-  { clave: 'abandono', titulo: 'Clientes en riesgo', tipo: 'SUPERVISADO', tecnica: 'Random Forest o regresion logistica: gana el de mayor AUC' },
+  { clave: 'pronostico', titulo: 'Pronóstico de ventas', tipo: 'SUPERVISADO', tecnica: 'Holt, Holt-Winters o estacional con tendencia: gana el de menor error' },
+  { clave: 'abandono', titulo: 'Clientes en riesgo', tipo: 'SUPERVISADO', tecnica: 'Random Forest o regresión logística: gana el de mayor AUC' },
   { clave: 'segmentacion', titulo: 'Segmentos de clientes', tipo: 'NO_SUPERVISADO', tecnica: 'K-means sobre recencia, frecuencia y monto' },
-  { clave: 'canasta', titulo: 'Canasta de mercado', tipo: 'NO_SUPERVISADO', tecnica: 'Reglas de asociacion con Apriori' },
-  { clave: 'anomalias', titulo: 'Anomalias', tipo: 'NO_SUPERVISADO', tecnica: 'Descomposicion STL e Isolation Forest sobre tickets presenciales' },
-  { clave: 'reposicion', titulo: 'Sugerencia de compra', tipo: 'PRESCRIPTIVO', tecnica: 'Pronostico de demanda menos stock actual, con stock de seguridad' },
+  { clave: 'canasta', titulo: 'Canasta de mercado', tipo: 'NO_SUPERVISADO', tecnica: 'Reglas de asociación con Apriori' },
+  { clave: 'anomalias', titulo: 'Anomalías', tipo: 'NO_SUPERVISADO', tecnica: 'Descomposición STL e Isolation Forest sobre tickets presenciales' },
+  { clave: 'reposicion', titulo: 'Sugerencia de compra', tipo: 'PRESCRIPTIVO', tecnica: 'Pronóstico de demanda menos stock actual, con stock de seguridad' },
 ];
 
 const MESES_DE_HISTORIA = 24;

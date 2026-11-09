@@ -54,7 +54,7 @@ export class GeminiBiClient {
     const modo = this.modo();
     if (modo === 'SIN_CONFIGURAR') {
       throw new ServiceUnavailableException(
-        'El asistente del BI no esta configurado: define GEMINI_API_KEY o, para Vertex AI, GOOGLE_CLOUD_PROJECT y GOOGLE_APPLICATION_CREDENTIALS',
+        'El asistente del BI no está configurado: define GEMINI_API_KEY o, para Vertex AI, GOOGLE_CLOUD_PROJECT y GOOGLE_APPLICATION_CREDENTIALS',
       );
     }
     this.cliente =

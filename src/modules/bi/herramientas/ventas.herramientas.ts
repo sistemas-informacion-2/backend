@@ -123,7 +123,7 @@ const PERIODOS_A_B = {
 
 const compararPeriodos: Herramienta<ArgsComparacion> = {
   nombre: 'comparar_periodos',
-  visual: () => ({ titulo: 'Comparacion de periodos', tipo: 'tabla' }),
+  visual: () => ({ titulo: 'Comparación de períodos', tipo: 'tabla' }),
   descripcion: 'Compara dos periodos (A = base, B = el que se analiza): ventas, unidades, tickets, margen, ticket promedio, devoluciones y su variacion porcentual.',
   parametros: { ...PERIODOS_A_B, sucursal: SUCURSAL },
   requeridos: ['desde_a', 'hasta_a', 'desde_b', 'hasta_b'],
@@ -245,7 +245,7 @@ const DIMENSIONES_VARIACION: Record<string, string> = { categoria: GRUPOS.catego
 
 const descomponerVariacion: Herramienta<ArgsComparacion & { dimension: string; limite?: number }> = {
   nombre: 'descomponer_variacion',
-  visual: () => ({ titulo: 'Que explica la variacion', tipo: 'barras', x: 'grupo', series: ['diferencia'] }),
+  visual: () => ({ titulo: 'Qué explica la variación', tipo: 'barras', x: 'grupo', series: ['diferencia'] }),
   descripcion: 'Explica una subida o caida de ventas entre dos periodos (A = base, B = analizado): cuanto aporto a la diferencia cada categoria, sucursal, canal o producto. Usar para preguntas de "por que".',
   parametros: { ...PERIODOS_A_B, dimension: { tipo: 'string', descripcion: 'Por donde abrir la diferencia', enum: Object.keys(DIMENSIONES_VARIACION) }, sucursal: SUCURSAL, limite: LIMITE },
   requeridos: ['desde_a', 'hasta_a', 'desde_b', 'hasta_b', 'dimension'],
@@ -278,7 +278,7 @@ const GRUPOS_DEVOLUCION: Record<string, string> = { total: "'Total'", mes: GRUPO
 
 const tasaDevolucion: Herramienta<{ desde: string; hasta: string; agrupar_por?: string; limite?: number }> = {
   nombre: 'tasa_devolucion',
-  visual: (a) => (a.agrupar_por === 'motivo' ? { titulo: 'Devoluciones por motivo', tipo: 'barras', x: 'grupo', series: ['unidades_devueltas'] } : visualAgrupado('Tasa de devolucion', a.agrupar_por, ['tasa_pct'])),
+  visual: (a) => (a.agrupar_por === 'motivo' ? { titulo: 'Devoluciones por motivo', tipo: 'barras', x: 'grupo', series: ['unidades_devueltas'] } : visualAgrupado('Tasa de devolución', a.agrupar_por, ['tasa_pct'])),
   descripcion: 'Unidades devueltas sobre vendidas y monto reembolsado de un periodo, en total o por mes, categoria, producto o sucursal; con agrupar_por=motivo, cuantas devoluciones hubo por cada motivo.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: [...Object.keys(GRUPOS_DEVOLUCION), 'motivo'] }, limite: LIMITE },
   requeridos: ['desde', 'hasta'],

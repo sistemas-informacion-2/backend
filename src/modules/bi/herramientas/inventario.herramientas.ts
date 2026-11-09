@@ -53,7 +53,7 @@ const GRUPOS_ROTACION: Record<string, { ventas: string; inventario: string }> = 
 
 const rotacion: Herramienta<{ desde: string; hasta: string; agrupar_por?: string }> = {
   nombre: 'rotacion_y_dias_inventario',
-  visual: (a) => visualAgrupado('Rotacion', a.agrupar_por, ['rotacion']),
+  visual: (a) => visualAgrupado('Rotación', a.agrupar_por, ['rotacion']),
   descripcion: 'Rotacion del inventario (costo de ventas / inventario promedio) y dias de inventario de un periodo.',
   parametros: { desde: DESDE, hasta: HASTA, agrupar_por: { tipo: 'string', descripcion: 'Por defecto total', enum: Object.keys(GRUPOS_ROTACION) } },
   requeridos: ['desde', 'hasta'],

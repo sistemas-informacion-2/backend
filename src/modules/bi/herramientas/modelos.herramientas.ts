@@ -4,7 +4,7 @@ const CALCULADOS = { MENSUAL: 6, SEMANAL: 12 } as const;
 
 const anomaliasRecientes: Herramienta<{ desde?: string; hasta?: string; sucursal?: string; limite?: number }> = {
   nombre: 'anomalias_recientes',
-  visual: () => ({ titulo: 'Dias atipicos', tipo: 'tabla' }),
+  visual: () => ({ titulo: 'Días atípicos', tipo: 'tabla' }),
   descripcion: 'Dias atipicos por sucursal detectados por machine learning (no supervisado): tickets presenciales reales frente a los esperados.',
   parametros: { desde: DESDE, hasta: HASTA, sucursal: SUCURSAL, limite: LIMITE },
   async ejecutar(args, contexto) {
@@ -79,7 +79,7 @@ interface ArgsPronostico {
 
 const pronosticarVentas: Herramienta<ArgsPronostico> = {
   nombre: 'pronosticar_ventas',
-  visual: () => ({ titulo: 'Pronostico de ventas', tipo: 'linea', x: 'periodo', series: ['valor'], rango: { bajo: 'bajo', alto: 'alto' } }),
+  visual: () => ({ titulo: 'Pronóstico de ventas', tipo: 'linea', x: 'periodo', series: ['valor'], rango: { bajo: 'bajo', alto: 'alto' } }),
   descripcion: 'Ventas futuras en Bs con un rango del 80% (machine learning supervisado), de la empresa, de una sucursal o de una categoria.',
   parametros: {
     frecuencia: { tipo: 'string', descripcion: 'Por defecto MENSUAL', enum: ['MENSUAL', 'SEMANAL'] },

@@ -46,7 +46,7 @@ export class AgenteService {
     const previa = dto.idConversacion === undefined ? null : await this.conversacionPropia(dto.idConversacion, usuario.sub);
     const ultimaCarga = await this.ultimaCarga(idEmpresa);
     // Antes de gastar en Gemini.
-    if (!ultimaCarga) throw new ConflictException('Todavia no hay datos cargados en el BI. Actualiza los datos desde "Estado de los datos" y vuelve a preguntar.');
+    if (!ultimaCarga) throw new ConflictException('Todavía no hay datos cargados en el BI. Actualiza los datos desde "Estado de los datos" y vuelve a preguntar.');
     await this.verificarCuota(idEmpresa);
 
     const hoy = fechaLocal();
@@ -121,7 +121,7 @@ export class AgenteService {
 
   private async conversacionPropia(id: number, idUsuario: number): Promise<BiConversacion> {
     const conversacion = await this.conversaciones.findOne({ where: { id, idEmpresa: this.tenant.empresaId(), idUsuario } });
-    if (!conversacion) throw new NotFoundException('Conversacion no encontrada');
+    if (!conversacion) throw new NotFoundException('Conversación no encontrada');
     return conversacion;
   }
 
@@ -136,7 +136,7 @@ export class AgenteService {
   private async verificarCuota(idEmpresa: number): Promise<void> {
     const usadas = await this.mensajes.count({ where: { idEmpresa, rol: 'USUARIO', fecha: MoreThan(new Date(Date.now() - MS_POR_DIA)) } });
     if (usadas >= this.preguntasPorDia) {
-      throw new HttpException('Se alcanzo el limite diario de preguntas al asistente. Vuelve a intentar manana.', HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException('Se alcanzó el límite diario de preguntas al asistente. Vuelve a intentar mañana.', HttpStatus.TOO_MANY_REQUESTS);
     }
   }
 
@@ -199,8 +199,8 @@ export class AgenteService {
     if (error instanceof HttpException) return error;
     const estado = this.estado(error);
     this.logger.warn(`Gemini fallo (${estado ?? 'sin estado'}): ${error instanceof Error ? error.message : String(error)}`);
-    if (estado === 429) return new HttpException('Se agoto la cuota del servicio de IA. Vuelve a intentar en unos minutos.', HttpStatus.TOO_MANY_REQUESTS);
-    return new ServiceUnavailableException('El servicio de IA no esta disponible en este momento. Vuelve a intentar en unos minutos.');
+    if (estado === 429) return new HttpException('Se agotó la cuota del servicio de IA. Vuelve a intentar en unos minutos.', HttpStatus.TOO_MANY_REQUESTS);
+    return new ServiceUnavailableException('El servicio de IA no está disponible en este momento. Vuelve a intentar en unos minutos.');
   }
 
   private async guardar(previa: BiConversacion | null, pregunta: string, texto: string, ejecuciones: EjecucionHerramienta[], tokens: { entrada: number; salida: number }, idUsuario: number): Promise<number> {

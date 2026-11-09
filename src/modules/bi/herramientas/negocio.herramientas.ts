@@ -87,7 +87,7 @@ const gastosPorTipo: Herramienta<{ desde: string; hasta: string; sucursal?: stri
 
 const resultado: Herramienta<{ desde: string; hasta: string; sucursal?: string }> = {
   nombre: 'resultado_del_periodo',
-  visual: () => ({ titulo: 'Resultado del periodo', tipo: 'tabla' }),
+  visual: () => ({ titulo: 'Resultado del período', tipo: 'tabla' }),
   descripcion: 'Estado de resultados simplificado: ventas, devoluciones, ventas netas, costo de ventas, costo recuperado, margen bruto, gastos operativos y resultado. Responde "cuanto gane".',
   parametros: { desde: DESDE, hasta: HASTA, sucursal: SUCURSAL },
   requeridos: ['desde', 'hasta'],
