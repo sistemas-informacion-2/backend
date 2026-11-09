@@ -183,7 +183,10 @@ const candidatosALiquidar: Herramienta<{ sucursal?: string; categoria?: string; 
         ORDER BY valor_inmovilizado DESC NULLS LAST LIMIT ${limite}`,
       q.parametros,
     );
-    return { filas, nota: 'dias_cobertura vacio significa que no se vendio ninguna unidad en 90 dias.' };
+    return {
+      filas,
+      nota: 'dias_cobertura vacio significa que no se vendio ninguna unidad en 90 dias. Esta lista no considera la temporada: una prenda de invierno vende poco en verano y puede convenir guardarla para el proximo invierno en lugar de rematarla; aclaralo si aplica.',
+    };
   },
 };
 

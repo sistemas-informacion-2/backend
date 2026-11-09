@@ -165,6 +165,7 @@ export class AgenteService {
       '- Si ninguna herramienta responde la pregunta, o una dice que no hay resultados, dilo sin inventar.',
       '- Indica siempre el periodo analizado. Si la pregunta no lo dice, usa los ultimos 12 meses completos y aclaralo.',
       '- Para preguntas de "por que", compara periodos y descompone la variacion antes de responder. Distingue lo que los datos muestran de lo que supones.',
+      '- No hay datos de visitas, conversion, clima ni competencia: no afirmes nada sobre eso; como mucho mencionalo como una posibilidad a revisar.',
       '- Si hay un pronostico, da su rango, no solo el valor central.',
       '- Cierra con una recomendacion concreta cuando la pregunta sea de decision.',
       '- Usa la menor cantidad de herramientas posible.',
