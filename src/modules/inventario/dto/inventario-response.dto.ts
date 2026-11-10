@@ -9,7 +9,11 @@ export interface MovimientoInventarioResponseDto {
   costoUnitario: number | null;
   referenciaTipo: string | null;
   referenciaId: number | null;
+  /** Codigo legible del documento que produjo el movimiento (NV-000123, NC-45, TR-7...); null en ajustes y saldo inicial. */
+  referenciaCodigo: string | null;
   idUsuario: number | null;
+  /** Nombre de quien lo hizo; null si fue el sistema (p. ej. el vencimiento automatico de una reserva). */
+  usuarioNombre: string | null;
   motivo: string | null;
   fechaHora: Date;
 }

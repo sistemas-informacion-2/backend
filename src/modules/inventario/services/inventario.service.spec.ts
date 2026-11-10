@@ -239,3 +239,96 @@ describe('InventarioService', () => {
     await expect(service.ajustar(1, { tipo: 'ENTRADA', cantidad: 1 }, usuario)).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('InventarioService.movimientos (kardex)', () => {
+  function movimiento(id: number, extra: Partial<MovimientoInventario>): MovimientoInventario {
+    return {
+      id,
+      idEmpresa: 1,
+      idAlmacen: 1,
+      idVarianteProducto: 10,
+      tipo: 'SALIDA_VENTA',
+      cantidad: -1,
+      deltaReservado: 0,
+      stockResultante: 10,
+      reservadoResultante: 0,
+      costoUnitario: 40,
+      referenciaTipo: null,
+      referenciaId: null,
+      idUsuario: null,
+      motivo: null,
+      fechaHora: new Date('2026-11-05T10:00:00'),
+      ...extra,
+    } as MovimientoInventario;
+  }
+
+  /** Responde cada consulta de codigos/usuarios segun su tabla, como lo haria Postgres. */
+  function crearConKardex(filas: MovimientoInventario[]) {
+    const find = vi.fn().mockResolvedValue(filas);
+    const query = vi.fn(async (sql: string, [ids]: [number[]]) => {
+      if (sql.includes('FROM nota_venta')) return ids.map((id) => ({ id, codigo: `NV-${String(id).padStart(6, '0')}` }));
+      if (sql.includes('FROM nota_compra')) return ids.map((id) => ({ id, codigo: id === 3 ? 'NC-3 · Fact. 8812' : `NC-${id}` }));
+      if (sql.includes('FROM reserva')) return ids.map((id) => ({ id, codigo: `RS-${id}` }));
+      if (sql.includes('FROM usuario')) return ids.map((id) => ({ id, nombre: id === 9 ? 'Ana Lopez' : 'Luis Rojas' }));
+      return [];
+    });
+    const { service } = crearService({
+      inventarioRepo: { findByIdConDetalle: vi.fn().mockResolvedValue(inventarioBase()) },
+      // El manager falso solo necesita el find del kardex y el query de codigos y usuarios.
+      almacenRepo: { manager: { getRepository: () => ({ find }), query } as never },
+    });
+    return { service, find, query };
+  }
+
+  it('trae el codigo del documento y el nombre de quien hizo cada movimiento', async () => {
+    const { service } = crearConKardex([
+      movimiento(1, { referenciaTipo: 'NOTA_VENTA', referenciaId: 123, idUsuario: 9 }),
+      movimiento(2, { tipo: 'ENTRADA_COMPRA', cantidad: 5, referenciaTipo: 'NOTA_COMPRA', referenciaId: 3, idUsuario: 7 }),
+      movimiento(3, { tipo: 'TRANSFERENCIA_ENTRADA', cantidad: 2, referenciaTipo: 'TRANSFERENCIA', referenciaId: 4 }),
+      movimiento(4, { tipo: 'AJUSTE_SALIDA', referenciaTipo: 'AJUSTE', referenciaId: null, motivo: 'Conteo' }),
+    ]);
+
+    const resultado = await service.movimientos(1);
+
+    expect(resultado.map(({ referenciaCodigo, usuarioNombre }) => ({ referenciaCodigo, usuarioNombre }))).toEqual([
+      { referenciaCodigo: 'NV-000123', usuarioNombre: 'Ana Lopez' },
+      { referenciaCodigo: 'NC-3 · Fact. 8812', usuarioNombre: 'Luis Rojas' },
+      { referenciaCodigo: 'TR-4', usuarioNombre: null },
+      { referenciaCodigo: null, usuarioNombre: null },
+    ]);
+  });
+
+  it('hace una consulta por tipo de documento (no una por fila), siempre dentro de la empresa', async () => {
+    const { service, query } = crearConKardex([
+      movimiento(1, { referenciaTipo: 'NOTA_VENTA', referenciaId: 1, idUsuario: 9 }),
+      movimiento(2, { referenciaTipo: 'NOTA_VENTA', referenciaId: 2, idUsuario: 9 }),
+      movimiento(3, { referenciaTipo: 'NOTA_VENTA', referenciaId: 2, idUsuario: 9 }),
+    ]);
+
+    await service.movimientos(1);
+
+    const consultasVenta = query.mock.calls.filter(([sql]) => sql.includes('FROM nota_venta'));
+    expect(consultasVenta).toHaveLength(1);
+    expect(consultasVenta[0][1]).toEqual([[1, 2], 1]);
+    expect(query.mock.calls.filter(([sql]) => sql.includes('FROM usuario'))).toHaveLength(1);
+  });
+
+  it('sin rango trae los ultimos 200; con rango filtra el periodo en hora de Bolivia', async () => {
+    const { service, find } = crearConKardex([]);
+
+    await service.movimientos(1);
+    expect(find.mock.calls[0][0]).toMatchObject({ take: 200 });
+    expect(find.mock.calls[0][0].where.fechaHora).toBeUndefined();
+
+    await service.movimientos(1, { desde: '2026-11-01', hasta: '2026-11-30' });
+    const { where, take } = find.mock.calls[1][0];
+    expect(take).toBe(1000);
+    expect(where.fechaHora.value).toEqual([new Date('2026-11-01T00:00:00'), new Date('2026-11-30T23:59:59.999')]);
+  });
+
+  it('rechaza un rango invertido', async () => {
+    const { service } = crearConKardex([]);
+
+    await expect(service.movimientos(1, { desde: '2026-11-30', hasta: '2026-11-01' })).rejects.toThrow(BadRequestException);
+  });
+});

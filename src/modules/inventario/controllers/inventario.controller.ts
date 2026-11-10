@@ -9,6 +9,7 @@ import { CrearStockDto } from '../dto/crear-stock.dto.js';
 import { ActualizarStockDto } from '../dto/actualizar-stock.dto.js';
 import { AjustarStockDto } from '../dto/ajustar-stock.dto.js';
 import { InventarioQueryDto } from '../dto/inventario-query.dto.js';
+import { MovimientosQueryDto } from '../dto/movimientos-query.dto.js';
 import type { InventarioPaginatedResponseDto, InventarioResponseDto, MovimientoInventarioResponseDto } from '../dto/inventario-response.dto.js';
 
 @ApiTags('Inventario')
@@ -39,9 +40,9 @@ export class InventarioController {
 
   @Get(':id/movimientos')
   @RequireAnyPermission('inventario:almacen:gestionar', 'inventario:almacen:leer')
-  @ApiOperation({ summary: 'Kardex de un registro de stock: entradas, salidas, reservas y ajustes' })
-  movimientos(@Param('id', ParseIntPipe) id: number): Promise<MovimientoInventarioResponseDto[]> {
-    return this.inventarioService.movimientos(id);
+  @ApiOperation({ summary: 'Kardex de un registro de stock: entradas, salidas, reservas y ajustes, con su documento y quien lo hizo' })
+  movimientos(@Param('id', ParseIntPipe) id: number, @Query() query: MovimientosQueryDto): Promise<MovimientoInventarioResponseDto[]> {
+    return this.inventarioService.movimientos(id, query);
   }
 
   @Put(':id')
