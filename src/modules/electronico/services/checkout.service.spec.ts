@@ -162,7 +162,9 @@ function crearService(escenario: Escenario = {}) {
   const cfg: Record<string, unknown> = { frontendUrl: 'http://localhost:5173', 'payments.simulated': escenario.simulados ?? true, 'jwt.secret': 'secreto-de-prueba' };
   const config = { get: (clave: string) => cfg[clave] };
   const notificaciones = { notificarPorPush: vi.fn() };
-  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never, { empresaId: () => 1, empresa: () => ({ id: 1, slug: 'fashionstore' }) } as never);
+  // La tienda del request: su slug arma las URL de retorno de Stripe y su nombre va en la descripcion del cobro.
+  const tienda = { id: 1, slug: 'fashionstore', nombre: 'FashionStore' };
+  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never, { empresaId: () => 1, empresa: () => tienda, empresaRequerida: () => tienda } as never);
   return { service, stripe, guardados, orden, consultas, manager, repos, disponibilidad, notificaciones };
 }
 

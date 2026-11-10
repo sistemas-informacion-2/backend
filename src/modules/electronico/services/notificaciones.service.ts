@@ -227,7 +227,7 @@ export class NotificacionesService {
     const enviados = await this.webPush.enviar(
       suscripciones.map((suscripcion) => ({
         suscripcion,
-        titulo: 'FashionStore',
+        titulo: this.tenant.empresa()?.nombre ?? 'Notificaciones',
         mensaje: 'Las notificaciones están activas en este dispositivo.',
         url: '/',
         // Etiqueta distinta cada vez: con la misma, el navegador reemplaza el aviso sin volver a alertar.

@@ -33,7 +33,7 @@ function crearService(cfg: { secretKey?: string } = {}) {
 const datosSesion = {
   referencia: 'C7-123',
   montoBob: 200,
-  descripcion: 'Compra en FashionStore (2 prendas)',
+  descripcion: 'Compra en Moda Andina (2 prendas)',
   urlRetorno: 'http://localhost:5173/checkout/stripe/retorno',
   urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado',
 };

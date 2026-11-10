@@ -291,9 +291,11 @@ export class GeminiReporteService {
   private construirInstrucciones(sucursales: string[]): string {
     const catalogo = FUENTES_REPORTE.map((fuente) => this.describirFuente(fuente)).join('\n\n');
     const hoy = fechaLocal();
+    // Cada empresa del SaaS es una tienda distinta: Gemini debe saber de cual es el backoffice.
+    const tienda = this.tenant.empresa()?.nombre ?? 'la tienda';
 
     return [
-      'Eres el motor de reportes generativos del backoffice de FashionStore (tienda de ropa boliviana, sucursales físicas y e-commerce).',
+      `Eres el motor de reportes generativos del backoffice de ${tienda} (tienda de ropa boliviana, sucursales físicas y e-commerce).`,
       'Tu tarea: traducir un pedido en lenguaje natural (texto o transcripción de voz, español, puede traer modismos o errores de dictado) a una configuración JSON de reporte.',
       'Nunca generas SQL ni inventas campos: solo puedes usar los nombres de campo exactos listados en el catálogo de abajo, para el tipo de reporte que elijas.',
       '',

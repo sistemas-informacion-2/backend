@@ -129,7 +129,7 @@ export default (): AppConfig => ({
   webPush: {
     publicKey: process.env.VAPID_PUBLIC_KEY?.trim() ?? '',
     privateKey: process.env.VAPID_PRIVATE_KEY?.trim() ?? '',
-    subject: process.env.VAPID_SUBJECT?.trim() ?? 'mailto:soporte@fashionstore.com',
+    subject: process.env.VAPID_SUBJECT?.trim() ?? 'mailto:soporte@dominatr.com',
   },
   tenant: {
     slugPorDefecto: (process.env.TENANT_SLUG_POR_DEFECTO ?? 'fashionstore').trim().toLowerCase(),

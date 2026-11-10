@@ -473,16 +473,18 @@ export class CheckoutService {
 
   /** Lo que se cobrara ahora: el total del carrito (con aviso de stock) o el anticipo de la reserva. */
   private async montoAPagar(idCliente: number, idReserva?: number): Promise<{ monto: number; descripcion: string }> {
+    // Es lo que el cliente lee en la pagina de Stripe: el nombre de SU tienda, no el de la plataforma.
+    const tienda = this.tenant.empresaRequerida().nombre;
     if (idReserva !== undefined) {
       const reserva = await this.dataSource.getRepository(Reserva).findOne({ where: { id: idReserva, idEmpresa: this.tenant.empresaId() } });
       this.validarReservaPagable(reserva, idCliente);
-      return { monto: Number(reserva.montoAnticipo), descripcion: `Anticipo de la reserva ${reserva.codigoReserva} en FashionStore` };
+      return { monto: Number(reserva.montoAnticipo), descripcion: `Anticipo de la reserva ${reserva.codigoReserva} en ${tienda}` };
     }
 
     const resumen = await this.resumenCarrito(this.dataSource.manager, idCliente);
     await this.validarStockDisponible(resumen);
     const unidades = resumen.lineas.reduce((suma, linea) => suma + linea.cantidad, 0);
-    return { monto: resumen.total, descripcion: `Compra en FashionStore (${unidades} ${unidades === 1 ? 'prenda' : 'prendas'})` };
+    return { monto: resumen.total, descripcion: `Compra en ${tienda} (${unidades} ${unidades === 1 ? 'prenda' : 'prendas'})` };
   }
 
   /** Solo el dueno paga, una sola vez, y antes de que venza: es lo que mantiene el stock apartado. */

@@ -57,8 +57,8 @@ async function bootstrap() {
   await app.get(TemporadaSeederService).run();
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('FashionStore API')
-    .setDescription('API del sistema FashionStore')
+    .setTitle('DOMINATR API')
+    .setDescription('API de DOMINATR: la plataforma SaaS y cada una de sus tiendas')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

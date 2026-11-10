@@ -4,7 +4,7 @@ function crearService(cfg: { apiKey?: string; model?: string } = {}, sucursales:
   const valores: Record<string, unknown> = { 'gemini.apiKey': cfg.apiKey ?? 'clave-de-prueba', 'gemini.model': cfg.model ?? 'gemini-3.5-flash-lite' };
   const config = { get: (clave: string) => valores[clave] };
   const dataSource = { query: vi.fn().mockResolvedValue(sucursales.map((nombre) => ({ nombre }))) };
-  return { service: new GeminiReporteService(config as never, dataSource as never, { empresaId: () => 1 } as never), dataSource };
+  return { service: new GeminiReporteService(config as never, dataSource as never, { empresaId: () => 1, empresa: () => ({ id: 1, nombre: 'Moda Andina' }) } as never), dataSource };
 }
 
 function respuestaGemini(jsonTexto: string) {
