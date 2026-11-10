@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { fechaDeColumna } from '../../../common/utils/fecha.util.js';
 import { DataSource } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import {
   OPERADORES_POR_TIPO,
   OPERADOR_SQL,
@@ -10,7 +12,6 @@ import {
   type OperadorFiltro,
 } from '../catalog/reporte-catalog.constants.js';
 import { FUENTES_REPORTE } from '../catalog/reporte-catalog.constants.js';
-import { fechaLocal } from '../utils/fecha.util.js';
 import {
   LIMITE_REPORTE_MAXIMO,
   type ReportResultDto,
@@ -29,7 +30,10 @@ const OPERADORES_DIRECTOS: ReadonlySet<OperadorFiltro> = new Set(['eq', 'ne', 'g
  */
 @Injectable()
 export class ReportBuilderService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
+  ) {}
 
   catalogo(): ReportTypeDefinitionDto[] {
     return FUENTES_REPORTE.map((fuente) => ({
@@ -104,9 +108,11 @@ export class ReportBuilderService {
     const combinador = request.matchType === 'OR' ? ' OR ' : ' AND ';
     const grupoFiltros =
       whereFiltros.length > 1 && request.matchType === 'OR' ? `(${whereFiltros.join(combinador)})` : whereFiltros.join(combinador);
-    const where = [...whereFechas, ...(grupoFiltros ? [grupoFiltros] : [])];
+    // La empresa va siempre y al final: no altera la numeracion de los filtros del usuario ni se puede quitar con un OR.
+    const whereEmpresa = clausula(fuente.columnaEmpresa, '=', this.tenant.empresaId());
+    const where = [...whereFechas, ...(grupoFiltros ? [grupoFiltros] : []), whereEmpresa];
 
-    let ordenes: string[] = [];
+    let orden: { campo: CampoReporte; direccion: 'asc' | 'desc' } | null = null;
     if (request.sort) {
       const campo = campoDe(fuente, request.sort.campo);
       if (agregar && campo.categoria !== 'MEASURE' && !claves.some((c) => c.name === campo.name)) {
@@ -115,10 +121,16 @@ export class ReportBuilderService {
         );
       }
       for (const join of campo.joins) joinsRequeridos.add(join);
-      ordenes.push(this.expresionOrden(campo, agregar, request.sort.direccion));
+      orden = { campo, direccion: request.sort.direccion };
     } else if (campos[0]) {
-      ordenes.push(`${this.expresionOrden(campos[0], agregar, 'asc')}`);
+      orden = { campo: campos[0], direccion: 'asc' };
     }
+
+    // Con el detalle unido, cada nota aparece una vez por linea: sus medidas de cabecera se reparten por peso.
+    // Los filtros no: "monto total >= 100" sigue hablando del total de la nota.
+    const peso = fuente.prorrateo && joinsRequeridos.has(fuente.prorrateo.join) ? fuente.prorrateo.peso : null;
+    const valorDe = (campo: CampoReporte): string => (peso && campo.deCabecera ? `(${campo.sql} * ${peso})` : campo.sql);
+    const ordenes = orden ? [this.expresionOrden(valorDe(orden.campo), orden.campo, agregar, orden.direccion)] : [];
 
     const joinsSql = Object.entries(fuente.joins)
       .filter(([id]) => joinsRequeridos.has(id))
@@ -137,7 +149,7 @@ export class ReportBuilderService {
 
     const total = await this.contar(fromSql, whereSql, groupExprs, agregar, params);
 
-    const selects = campos.map((campo) => `${this.expresionSelect(campo, agregar)} AS "${campo.name}"`);
+    const selects = campos.map((campo) => `${this.expresionSelect(valorDe(campo), campo, agregar, peso !== null)} AS "${campo.name}"`);
     let sql = `SELECT ${selects.join(', ')} FROM ${fromSql}${whereSql}${groupClause}`;
     if (ordenes.length) sql += ` ORDER BY ${ordenes.join(', ')}`;
     sql += ` LIMIT $${agregarValor(limites.limit)} OFFSET $${agregarValor(limites.offset)}`;
@@ -167,15 +179,17 @@ export class ReportBuilderService {
     return fila?.total ?? 0;
   }
 
-  private expresionSelect(campo: CampoReporte, agregar: boolean): string {
-    if (agregar && campo.categoria === 'MEASURE') return `SUM(${campo.sql})::float8`;
-    if (campo.tipo === 'NUMBER') return `(${campo.sql})::float8`;
-    return campo.sql;
+  /** `expr` es la expresion del campo ya prorrateada si corresponde; lo repartido se redondea a centavos. */
+  private expresionSelect(expr: string, campo: CampoReporte, agregar: boolean, prorrateado: boolean): string {
+    const redondear = prorrateado && campo.deCabecera === true;
+    if (agregar && campo.categoria === 'MEASURE') return redondear ? `ROUND(SUM(${expr}), 2)::float8` : `SUM(${expr})::float8`;
+    if (campo.tipo === 'NUMBER') return redondear ? `ROUND(${expr}, 2)::float8` : `(${expr})::float8`;
+    return expr;
   }
 
-  private expresionOrden(campo: CampoReporte, agregar: boolean, direccion: 'asc' | 'desc'): string {
-    const expr = agregar && campo.categoria === 'MEASURE' ? `SUM(${campo.sql})` : campo.sql;
-    return `${expr} ${direccion === 'desc' ? 'DESC' : 'ASC'}`;
+  private expresionOrden(expr: string, campo: CampoReporte, agregar: boolean, direccion: 'asc' | 'desc'): string {
+    const valor = agregar && campo.categoria === 'MEASURE' ? `SUM(${expr})` : expr;
+    return `${valor} ${direccion === 'desc' ? 'DESC' : 'ASC'}`;
   }
 
   private coercionDeValor(campo: CampoReporte, valor: string | number | boolean): string | number | boolean {
@@ -202,7 +216,7 @@ export class ReportBuilderService {
 
   private serializar(valor: unknown): string | number | boolean {
     if (valor === null || valor === undefined) return '';
-    if (valor instanceof Date) return fechaLocal(valor);
+    if (valor instanceof Date) return fechaDeColumna(valor);
     if (typeof valor === 'number' || typeof valor === 'boolean' || typeof valor === 'string') return valor;
     return String(valor);
   }

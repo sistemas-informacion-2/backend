@@ -2,16 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type Repository } from 'typeorm';
 import { Almacen } from '../entities/almacen.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class AlmacenRepository {
-  constructor(@InjectRepository(Almacen) private readonly repo: Repository<Almacen>) {}
+  constructor(
+    @InjectRepository(Almacen) private readonly repo: Repository<Almacen>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   findWithFilters(query: { search?: string; idSucursal?: number; activo?: boolean }): Promise<Almacen[]> {
     const builder = this.repo
       .createQueryBuilder('almacen')
       .leftJoinAndSelect('almacen.sucursal', 'sucursal')
       .leftJoinAndSelect('almacen.inventarios', 'inventario')
+      .where('almacen.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('almacen.nombre', 'ASC');
 
     if (query.search?.trim()) {
@@ -36,6 +41,7 @@ export class AlmacenRepository {
       .leftJoinAndSelect('almacen.sucursal', 'sucursal')
       .leftJoinAndSelect('almacen.inventarios', 'inventario')
       .where('almacen.id = :id', { id })
+      .andWhere('almacen.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .getOne();
   }
 
@@ -43,6 +49,7 @@ export class AlmacenRepository {
     return this.repo
       .createQueryBuilder('almacen')
       .where('almacen.id_sucursal = :idSucursal', { idSucursal })
+      .andWhere('almacen.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .andWhere('LOWER(almacen.nombre) = :nombre', { nombre: nombre.trim().toLowerCase() })
       .getOne();
   }

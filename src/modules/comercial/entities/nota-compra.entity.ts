@@ -1,12 +1,5 @@
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  ManyToOne,
-  OneToMany,
-  PrimaryGeneratedColumn,
-  type Relation,
-} from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Proveedor } from '../../inventario/entities/proveedor.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { MovimientoCaja } from './movimiento-caja.entity.js';
@@ -18,10 +11,19 @@ export type EstadoCompra = 'Recibido';
  * Compra de mercaderia a un proveedor (CU15). Pertenece a una sucursal: los
  * almacenes de destino de sus lineas y la caja del egreso deben ser de esa sucursal.
  */
+@Index('idx_nota_compra_empresa', ['idEmpresa'])
 @Entity('nota_compra')
 export class NotaCompra {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
 
   @Column({ name: 'id_proveedor', type: 'int' })
   idProveedor: number;

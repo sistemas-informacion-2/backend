@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 import { Categoria } from '../entities/categoria.entity.js';
+// Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
+import { ID_EMPRESA_INICIAL } from '../../../database/migraciones.util.js';
 
 interface CategoriaSemilla {
   nombre: string;
@@ -55,22 +57,32 @@ export class CategoriaSeederService {
 
   constructor(@InjectRepository(Categoria) private readonly categoriaRepo: Repository<Categoria>) {}
 
-  async run(): Promise<void> {
+  run(): Promise<void> {
+    return this.sembrarEn(this.categoriaRepo.manager, ID_EMPRESA_INICIAL);
+  }
+
+  /** Taxonomia base de una empresa. Lo usan el arranque (empresa inicial) y el alta de empresas, en su transaccion. */
+  async sembrarEn(manager: EntityManager, idEmpresa: number): Promise<void> {
+    const repo = manager.getRepository(Categoria);
     for (const padre of TAXONOMIA) {
-      const idPadre = await this.asegurar(padre.nombre, padre.slug, null);
+      const idPadre = await this.asegurar(repo, idEmpresa, padre.nombre, padre.slug, null);
       for (const hija of padre.hijas) {
-        await this.asegurar(hija.nombre, hija.slug, idPadre);
+        await this.asegurar(repo, idEmpresa, hija.nombre, hija.slug, idPadre);
       }
     }
   }
 
-  private async asegurar(nombre: string, slug: string, idCategoriaPadre: number | null): Promise<number> {
-    const existente = await this.categoriaRepo.findOne({ where: { slug } });
+  private async asegurar(
+    repo: Repository<Categoria>,
+    idEmpresa: number,
+    nombre: string,
+    slug: string,
+    idCategoriaPadre: number | null,
+  ): Promise<number> {
+    const existente = await repo.findOne({ where: { slug, idEmpresa } });
     if (existente) return existente.id;
 
-    const creada = await this.categoriaRepo.save(
-      this.categoriaRepo.create({ nombre, slug, idCategoriaPadre }),
-    );
+    const creada = await repo.save(repo.create({ nombre, slug, idCategoriaPadre, idEmpresa }));
     this.logger.log(`Categoría creada: ${nombre}`);
     return creada.id;
   }

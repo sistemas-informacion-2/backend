@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 import { Temporada } from '../entities/temporada.entity.js';
+// Los seeders corren fuera de un request, sin TenantContext: la empresa va explicita.
+import { ID_EMPRESA_INICIAL } from '../../../database/migraciones.util.js';
 
 interface TemporadaSemilla {
   nombre: string;
@@ -23,9 +26,9 @@ const fecha = (anio: number, mes: number, dia: number): string => `${anio}-${pad
  * (la que ya pasó o la que sigue) según en qué mes del año se ejecute esto.
  */
 function construirTaxonomia(hoy: Date): TemporadaSemilla[] {
-  const anio = hoy.getUTCFullYear();
+  const hoyIso = fechaLocal(hoy);
+  const anio = Number(hoyIso.slice(0, 4));
   const finVeranoEsteAnio = fecha(anio, 3, 20);
-  const hoyIso = hoy.toISOString().slice(0, 10);
   // Antes/durante el verano que terminó este marzo -> esa ocurrencia (dic del año pasado a marzo de este).
   // Después -> la próxima (dic de este año a marzo del que viene).
   const veranoEsteAnioTerminado = hoyIso > finVeranoEsteAnio;
@@ -67,13 +70,19 @@ export class TemporadaSeederService {
 
   constructor(@InjectRepository(Temporada) private readonly temporadaRepo: Repository<Temporada>) {}
 
-  async run(): Promise<void> {
+  run(): Promise<void> {
+    return this.sembrarEn(this.temporadaRepo.manager, ID_EMPRESA_INICIAL);
+  }
+
+  /** Las 4 estaciones de una empresa. Lo usan el arranque (empresa inicial) y el alta de empresas, en su transaccion. */
+  async sembrarEn(manager: EntityManager, idEmpresa: number): Promise<void> {
+    const repo = manager.getRepository(Temporada);
     const taxonomia = construirTaxonomia(new Date());
     for (const semilla of taxonomia) {
-      const existente = await this.temporadaRepo.findOne({ where: { nombre: semilla.nombre } });
+      const existente = await repo.findOne({ where: { nombre: semilla.nombre, idEmpresa } });
       if (existente) continue;
 
-      await this.temporadaRepo.save(this.temporadaRepo.create(semilla));
+      await repo.save(repo.create({ ...semilla, idEmpresa }));
       this.logger.log(`Temporada creada: ${semilla.nombre} (${semilla.fechaInicio} a ${semilla.fechaFin})`);
     }
   }

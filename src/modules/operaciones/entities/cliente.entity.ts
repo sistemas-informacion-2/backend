@@ -18,4 +18,11 @@ export class Cliente {
 
   @Column({ name: 'puntos_fidelidad', type: 'int', default: 0 })
   puntosFidelidad: number;
+
+  /**
+   * El cliente generico de cada empresa al que van las ventas de mostrador sin cliente identificado. Los analisis de
+   * clientes (recurrencia, ticket, mejores clientes) lo excluyen: no es una persona.
+   */
+  @Column({ name: 'es_consumidor_final', type: 'boolean', default: false })
+  esConsumidorFinal: boolean;
 }

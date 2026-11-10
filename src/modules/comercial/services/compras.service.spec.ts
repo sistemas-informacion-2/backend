@@ -1,10 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { MovimientoInventario } from '../../inventario/entities/movimiento-inventario.entity.js';
 import { ComprasService } from './compras.service.js';
 import { NotaCompra } from '../entities/nota-compra.entity.js';
 import { DetalleNotaCompra } from '../entities/detalle-nota-compra.entity.js';
 import { Caja } from '../entities/caja.entity.js';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
+import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type { CrearCompraDto } from '../dto/crear-compra.dto.js';
 
@@ -54,6 +56,7 @@ function crearService(
     facturaRepetida?: unknown;
     cajaAbierta?: unknown;
     inventarioExistente?: Record<number, { idVarianteProducto: number; stockDisponible: number }>;
+    costosPrevios?: Record<number, number | null>;
     compraRepo?: Record<string, ReturnType<typeof vi.fn>>;
   } = {},
 ) {
@@ -68,7 +71,21 @@ function crearService(
     findOne: vi.fn(({ where }: { where: { idVarianteProducto: number } }) =>
       Promise.resolve(overrides.inventarioExistente?.[where.idVarianteProducto] ?? null),
     ),
+    // Stock de la variante en todos sus almacenes, para ponderar el costo.
+    find: vi.fn(({ where }: { where: { idVarianteProducto: number } }) => {
+      const fila = overrides.inventarioExistente?.[where.idVarianteProducto];
+      return Promise.resolve(fila ? [{ ...fila, stockReservado: 0 }] : []);
+    }),
     create: vi.fn((datos) => datos),
+    save: vi.fn((datos) => Promise.resolve(datos)),
+  };
+  const variantesGuardadas = new Map<number, { id: number; costoPromedio: number | null }>();
+  const varianteTxRepo = {
+    findOne: vi.fn(({ where }: { where: { id: number } }) => {
+      const variante = { id: where.id, costoPromedio: overrides.costosPrevios?.[where.id] ?? null };
+      variantesGuardadas.set(where.id, variante);
+      return Promise.resolve(variante);
+    }),
     save: vi.fn((datos) => Promise.resolve(datos)),
   };
   const cajaRepo = { findOne: vi.fn().mockResolvedValue(has('cajaAbierta') ? overrides.cajaAbierta : null) };
@@ -81,6 +98,8 @@ function crearService(
     [NotaCompra, notaCompraRepo],
     [DetalleNotaCompra, detalleRepo],
     [Inventario, inventarioRepo],
+    [VarianteProducto, varianteTxRepo],
+    [MovimientoInventario, { create: vi.fn((datos: unknown) => datos), save: vi.fn(async (datos: unknown) => datos) }],
     [Caja, cajaRepo],
     [MovimientoCaja, movimientoRepo],
   ]);
@@ -128,6 +147,7 @@ function crearService(
       almacenRepo as never,
       varianteRepo as never,
       productoSucursalRepo as never,
+      { empresaId: () => 1 } as never,
     ),
     dataSource,
     compraRepo,
@@ -135,6 +155,7 @@ function crearService(
     detalleRepo,
     inventarioRepo,
     movimientoRepo,
+    variantesGuardadas,
   };
 }
 
@@ -159,6 +180,35 @@ describe('ComprasService', () => {
     expect(inventarioRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ idAlmacen: 7, idVarianteProducto: 11, stockDisponible: 2, stockMinimo: 5 }),
     );
+  });
+
+  it('recalcula el costo promedio con el stock previo a la compra', async () => {
+    const { service, variantesGuardadas } = crearService({
+      inventarioExistente: { 10: { idVarianteProducto: 10, stockDisponible: 6 } },
+      costosPrevios: { 10: 20 },
+    });
+
+    await service.registrar(dtoBase(), admin);
+
+    // Variante 10: 6 a 20 + 4 a 25.50 = 22.20. Variante 11 sin costo previo: toma el de la compra.
+    expect(variantesGuardadas.get(10)?.costoPromedio).toBe(22.2);
+    expect(variantesGuardadas.get(11)?.costoPromedio).toBe(10);
+  });
+
+  it('junta las lineas repetidas de una misma variante en un solo precio ponderado', async () => {
+    const { service, variantesGuardadas } = crearService();
+
+    await service.registrar(
+      dtoBase({
+        detalles: [
+          { idVarianteProducto: 10, idAlmacen: 7, cantidad: 1, precioUnitario: 10 },
+          { idVarianteProducto: 10, idAlmacen: 7, cantidad: 3, precioUnitario: 30 },
+        ],
+      }),
+      admin,
+    );
+
+    expect(variantesGuardadas.get(10)?.costoPromedio).toBe(25);
   });
 
   it('no toca la caja si la compra no se paga desde caja', async () => {

@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import {
   BadRequestException,
   ConflictException,
@@ -16,7 +17,7 @@ import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
-import { precioConDescuento } from '../../inventario/utils/precio.util.js';
+import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
 import { Caja } from '../../comercial/entities/caja.entity.js';
 import { DetalleNotaVenta } from '../../comercial/entities/detalle-nota-venta.entity.js';
 import { MovimientoCaja } from '../../comercial/entities/movimiento-caja.entity.js';
@@ -29,6 +30,7 @@ import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { DetalleReserva } from '../entities/detalle-reserva.entity.js';
 import { Reserva } from '../entities/reserva.entity.js';
 import { ReservaRepository } from '../repositories/reserva.repository.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { toReservaResponseDto } from '../mappers/reserva.mapper.js';
 import {
   HORAS_LIMITE_POR_DEFECTO,
@@ -41,6 +43,8 @@ import {
   type ReservasPaginatedResponseDto,
   type ReservasQueryDto,
 } from '../dto/reservas.dto.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
+import { registrarMovimiento, type DatosMovimiento } from '../../inventario/utils/kardex.util.js';
 
 /** Un cliente no puede acaparar stock: como maximo tiene este numero de reservas vivas a la vez. */
 export const MAX_RESERVAS_ACTIVAS_CLIENTE = 3;
@@ -48,17 +52,6 @@ const INTERVALO_VENCIMIENTO_MS = 5 * 60 * 1000;
 
 function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
-}
-
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
 }
 
 /** Codigo provisorio (<= 20 caracteres) mientras se conoce el id de la fila; evita carreras por conteo. */
@@ -73,6 +66,8 @@ function codigoDefinitivo(prefijo: string, id: number): string {
 interface LineaReserva {
   variante: VarianteProducto;
   cantidad: number;
+  precioLista: number;
+  descuentoUnitario: number;
   precioUnitario: number;
   subtotal: number;
 }
@@ -92,6 +87,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   onModuleInit(): void {
@@ -169,10 +165,10 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     const items = consolidarItems(dto.items);
 
     const idReserva = await this.dataSource.transaction(async (manager) => {
-      const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente } });
+      const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente, usuario: { idEmpresa: this.tenant.empresaId() } } });
       if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
       if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
       if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
       if (usuario.tipoUsuario === 'E') await this.validarAccesoSucursal(usuario, idSucursal);
@@ -197,11 +193,12 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       }
       if (montoAnticipo > montoTotal) throw new BadRequestException('El anticipo no puede superar el total de la reserva');
 
+      const apartados: Array<{ linea: LineaReserva; porciones: Array<{ inventario: Inventario; cantidad: number }> }> = [];
       for (const linea of lineas) {
-        await this.apartarStock(manager, idSucursal, linea);
+        apartados.push({ linea, porciones: await this.apartarStock(manager, idSucursal, linea) });
       }
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       const horas = dto.horasLimite ?? HORAS_LIMITE_POR_DEFECTO;
       const reservaRepo = manager.getRepository(Reserva);
       const reserva = await reservaRepo.save(
@@ -226,12 +223,28 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
           detalleRepo.create({
             idReserva: reserva.id,
             idVarianteProducto: linea.variante.id,
+            precioLista: linea.precioLista,
+            descuentoUnitario: linea.descuentoUnitario,
             precioUnitario: linea.precioUnitario,
             cantidad: linea.cantidad,
             subtotal: linea.subtotal,
           }),
         ),
       );
+
+      for (const { linea, porciones } of apartados) {
+        for (const { inventario, cantidad } of porciones) {
+          await registrarMovimiento(manager, inventario, {
+            tipo: 'RESERVA',
+            cantidad: -cantidad,
+            deltaReservado: cantidad,
+            costoUnitario: linea.variante.costoPromedio,
+            referenciaTipo: 'RESERVA',
+            referenciaId: reserva.id,
+            idUsuario: usuario.sub,
+          });
+        }
+      }
 
       return reserva.id;
     });
@@ -257,8 +270,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (monto > 0) {
         const caja = await this.obtenerCajaAbierta(manager, reserva.idSucursal);
         await this.validarPasarelaPresencial(manager, dto.idPasarela);
-        const ahora = new Date();
-        const movimiento = await this.registrarIngreso(manager, caja, `Anticipo reserva ${reserva.codigoReserva}`, monto, ahora);
+        const ahora = relojAhora();
+        const movimiento = await this.registrarIngreso(manager, caja, 'ANTICIPO_RESERVA', `Anticipo reserva ${reserva.codigoReserva}`, monto, ahora);
         await manager.getRepository(Pago).save(
           manager.getRepository(Pago).create({
             idMovimientoCaja: movimiento.id,
@@ -267,8 +280,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
             idReserva: reserva.id,
             monto,
             concepto: 'ANTICIPO_RESERVA',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           }),
         );
       }
@@ -302,13 +315,13 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       const montoTotal = Number(reserva.montoTotal);
       const saldo = Math.max(0, redondear(montoTotal - anticipoPagado));
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       let movimiento: MovimientoCaja | null = null;
       if (saldo > 0) {
         if (!dto.idPasarela) throw new BadRequestException('Elige el metodo de pago con el que se cobra el saldo');
         const caja = await this.obtenerCajaAbierta(manager, reserva.idSucursal);
         await this.validarPasarelaPresencial(manager, dto.idPasarela);
-        movimiento = await this.registrarIngreso(manager, caja, `Saldo reserva ${reserva.codigoReserva}`, saldo, ahora);
+        movimiento = await this.registrarIngreso(manager, caja, 'SALDO_RESERVA', `Saldo reserva ${reserva.codigoReserva}`, saldo, ahora);
       }
 
       const notaRepo = manager.getRepository(NotaVenta);
@@ -326,8 +339,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
           tipoVenta: 'PRESENCIAL_LIQUIDACION',
           nroFactura: dto.nroFactura?.trim() || null,
           nitRazonSocial: dto.nitRazonSocial?.trim() || null,
-          fechaEmision: formatearFecha(ahora),
-          horaEmision: formatearHora(ahora),
+          fechaEmision: fechaLocal(ahora),
+          horaEmision: horaLocal(ahora),
           subtotal: montoTotal,
           montoAnticipoAplicado: anticipoPagado,
           descuento: 0,
@@ -346,7 +359,11 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
             idNotaVenta: nota.id,
             idVarianteProducto: detalle.idVarianteProducto,
             descripcion: `${detalle.variante?.producto?.nombre ?? 'Producto'} (${detalle.variante?.talla}/${detalle.variante?.color})`.slice(0, 255),
+            // Precio pactado al reservar; el costo es el de hoy, cuando la prenda sale del inventario.
+            precioLista: Number(detalle.precioLista),
+            descuentoUnitario: Number(detalle.descuentoUnitario),
             precioUnitario: Number(detalle.precioUnitario),
+            costoUnitario: detalle.variante?.costoPromedio ?? null,
             cantidad: detalle.cantidad,
             subtotal: Number(detalle.subtotal),
           }),
@@ -355,7 +372,13 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
 
       // stock_disponible ya se descontó al reservar: aqui solo sale de lo reservado.
       for (const detalle of [...detalles].sort((a, b) => a.idVarianteProducto - b.idVarianteProducto)) {
-        await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, false);
+        await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, false, {
+          tipo: 'SALIDA_RESERVA',
+          costoUnitario: detalle.variante?.costoPromedio ?? null,
+          referenciaTipo: 'NOTA_VENTA',
+          referenciaId: nota.id,
+          idUsuario: usuario.sub,
+        });
       }
 
       if (movimiento) {
@@ -367,8 +390,8 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
             idReserva: reserva.id,
             monto: saldo,
             concepto: 'SALDO_LIQUIDACION',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           }),
         );
       }
@@ -395,26 +418,30 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') {
         throw new ConflictException(`La reserva ya esta ${reserva.estado.toLowerCase()}`);
       }
-      await this.liberarReserva(manager, reserva, dto.motivo?.trim() || 'Cancelada manualmente');
+      await this.liberarReserva(manager, reserva, dto.motivo?.trim() || 'Cancelada manualmente', usuario.sub);
     });
 
     return this.obtener(id, usuario);
   }
 
-  /** Cancela las reservas cuya fecha limite ya paso y devuelve el stock apartado. Devuelve cuantas cancelo. */
-  async vencerVencidas(): Promise<number> {
-    const ids = await this.reservaRepo.findIdsVencidas(new Date());
+  /**
+   * Cancela las reservas cuya fecha limite ya paso y devuelve el stock apartado. Devuelve cuantas cancelo. Revisa
+   * las de todas las empresas (corre tambien desde el temporizador, sin request), pero cada una se procesa dentro
+   * del contexto de su empresa, asi que las consultas quedan limitadas a ella como en cualquier request.
+   */
+  async vencerVencidas(soloEmpresa?: number): Promise<number> {
+    const vencidas = await this.reservaRepo.findVencidas(relojAhora(), soloEmpresa);
     let canceladas = 0;
-    for (const id of ids) {
-      const cancelada = await this.dataSource.transaction(async (manager) => {
-        const reserva = await manager.getRepository(Reserva).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+    for (const { id, idEmpresa } of vencidas) {
+      const cancelada = await this.tenant.ejecutarParaEmpresa(idEmpresa, () => this.dataSource.transaction(async (manager) => {
+        const reserva = await manager.getRepository(Reserva).findOne({ where: { id, idEmpresa }, lock: { mode: 'pessimistic_write' } });
         // Pudo cambiar (liquidarse/cancelarse) entre la consulta y el bloqueo.
-        if (!reserva || (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') || reserva.fechaLimite >= new Date()) {
+        if (!reserva || (reserva.estado !== 'PENDIENTE' && reserva.estado !== 'PAGADA') || reserva.fechaLimite >= relojAhora()) {
           return false;
         }
-        await this.liberarReserva(manager, reserva, 'Cancelada automaticamente por vencimiento');
+        await this.liberarReserva(manager, reserva, 'Cancelada automaticamente por vencimiento', null);
         return true;
-      });
+      }));
       if (cancelada) canceladas += 1;
     }
     if (canceladas > 0) this.logger.log(`${canceladas} reserva(s) vencida(s) cancelada(s)`);
@@ -429,10 +456,17 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async liberarReserva(manager: EntityManager, reserva: Reserva, motivo: string): Promise<void> {
+  /** `idUsuario` null = la cancelo el sistema (vencimiento). */
+  private async liberarReserva(manager: EntityManager, reserva: Reserva, motivo: string, idUsuario: number | null): Promise<void> {
     const detalles = await manager.getRepository(DetalleReserva).find({ where: { idReserva: reserva.id }, order: { idVarianteProducto: 'ASC' } });
     for (const detalle of detalles) {
-      await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, true);
+      await this.moverStockReservado(manager, reserva.idSucursal, detalle.idVarianteProducto, detalle.cantidad, true, {
+        tipo: 'LIBERACION_RESERVA',
+        referenciaTipo: 'RESERVA',
+        referenciaId: reserva.id,
+        idUsuario,
+        motivo,
+      });
     }
     reserva.estado = 'CANCELADA';
     reserva.observaciones = [reserva.observaciones, `[${motivo}]`].filter(Boolean).join(' ');
@@ -445,7 +479,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
     items: Array<{ idVarianteProducto: number; cantidad: number }>,
   ): Promise<LineaReserva[]> {
     const variantes = await manager.getRepository(VarianteProducto).find({
-      where: { id: In(items.map((item) => item.idVarianteProducto)) },
+      where: { id: In(items.map((item) => item.idVarianteProducto)), idEmpresa: this.tenant.empresaId() },
       relations: { producto: true },
     });
     const activados = await manager.getRepository(ProductoSucursal).find({
@@ -461,13 +495,14 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (!activados.some((activado) => activado.idProducto === variante.idProducto)) {
         throw new ConflictException(`"${variante.producto.nombre}" no se vende en esta sucursal`);
       }
-      const precioUnitario = precioConDescuento(Number(variante.producto.precio), Number(variante.producto.descuentoPorcentaje));
-      return { variante, cantidad: item.cantidad, precioUnitario, subtotal: redondear(precioUnitario * item.cantidad) };
+      const { precioLista, descuentoUnitario, precioUnitario } = calcularPrecioVenta(Number(variante.producto.precio), variante.producto.descuentoPorcentaje);
+      return { variante, cantidad: item.cantidad, precioLista, descuentoUnitario, precioUnitario, subtotal: redondear(precioUnitario * item.cantidad) };
     });
   }
 
-  /** stock_disponible -> stock_reservado, repartido entre los almacenes activos de la sucursal. */
-  private async apartarStock(manager: EntityManager, idSucursal: number, linea: LineaReserva): Promise<void> {
+  /** stock_disponible -> stock_reservado, repartido entre los almacenes activos de la sucursal. Devuelve lo apartado por fila. */
+  private async apartarStock(manager: EntityManager, idSucursal: number, linea: LineaReserva): Promise<Array<{ inventario: Inventario; cantidad: number }>> {
+    const porciones: Array<{ inventario: Inventario; cantidad: number }> = [];
     const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal, activo: true }, select: { id: true } });
     const inventarios = await this.inventariosBloqueados(manager, almacenes, linea.variante.id);
 
@@ -480,6 +515,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       inventario.stockReservado += tomar;
       restante -= tomar;
       await manager.getRepository(Inventario).save(inventario);
+      porciones.push({ inventario, cantidad: tomar });
     }
 
     if (restante > 0) {
@@ -487,15 +523,17 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
         `Stock insuficiente en esta sucursal para ${linea.variante.producto.nombre} (${linea.variante.talla}/${linea.variante.color})`,
       );
     }
+    return porciones;
   }
 
-  /** Reduce stock_reservado; con `devolver` el stock vuelve a stock_disponible (cancelacion). */
+  /** Reduce stock_reservado; con `devolver` el stock vuelve a stock_disponible (cancelacion). Cada porcion va al kardex. */
   private async moverStockReservado(
     manager: EntityManager,
     idSucursal: number,
     idVarianteProducto: number,
     cantidad: number,
     devolver: boolean,
+    kardex: Omit<DatosMovimiento, 'cantidad' | 'deltaReservado'>,
   ): Promise<void> {
     const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal }, select: { id: true } });
     const inventarios = await this.inventariosBloqueados(manager, almacenes, idVarianteProducto);
@@ -509,6 +547,7 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
       if (devolver) inventario.stockDisponible += tomar;
       restante -= tomar;
       await manager.getRepository(Inventario).save(inventario);
+      await registrarMovimiento(manager, inventario, { ...kardex, cantidad: devolver ? tomar : 0, deltaReservado: -tomar });
     }
 
     // Nunca debe pasar (el stock reservado solo lo mueven las reservas), pero no debe bloquear cancelar ni liquidar.
@@ -528,31 +567,38 @@ export class ReservasService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async bloquear(manager: EntityManager, id: number): Promise<Reserva> {
-    const reserva = await manager.getRepository(Reserva).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+    const reserva = await manager.getRepository(Reserva).findOne({ where: { id, idEmpresa: this.tenant.empresaId() }, lock: { mode: 'pessimistic_write' } });
     if (!reserva) throw new NotFoundException('Reserva no encontrada');
     return reserva;
   }
 
   private validarVigente(reserva: Reserva): void {
-    if (reserva.fechaLimite < new Date()) throw new ConflictException('La reserva ya vencio');
+    if (reserva.fechaLimite < relojAhora()) throw new ConflictException('La reserva ya vencio');
   }
 
   private async obtenerCajaAbierta(manager: EntityManager, idSucursal: number): Promise<Caja> {
-    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta' } });
+    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
     if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta');
     return caja;
   }
 
   private async validarPasarelaPresencial(manager: EntityManager, idPasarela: number): Promise<void> {
-    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela } });
+    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela) throw new NotFoundException('Metodo de pago no encontrado');
     if (!pasarela.disponiblePresencial) throw new BadRequestException('El metodo de pago no esta habilitado para caja');
   }
 
-  private registrarIngreso(manager: EntityManager, caja: Caja, concepto: string, monto: number, fechaHora: Date): Promise<MovimientoCaja> {
+  private registrarIngreso(
+    manager: EntityManager,
+    caja: Caja,
+    categoria: 'ANTICIPO_RESERVA' | 'SALDO_RESERVA',
+    concepto: string,
+    monto: number,
+    fechaHora: Date,
+  ): Promise<MovimientoCaja> {
     const repo = manager.getRepository(MovimientoCaja);
     return repo.save(
-      repo.create({ idCaja: caja.id, tipo: 'INGRESO', concepto: concepto.slice(0, 150), monto: monto.toFixed(2), observaciones: null, fechaHora }),
+      repo.create({ idCaja: caja.id, tipo: 'INGRESO', categoria, concepto: concepto.slice(0, 150), monto: monto.toFixed(2), observaciones: null, fechaHora }),
     );
   }
 

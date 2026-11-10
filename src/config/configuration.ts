@@ -19,6 +19,9 @@ export interface AppConfig {
   seed: {
     adminEmail: string;
     adminPassword: string;
+    /** Superadmin de la plataforma (SaaS); vacios = no se crea. */
+    superadminEmail: string;
+    superadminPassword: string;
   };
   payments: {
     encryptionKey: string;
@@ -46,11 +49,44 @@ export interface AppConfig {
     /** Contacto para los servicios push: `mailto:...` o una URL https. */
     subject: string;
   };
+  tenant: {
+    /**
+     * Empresa que se usa cuando un request no trae X-Empresa ni token con empresa.
+     * Mantiene funcionando a los clientes que todavia no mandan el header
+     * (frontend y app movil anteriores al SaaS). Vacio = el header es obligatorio.
+     */
+    slugPorDefecto: string;
+  };
   gemini: {
     /** API key de Google AI Studio (generativelanguage.googleapis.com). Vacio = reportes generativos caen al interprete por regex (CU18). */
     apiKey: string;
     model: string;
   };
+  bi: {
+    /**
+     * Quien atiende al agente del BI: 'vertex' (Vertex AI en Google Cloud), 'api-key' (Google AI Studio, la misma
+     * GEMINI_API_KEY de los reportes) o 'auto' = Vertex si hay proyecto de Google Cloud, si no la API key.
+     */
+    iaProveedor: 'auto' | 'vertex' | 'api-key';
+    /** Modelo del agente. Por defecto el Flash-Lite mas barato que admite llamadas a herramientas. */
+    modelo: string;
+    /** Tope de preguntas al asistente por empresa en 24 horas: limita el gasto en Gemini. */
+    preguntasPorDia: number;
+    /** Proyecto y region de Vertex AI. Las credenciales salen de GOOGLE_APPLICATION_CREDENTIALS (ADC). */
+    vertexProyecto: string;
+    vertexRegion: string;
+    /** Servicio de machine learning (Python) y la clave con que NestJS se identifica ante el. */
+    mlUrl: string;
+    mlClaveInterna: string;
+    /** Carga nocturna del Data Warehouse. */
+    etlProgramado: boolean;
+    etlCron: string;
+  };
+}
+
+function proveedorIa(valor: string | undefined): AppConfig['bi']['iaProveedor'] {
+  const limpio = (valor ?? '').trim().toLowerCase();
+  return limpio === 'vertex' || limpio === 'api-key' ? limpio : 'auto';
 }
 
 export default (): AppConfig => ({
@@ -73,6 +109,8 @@ export default (): AppConfig => ({
   seed: {
     adminEmail: process.env.SEED_ADMIN_EMAIL ?? 'admin@fashionstore.com',
     adminPassword: process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!',
+    superadminEmail: (process.env.SEED_SUPERADMIN_EMAIL ?? '').trim().toLowerCase(),
+    superadminPassword: process.env.SEED_SUPERADMIN_PASSWORD ?? '',
   },
   payments: {
     encryptionKey: process.env.PAGOS_ENCRYPTION_KEY ?? '',
@@ -93,8 +131,22 @@ export default (): AppConfig => ({
     privateKey: process.env.VAPID_PRIVATE_KEY?.trim() ?? '',
     subject: process.env.VAPID_SUBJECT?.trim() ?? 'mailto:soporte@fashionstore.com',
   },
+  tenant: {
+    slugPorDefecto: (process.env.TENANT_SLUG_POR_DEFECTO ?? 'fashionstore').trim().toLowerCase(),
+  },
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
     model: process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite',
+  },
+  bi: {
+    iaProveedor: proveedorIa(process.env.BI_IA_PROVEEDOR),
+    modelo: (process.env.BI_GEMINI_MODEL ?? '').trim() || 'gemini-3.1-flash-lite',
+    preguntasPorDia: Number(process.env.BI_PREGUNTAS_POR_DIA) || 200,
+    vertexProyecto: (process.env.GOOGLE_CLOUD_PROJECT ?? '').trim(),
+    vertexRegion: (process.env.GOOGLE_CLOUD_LOCATION ?? 'us-central1').trim(),
+    mlUrl: (process.env.ML_URL ?? 'http://localhost:8000').replace(/\/+$/, ''),
+    mlClaveInterna: process.env.ML_CLAVE_INTERNA ?? '',
+    etlProgramado: process.env.BI_ETL_PROGRAMADO !== 'false',
+    etlCron: (process.env.BI_ETL_CRON ?? '0 2 * * *').trim(),
   },
 });

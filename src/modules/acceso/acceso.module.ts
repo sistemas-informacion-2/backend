@@ -68,6 +68,6 @@ import { JwtStrategy } from './services/jwt.strategy.js';
     RolPermisoRepository,
     PermisoRepository,
   ],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, AuthService],
 })
 export class AccesoModule {}

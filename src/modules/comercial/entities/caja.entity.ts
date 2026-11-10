@@ -1,12 +1,5 @@
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  ManyToOne,
-  OneToMany,
-  PrimaryGeneratedColumn,
-  type Relation,
-} from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { Empleado } from '../../operaciones/entities/empleado.entity.js';
 import { MovimientoCaja } from './movimiento-caja.entity.js';
@@ -19,10 +12,19 @@ export type EstadoCaja = 'Abierta' | 'Cerrada';
  * `idCajero` (empleado.id_usuario); es nulo cuando la abre un usuario sin legajo
  * de empleado, como el administrador.
  */
+@Index('idx_caja_empresa', ['idEmpresa'])
 @Entity('caja')
 export class Caja {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
 
   @Column({ name: 'id_sucursal', type: 'int' })
   idSucursal: number;

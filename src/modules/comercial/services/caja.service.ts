@@ -1,4 +1,6 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { CATEGORIAS_MANUALES } from '../entities/movimiento-caja.entity.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
@@ -14,6 +16,8 @@ import type { CrearMovimientoCajaDto } from '../dto/crear-movimiento-caja.dto.js
 import type { CajasQueryDto } from '../dto/cajas-query.dto.js';
 import type { CajaResponseDto } from '../dto/caja-response.dto.js';
 import type { MovimientoCajaResponseDto } from '../dto/movimiento-caja-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { horaLocal } from '../../../common/utils/fecha.util.js';
 
 @Injectable()
 export class CajaService {
@@ -22,6 +26,7 @@ export class CajaService {
     private readonly movimientoRepo: MovimientoCajaRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: CajasQueryDto): Promise<CajaResponseDto[]> {
@@ -46,14 +51,14 @@ export class CajaService {
     const abierta = await this.cajaRepo.findAbiertaPorSucursal(dto.idSucursal);
     if (abierta) throw new ConflictException('La sucursal ya tiene una caja abierta');
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const caja = this.cajaRepo.create({
       idSucursal: dto.idSucursal,
       // La caja queda atada al cajero que la abre. El administrador no tiene
       // legajo de empleado, por eso se registra sin cajero.
       idCajero: usuario.tipoUsuario === 'E' ? usuario.sub : null,
       fechaApertura: ahora,
-      horaApertura: formatearHora(ahora),
+      horaApertura: horaLocal(ahora),
       montoInicial: dto.montoInicial.toFixed(2),
       estado: 'Abierta',
     });
@@ -68,11 +73,11 @@ export class CajaService {
     await this.validarAccesoSucursal(usuario, caja.idSucursal);
     if (caja.estado !== 'Abierta') throw new ConflictException('La caja ya esta cerrada');
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const esperado = this.montoEsperado(caja);
     caja.montoFinal = (dto.montoFinal ?? esperado).toFixed(2);
     caja.fechaCierre = ahora;
-    caja.horaCierre = formatearHora(ahora);
+    caja.horaCierre = horaLocal(ahora);
     caja.estado = 'Cerrada';
     await this.cajaRepo.save(caja);
 
@@ -95,14 +100,21 @@ export class CajaService {
     if (!caja) throw new NotFoundException('Caja no encontrada');
     await this.validarAccesoSucursal(usuario, caja.idSucursal);
     if (caja.estado !== 'Abierta') throw new ConflictException('La caja esta cerrada');
+    if (!CATEGORIAS_MANUALES[dto.tipo].includes(dto.categoria)) {
+      throw new BadRequestException(`La categoria ${dto.categoria} no corresponde a un ${dto.tipo === 'INGRESO' ? 'ingreso' : 'egreso'}`);
+    }
+    const esGasto = dto.categoria === 'GASTO_OPERATIVO';
+    if (esGasto && !dto.subcategoriaGasto) throw new BadRequestException('Indica de que es el gasto operativo (alquiler, sueldos, servicios...)');
 
     const movimiento = this.movimientoRepo.create({
       idCaja: id,
       tipo: dto.tipo,
+      categoria: dto.categoria,
+      subcategoriaGasto: esGasto ? (dto.subcategoriaGasto ?? null) : null,
       concepto: dto.concepto.trim(),
       monto: dto.monto.toFixed(2),
       observaciones: dto.observaciones?.trim() || null,
-      fechaHora: new Date(),
+      fechaHora: relojAhora(),
     });
     await this.movimientoRepo.save(movimiento);
 
@@ -110,7 +122,7 @@ export class CajaService {
   }
 
   private async validarSucursal(idSucursal: number): Promise<void> {
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal } });
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
   }
@@ -135,6 +147,3 @@ export class CajaService {
   }
 }
 
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
-}

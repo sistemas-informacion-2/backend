@@ -1,4 +1,5 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { DetalleReserva } from './detalle-reserva.entity.js';
@@ -17,12 +18,21 @@ const TRANSFORMER_DECIMAL = {
  * `fechaLimite`. Al liquidarse se convierte en una nota de venta; al vencer o
  * cancelarse libera el stock reservado.
  */
+@Index('uq_reserva_empresa_codigo', ['idEmpresa', 'codigoReserva'], { unique: true })
 @Entity('reserva')
 export class Reserva {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'codigo_reserva', type: 'varchar', length: 20, unique: true })
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
+
+  @Column({ name: 'codigo_reserva', type: 'varchar', length: 20 })
   codigoReserva: string;
 
   @Column({ name: 'id_cliente', type: 'int' })

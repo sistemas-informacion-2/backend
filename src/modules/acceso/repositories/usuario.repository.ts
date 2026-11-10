@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, type EntityManager, type Repository } from 'typeorm';
+import { Brackets, IsNull, type EntityManager, type Repository } from 'typeorm';
 import { Usuario } from '../entities/usuario.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 const RELACIONES_CON_PERMISOS = {
   rolesUsuario: { rol: { rolesPermiso: { permiso: true } } },
@@ -9,22 +10,36 @@ const RELACIONES_CON_PERMISOS = {
 
 @Injectable()
 export class UsuarioRepository {
-  constructor(@InjectRepository(Usuario) private readonly repo: Repository<Usuario>) {}
+  constructor(
+    @InjectRepository(Usuario) private readonly repo: Repository<Usuario>,
+    private readonly tenant: TenantContext,
+  ) {}
+
+  // Toda busqueda se limita a la empresa actual: el mismo email puede existir en otra tienda.
 
   findByEmailConRoles(email: string): Promise<Usuario | null> {
-    return this.repo.findOne({ where: { email }, relations: RELACIONES_CON_PERMISOS });
+    return this.repo.findOne({ where: { email, idEmpresa: this.tenant.empresaId() }, relations: RELACIONES_CON_PERMISOS });
   }
 
   findByEmail(email: string, manager: EntityManager = this.repo.manager): Promise<Usuario | null> {
-    return manager.getRepository(Usuario).findOne({ where: { email } });
+    return manager.getRepository(Usuario).findOne({ where: { email, idEmpresa: this.tenant.empresaId() } });
+  }
+
+  /** El superadmin no pertenece a ninguna empresa: se busca sin TenantContext. */
+  findSuperadminPorEmail(email: string): Promise<Usuario | null> {
+    return this.repo.findOne({ where: { email, idEmpresa: IsNull(), tipoUsuario: 'S' } });
+  }
+
+  findSuperadminPorId(id: number): Promise<Usuario | null> {
+    return this.repo.findOne({ where: { id, idEmpresa: IsNull(), tipoUsuario: 'S' } });
   }
 
   findByIdConRoles(id: number): Promise<Usuario | null> {
-    return this.repo.findOne({ where: { id }, relations: RELACIONES_CON_PERMISOS });
+    return this.repo.findOne({ where: { id, idEmpresa: this.tenant.empresaId() }, relations: RELACIONES_CON_PERMISOS });
   }
 
   findById(id: number): Promise<Usuario | null> {
-    return this.repo.findOne({ where: { id } });
+    return this.repo.findOne({ where: { id, idEmpresa: this.tenant.empresaId() } });
   }
 
   findByIdConRolesParaGestion(id: number, manager: EntityManager = this.repo.manager): Promise<Usuario | null> {
@@ -34,6 +49,7 @@ export class UsuarioRepository {
       .leftJoinAndSelect('usuario.rolesUsuario', 'rolUsuario')
       .leftJoinAndSelect('rolUsuario.rol', 'rol')
       .where('usuario.id = :id', { id })
+      .andWhere('usuario.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .getOne();
   }
 
@@ -53,7 +69,7 @@ export class UsuarioRepository {
       .createQueryBuilder('usuario')
       .leftJoinAndSelect('usuario.rolesUsuario', 'rolUsuario')
       .leftJoinAndSelect('rolUsuario.rol', 'rol')
-      .where('1 = 1')
+      .where('usuario.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .andWhere(
         new Brackets((where) => {
           where.where('rolUsuario.activo = :rolActivo', { rolActivo: true }).orWhere('rolUsuario.id_usuario IS NULL');

@@ -30,7 +30,7 @@ function crearService(overrides: {
   const sucursalRepo = { findOne: vi.fn(), ...overrides.sucursalRepo };
 
   return {
-    service: new AlmacenesService(almacenRepo as never, sucursalRepo as never),
+    service: new AlmacenesService(almacenRepo as never, sucursalRepo as never, { empresaId: () => 1 } as never),
     almacenRepo,
     sucursalRepo,
   };

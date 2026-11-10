@@ -9,6 +9,8 @@ export function toMovimientoCajaResponseDto(movimiento: MovimientoCaja): Movimie
     id: movimiento.id,
     idCaja: movimiento.idCaja,
     tipo: movimiento.tipo,
+    categoria: movimiento.categoria,
+    subcategoriaGasto: movimiento.subcategoriaGasto,
     concepto: movimiento.concepto,
     monto: Number(movimiento.monto),
     observaciones: movimiento.observaciones,

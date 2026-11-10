@@ -3,6 +3,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { ClienteRepository } from '../repositories/cliente.repository.js';
 import { Usuario } from '../../acceso/entities/usuario.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { toClienteResponse } from '../mappers/cliente.mapper.js';
 import type { CrearClienteDto } from '../dto/crear-cliente.dto.js';
 import type { ActualizarClienteDto } from '../dto/actualizar-cliente.dto.js';
@@ -14,6 +15,7 @@ export class ClientesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly clienteRepo: ClienteRepository,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: ClientesQueryDto): Promise<ClientesPaginatedResponseDto> {
@@ -106,7 +108,7 @@ export class ClientesService {
     idExcluir: number | undefined,
     manager: EntityManager,
   ): Promise<void> {
-    const existente = await manager.getRepository(Usuario).findOne({ where: { email } });
+    const existente = await manager.getRepository(Usuario).findOne({ where: { email, idEmpresa: this.tenant.empresaId() } });
     if (existente && existente.id !== idExcluir) {
       throw new ConflictException('El email ya está registrado');
     }

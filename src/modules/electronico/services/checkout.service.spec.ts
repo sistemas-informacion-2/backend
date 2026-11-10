@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { MovimientoInventario } from '../../inventario/entities/movimiento-inventario.entity.js';
 import { CheckoutService, luhnValido } from './checkout.service.js';
 import { DetalleNotaVenta } from '../../comercial/entities/detalle-nota-venta.entity.js';
 import { NotaVenta } from '../../comercial/entities/nota-venta.entity.js';
@@ -120,8 +121,11 @@ function crearService(escenario: Escenario = {}) {
     }),
   });
 
+  const kardex = { create: vi.fn((datos: unknown) => datos), save: vi.fn(async (datos: unknown) => datos) };
   const manager = {
     getRepository: (entidad: unknown) => {
+      // El kardex se escribe en todos los movimientos de stock; aqui solo se acepta.
+      if (entidad === MovimientoInventario && !repos.has(entidad)) return kardex;
       const repo = repos.get(entidad);
       if (!repo) throw new Error(`Repo no mockeado: ${(entidad as { name: string }).name}`);
       return repo;
@@ -158,7 +162,7 @@ function crearService(escenario: Escenario = {}) {
   const cfg: Record<string, unknown> = { frontendUrl: 'http://localhost:5173', 'payments.simulated': escenario.simulados ?? true, 'jwt.secret': 'secreto-de-prueba' };
   const config = { get: (clave: string) => cfg[clave] };
   const notificaciones = { notificarPorPush: vi.fn() };
-  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never);
+  const service = new CheckoutService(dataSource as never, pasarelaRepo as never, stripe as never, disponibilidad as never, config as never, notificaciones as never, { empresaId: () => 1, empresa: () => ({ id: 1, slug: 'fashionstore' }) } as never);
   return { service, stripe, guardados, orden, consultas, manager, repos, disponibilidad, notificaciones };
 }
 
@@ -283,7 +287,7 @@ describe('CheckoutService', () => {
       await service.pagarTarjeta(cliente, TARJETA);
 
       const consultaStock = consultas.find((c) => c.sql.includes('FOR UPDATE'));
-      expect(consultaStock?.params).toEqual([3, 2]); // idVarianteProducto, idSucursal — nunca ranking entre sucursales.
+      expect(consultaStock?.params).toEqual([3, 2, 1]); // idVarianteProducto, idSucursal, idEmpresa — nunca ranking entre sucursales.
       expect(consultas.filter((c) => c.sql.startsWith('UPDATE')).map((c) => c.params)).toEqual([[1, 90], [1, 91]]);
       expect(guardados.notas[0]).toMatchObject({ idSucursal: 2 });
     });
@@ -365,8 +369,8 @@ describe('CheckoutService', () => {
         expect.objectContaining({
           montoBob: 200,
           referencia: expect.stringMatching(/^C7-\d+$/),
-          urlRetorno: 'http://localhost:5173/checkout/stripe/retorno',
-          urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado',
+          urlRetorno: 'http://localhost:5173/t/fashionstore/checkout/stripe/retorno',
+          urlCancelado: 'http://localhost:5173/t/fashionstore/checkout/stripe/cancelado',
         }),
       );
     });
@@ -474,8 +478,8 @@ describe('CheckoutService', () => {
         expect.objectContaining({
           montoBob: 40,
           referencia: expect.stringMatching(/^R7-9-\d+$/),
-          urlRetorno: 'http://localhost:5173/checkout/stripe/retorno?reserva=9',
-          urlCancelado: 'http://localhost:5173/checkout/stripe/cancelado?reserva=9',
+          urlRetorno: 'http://localhost:5173/t/fashionstore/checkout/stripe/retorno?reserva=9',
+          urlCancelado: 'http://localhost:5173/t/fashionstore/checkout/stripe/cancelado?reserva=9',
         }),
       );
     });

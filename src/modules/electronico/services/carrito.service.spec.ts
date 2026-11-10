@@ -58,7 +58,7 @@ function crearService(
   };
 
   return {
-    service: new CarritoService(carritoRepo as never, disponibilidad as never, varianteRepo as never, sucursalRepo as never),
+    service: new CarritoService(carritoRepo as never, disponibilidad as never, varianteRepo as never, sucursalRepo as never, { empresaId: () => 1 } as never),
     carritoRepo,
     disponibilidad,
     sucursalRepo,

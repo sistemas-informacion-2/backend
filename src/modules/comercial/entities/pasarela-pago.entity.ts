@@ -1,4 +1,5 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 
 export type IntegracionPago = 'NINGUNA' | 'API';
 
@@ -8,12 +9,21 @@ export type IntegracionPago = 'NINGUNA' | 'API';
  * `disponibleLinea` (e-commerce, CU12/CU13). `codigo` es la clave estable que
  * usa la logica del sistema; `metodo` es el nombre visible editable.
  */
+@Index('uq_pasarela_empresa_codigo', ['idEmpresa', 'codigo'], { unique: true })
 @Entity('pasarela_de_pago')
 export class PasarelaPago {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'varchar', length: 30, unique: true })
+  /** Cada empresa configura sus propios metodos de pago (y sus credenciales). */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
+
+  @Column({ type: 'varchar', length: 30 })
   codigo: string;
 
   @Column({ type: 'varchar', length: 50 })

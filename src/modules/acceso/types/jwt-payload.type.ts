@@ -5,6 +5,8 @@ export interface JwtPayload {
   tipoUsuario: TipoUsuario;
   permisos: string[];
   sucursalId?: number;
+  /** Empresa del usuario; null para el superadmin de la plataforma. Ausente en tokens emitidos antes del SaaS. */
+  empresaId?: number | null;
   jti: string;
 }
 

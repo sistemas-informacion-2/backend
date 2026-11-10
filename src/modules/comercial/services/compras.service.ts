@@ -1,12 +1,16 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, type Repository } from 'typeorm';
+import { DataSource, In, type EntityManager, type Repository } from 'typeorm';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { Proveedor } from '../../inventario/entities/proveedor.entity.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
+import { registrarCostoDeEntrada } from '../../inventario/utils/costo.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { EmpleadoSucursal } from '../../operaciones/entities/empleado-sucursal.entity.js';
 import { Caja } from '../entities/caja.entity.js';
@@ -18,6 +22,7 @@ import { toCompraResponseDto } from '../mappers/compra.mapper.js';
 import type { CrearCompraDto, CrearDetalleCompraDto } from '../dto/crear-compra.dto.js';
 import type { ComprasQueryDto } from '../dto/compras-query.dto.js';
 import type { CompraResponseDto, ComprasPaginatedResponseDto } from '../dto/compra-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 /** Valores por defecto de INVENTARIO cuando la compra abre el registro de una variante en un almacen. */
 const STOCK_MINIMO_INICIAL = 5;
@@ -38,6 +43,7 @@ export class ComprasService {
     @InjectRepository(Almacen) private readonly almacenRepo: Repository<Almacen>,
     @InjectRepository(VarianteProducto) private readonly varianteRepo: Repository<VarianteProducto>,
     @InjectRepository(ProductoSucursal) private readonly productoSucursalRepo: Repository<ProductoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: ComprasQueryDto, usuario: ActiveUser): Promise<ComprasPaginatedResponseDto> {
@@ -65,11 +71,11 @@ export class ComprasService {
   }
 
   async registrar(dto: CrearCompraDto, usuario: ActiveUser): Promise<CompraResponseDto> {
-    const proveedor = await this.proveedorRepo.findOne({ where: { id: dto.idProveedor } });
+    const proveedor = await this.proveedorRepo.findOne({ where: { id: dto.idProveedor, idEmpresa: this.tenant.empresaId() } });
     if (!proveedor) throw new NotFoundException('Proveedor no encontrado');
     if (!proveedor.activo) throw new ConflictException('El proveedor esta inactivo');
 
-    const sucursal = await this.sucursalRepo.findOne({ where: { id: dto.idSucursal } });
+    const sucursal = await this.sucursalRepo.findOne({ where: { id: dto.idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
     await this.validarAccesoSucursal(usuario, dto.idSucursal);
@@ -91,7 +97,7 @@ export class ComprasService {
           idSucursal: dto.idSucursal,
           idMovimientoCaja: null,
           nroFactura,
-          fechaEmision: new Date(),
+          fechaEmision: relojAhora(),
           fechaEntregaProgramada: dto.fechaEntregaProgramada ?? null,
           fechaPago: null,
           subtotal: total.toFixed(2),
@@ -114,24 +120,27 @@ export class ComprasService {
         ),
       );
 
-      await this.incrementarStock(manager.getRepository(Inventario), dto.detalles);
+      // El costo se pondera contra el stock de ANTES de esta compra: primero el costo, despues las unidades.
+      await this.registrarCostos(manager, dto.detalles);
+      await this.incrementarStock(manager, dto.detalles, compra.id, usuario.sub);
 
       if (dto.pagarEnCaja) {
-        const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal: dto.idSucursal, estado: 'Abierta' } });
+        const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal: dto.idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
         if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta para registrar el egreso');
 
         const movimiento = await manager.getRepository(MovimientoCaja).save(
           manager.getRepository(MovimientoCaja).create({
             idCaja: caja.id,
             tipo: 'EGRESO',
+            categoria: 'COMPRA',
             concepto: `Compra ${nroFactura ?? `#${compra.id}`} - ${proveedor.empresa}`.slice(0, 150),
             monto: total.toFixed(2),
             observaciones: null,
-            fechaHora: new Date(),
+            fechaHora: relojAhora(),
           }),
         );
         compra.idMovimientoCaja = movimiento.id;
-        compra.fechaPago = new Date().toISOString().slice(0, 10);
+        compra.fechaPago = fechaLocal();
         await manager.getRepository(NotaCompra).save(compra);
       }
 
@@ -147,7 +156,7 @@ export class ComprasService {
    */
   private async validarDetalles(idSucursal: number, detalles: CrearDetalleCompraDto[]): Promise<void> {
     const idsAlmacen = [...new Set(detalles.map((linea) => linea.idAlmacen))];
-    const almacenes = await this.almacenRepo.find({ where: { id: In(idsAlmacen) } });
+    const almacenes = await this.almacenRepo.find({ where: { id: In(idsAlmacen), idEmpresa: this.tenant.empresaId() } });
     for (const idAlmacen of idsAlmacen) {
       const almacen = almacenes.find((candidato) => candidato.id === idAlmacen);
       if (!almacen) throw new NotFoundException(`Almacen ${idAlmacen} no encontrado`);
@@ -158,7 +167,7 @@ export class ComprasService {
     }
 
     const idsVariante = [...new Set(detalles.map((linea) => linea.idVarianteProducto))];
-    const variantes = await this.varianteRepo.find({ where: { id: In(idsVariante) } });
+    const variantes = await this.varianteRepo.find({ where: { id: In(idsVariante), idEmpresa: this.tenant.empresaId() } });
     for (const idVariante of idsVariante) {
       const variante = variantes.find((candidata) => candidata.id === idVariante);
       if (!variante) throw new NotFoundException(`Variante ${idVariante} no encontrada`);
@@ -178,8 +187,27 @@ export class ComprasService {
     }
   }
 
-  /** Suma la cantidad comprada al stock del almacen; si la variante aun no tenia registro, lo abre. */
-  private async incrementarStock(inventarioRepo: Repository<Inventario>, detalles: CrearDetalleCompraDto[]): Promise<void> {
+  /**
+   * Actualiza el costo promedio de cada variante comprada. Las lineas de una misma variante (p. ej. a dos almacenes)
+   * se juntan en una sola entrada al precio ponderado, y las variantes se recorren por id para que dos compras
+   * simultaneas las bloqueen en el mismo orden.
+   */
+  private async registrarCostos(manager: EntityManager, detalles: CrearDetalleCompraDto[]): Promise<void> {
+    const porVariante = new Map<number, { cantidad: number; importe: number }>();
+    for (const linea of detalles) {
+      const acumulado = porVariante.get(linea.idVarianteProducto) ?? { cantidad: 0, importe: 0 };
+      acumulado.cantidad += linea.cantidad;
+      acumulado.importe += linea.cantidad * linea.precioUnitario;
+      porVariante.set(linea.idVarianteProducto, acumulado);
+    }
+    for (const [idVariante, { cantidad, importe }] of [...porVariante].sort(([a], [b]) => a - b)) {
+      await registrarCostoDeEntrada(manager, idVariante, cantidad, importe / cantidad);
+    }
+  }
+
+  /** Suma la cantidad comprada al stock del almacen (y al kardex); si la variante aun no tenia registro, lo abre. */
+  private async incrementarStock(manager: EntityManager, detalles: CrearDetalleCompraDto[], idCompra: number, idUsuario: number): Promise<void> {
+    const inventarioRepo = manager.getRepository(Inventario);
     // Orden fijo para que dos compras concurrentes bloqueen las filas en el mismo orden y no se interbloqueen.
     const lineas = [...detalles].sort((a, b) => a.idAlmacen - b.idAlmacen || a.idVarianteProducto - b.idVarianteProducto);
 
@@ -189,11 +217,12 @@ export class ComprasService {
         lock: { mode: 'pessimistic_write' },
       });
 
+      let fila: Inventario;
       if (existente) {
         existente.stockDisponible += linea.cantidad;
-        await inventarioRepo.save(existente);
+        fila = await inventarioRepo.save(existente);
       } else {
-        await inventarioRepo.save(
+        fila = await inventarioRepo.save(
           inventarioRepo.create({
             idAlmacen: linea.idAlmacen,
             idVarianteProducto: linea.idVarianteProducto,
@@ -204,6 +233,14 @@ export class ComprasService {
           }),
         );
       }
+      await registrarMovimiento(manager, fila, {
+        tipo: 'ENTRADA_COMPRA',
+        cantidad: linea.cantidad,
+        costoUnitario: linea.precioUnitario,
+        referenciaTipo: 'NOTA_COMPRA',
+        referenciaId: idCompra,
+        idUsuario,
+      });
     }
   }
 

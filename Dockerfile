@@ -35,11 +35,12 @@ RUN npm run build && npm prune --omit=dev
 ##
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=3000 TZ=America/La_Paz
 
 # tini se encarga de ser PID 1. Sin el, Node ignora SIGTERM en esa
 # posicion y "docker compose down" tarda diez segundos en matarlo.
-RUN apk add --no-cache tini
+# tzdata: la base de zonas horarias del sistema, para que TZ=America/La_Paz funcione en Alpine.
+RUN apk add --no-cache tini tzdata
 
 # --chown evita que los archivos queden en manos de root mientras el
 # proceso corre como node, usuario sin privilegios que ya trae la imagen.

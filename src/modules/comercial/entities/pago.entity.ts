@@ -1,4 +1,5 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { PasarelaPago } from './pasarela-pago.entity.js';
 import { MovimientoCaja } from './movimiento-caja.entity.js';
 import { NotaVenta } from './nota-venta.entity.js';
@@ -16,10 +17,19 @@ const TRANSFORMER_DECIMAL = {
  * Registro de un pago (CU12). Todo pago pasa por un `movimiento_caja` de la caja
  * abierta y puede referenciar una nota de venta y/o una reserva.
  */
+@Index('idx_pago_empresa', ['idEmpresa'])
 @Entity('pago')
 export class Pago {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
 
   /** Nulo en pagos en linea, que no pasan por una caja fisica. */
   @Column({ name: 'id_movimiento_caja', type: 'int', nullable: true })

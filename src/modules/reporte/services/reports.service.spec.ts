@@ -1,10 +1,10 @@
 import { GeminiReporteService } from './gemini-reporte.service.js';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { ReportBuilderService } from './report-builder.service.js';
 import { ReporteNlpService } from './reporte-nlp.service.js';
 import { ReportsService } from './reports.service.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
 import type { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
-import { fechaLocal } from '../utils/fecha.util.js';
 
 function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: unknown; plantillaRepo?: unknown } = {}) {
   const builder = {

@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { EmpleadoRepository } from '../repositories/empleado.repository.js';
 import { AsignacionSucursalRepository } from '../repositories/asignacion-sucursal.repository.js';
 import { Usuario } from '../../acceso/entities/usuario.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { Sucursal } from '../entities/sucursal.entity.js';
 import { toEmpleadoResponse } from '../mappers/empleado.mapper.js';
 import type { CrearEmpleadoDto } from '../dto/crear-empleado.dto.js';
@@ -20,6 +21,7 @@ export class EmpleadosService {
     private readonly empleadoRepo: EmpleadoRepository,
     private readonly asignacionSucursalRepo: AsignacionSucursalRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: EmpleadosQueryDto): Promise<EmpleadosPaginatedResponseDto> {
@@ -131,7 +133,7 @@ export class EmpleadosService {
     idExcluir: number | undefined,
     manager: EntityManager,
   ): Promise<void> {
-    const existente = await manager.getRepository(Usuario).findOne({ where: { email } });
+    const existente = await manager.getRepository(Usuario).findOne({ where: { email, idEmpresa: this.tenant.empresaId() } });
     if (existente && existente.id !== idExcluir) {
       throw new ConflictException('El email ya está registrado');
     }
@@ -139,7 +141,7 @@ export class EmpleadosService {
 
   private async validarSucursales(idsSucursal: number[], manager?: EntityManager): Promise<void> {
     if (idsSucursal.length === 0) return;
-    const sucursales = await (manager ?? this.sucursalRepo.manager).getRepository(Sucursal).find({ where: { id: In(idsSucursal) } });
+    const sucursales = await (manager ?? this.sucursalRepo.manager).getRepository(Sucursal).find({ where: { id: In(idsSucursal), idEmpresa: this.tenant.empresaId() } });
     if (sucursales.length !== new Set(idsSucursal).size) {
       throw new BadRequestException('Una o más sucursales indicadas no existen');
     }

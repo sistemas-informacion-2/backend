@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
 import { NotaVenta, type TipoNotaVenta } from '../entities/nota-venta.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 interface FiltrosVentas {
   page: number;
@@ -22,11 +23,15 @@ interface FiltrosVentas {
 
 @Injectable()
 export class NotaVentaRepository {
-  constructor(@InjectRepository(NotaVenta) private readonly repo: Repository<NotaVenta>) {}
+  constructor(
+    @InjectRepository(NotaVenta) private readonly repo: Repository<NotaVenta>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async findPage(query: FiltrosVentas): Promise<{ items: NotaVenta[]; total: number }> {
     const builder = this.repo
       .createQueryBuilder('venta')
+      .where('venta.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .leftJoinAndSelect('venta.cliente', 'cliente')
       .leftJoinAndSelect('cliente.usuario', 'clienteUsuario')
       .leftJoinAndSelect('venta.cajero', 'cajero')
@@ -77,11 +82,8 @@ export class NotaVentaRepository {
       .leftJoinAndSelect('venta.pagos', 'pago')
       .leftJoinAndSelect('pago.pasarela', 'pasarela')
       .where('venta.id = :id', { id })
+      .andWhere('venta.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .getOne();
-  }
-
-  count(manager: EntityManager = this.repo.manager): Promise<number> {
-    return manager.getRepository(NotaVenta).count();
   }
 
   create(datos: Partial<NotaVenta>, manager: EntityManager = this.repo.manager): NotaVenta {

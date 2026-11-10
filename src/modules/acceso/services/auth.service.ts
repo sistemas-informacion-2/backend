@@ -36,8 +36,31 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, ipOrigen: string | null, userAgent: string | null): Promise<AuthResponseDto> {
-    const usuario = await this.usuarioRepo.findByEmailConRoles(dto.email);
+    const usuario = await this.verificarCredenciales(await this.usuarioRepo.findByEmailConRoles(dto.email), dto.password);
 
+    const permisos = extraerPermisos(usuario);
+    const sucursalId = await this.obtenerSucursalActiva(usuario);
+
+    return this.emitirTokens(usuario, permisos, sucursalId, ipOrigen, userAgent);
+  }
+
+  /** Login del superadmin de la plataforma (SaaS): sin empresa, sin roles y solo para las rutas /plataforma. */
+  async loginPlataforma(dto: LoginDto, ipOrigen: string | null, userAgent: string | null): Promise<AuthResponseDto> {
+    const usuario = await this.verificarCredenciales(
+      await this.usuarioRepo.findSuperadminPorEmail(dto.email.trim().toLowerCase()),
+      dto.password,
+    );
+    return this.emitirTokens(usuario, [], undefined, ipOrigen, userAgent);
+  }
+
+  async mePlataforma(activeUser: ActiveUser): Promise<PerfilDto> {
+    const usuario = await this.usuarioRepo.findSuperadminPorId(activeUser.sub);
+    if (!usuario) throw new UnauthorizedException('Usuario no encontrado');
+    return this.construirPerfil(usuario, [], undefined);
+  }
+
+  /** Comprueba cuenta y contrasena; cuenta los intentos fallidos y bloquea la cuenta al llegar al maximo. */
+  private async verificarCredenciales(usuario: Usuario | null, password: string): Promise<Usuario> {
     if (!usuario || !usuario.activo) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
@@ -48,7 +71,7 @@ export class AuthService {
       throw new ForbiddenException('Cuenta suspendida');
     }
 
-    const passwordValida = await bcrypt.compare(dto.password, usuario.passwordHash);
+    const passwordValida = await bcrypt.compare(password, usuario.passwordHash);
     if (!passwordValida) {
       usuario.intentosFallidos += 1;
       if (usuario.intentosFallidos >= MAX_INTENTOS_FALLIDOS) {
@@ -62,11 +85,7 @@ export class AuthService {
 
     usuario.intentosFallidos = 0;
     await this.usuarioRepo.save(usuario);
-
-    const permisos = extraerPermisos(usuario);
-    const sucursalId = await this.obtenerSucursalActiva(usuario);
-
-    return this.emitirTokens(usuario, permisos, sucursalId, ipOrigen, userAgent);
+    return usuario;
   }
 
   /** Crea la cuenta de un cliente y lo deja con la sesion iniciada, para que siga con su compra sin volver a entrar. */
@@ -107,14 +126,18 @@ export class AuthService {
       throw new UnauthorizedException('Sesión no encontrada o ya cerrada');
     }
 
-    const usuario = await this.usuarioRepo.findByIdConRoles(payload.sub);
+    // El superadmin no tiene empresa: su refresh no depende del X-Empresa del request.
+    const usuario =
+      payload.tipoUsuario === 'S'
+        ? await this.usuarioRepo.findSuperadminPorId(payload.sub)
+        : await this.usuarioRepo.findByIdConRoles(payload.sub);
     if (!usuario || !usuario.activo || usuario.estadoAcceso !== 'HABILITADO') {
       throw new UnauthorizedException('Usuario ya no tiene acceso');
     }
 
     await this.sesionRepo.cerrar(sesionEncontrada);
 
-    const permisos = extraerPermisos(usuario);
+    const permisos = usuario.tipoUsuario === 'S' ? [] : extraerPermisos(usuario);
     const sucursalId = await this.obtenerSucursalActiva(usuario);
 
     return this.emitirTokens(usuario, permisos, sucursalId, sesionEncontrada.ipOrigen, sesionEncontrada.userAgent);
@@ -166,6 +189,7 @@ export class AuthService {
       tipoUsuario: usuario.tipoUsuario,
       permisos,
       sucursalId,
+      empresaId: usuario.idEmpresa,
       jti: randomUUID(),
     };
 

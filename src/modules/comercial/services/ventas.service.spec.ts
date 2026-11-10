@@ -107,7 +107,6 @@ function crearService(config: {
   const notaVentaRepo = {
     findPage: vi.fn(),
     findByIdConDetalle: vi.fn().mockResolvedValue(config.ventaDetalle === undefined ? ventaBase() : config.ventaDetalle),
-    count: vi.fn().mockResolvedValue(0),
     create: vi.fn((datos) => ({ ...datos, id: 99 })),
     save: vi.fn((x) => Promise.resolve(x)),
   };
@@ -126,6 +125,7 @@ function crearService(config: {
       notaVentaRepo as never,
       pagoRepo as never,
       movimientoCajaRepo as never,
+      { empresaId: () => 1 } as never,
     ),
     dataSource,
     notaVentaRepo,
@@ -208,6 +208,30 @@ describe('VentasService', () => {
     expect(dataSource.transaction).toHaveBeenCalled();
   });
 
+  it('cobra el precio con el descuento del producto y guarda lista, descuento y costo de cada linea', async () => {
+    const { service, repoDe } = crearService({
+      variante: {
+        id: 7, idProducto: 1, activo: true, sku: 'SKU-1', talla: 'M', color: 'Rojo', costoPromedio: 31.5,
+        producto: { nombre: 'Camisa', precio: 50, descuentoPorcentaje: 10, activo: true },
+      },
+    });
+
+    await service.crear(dtoBase, usuarioEmpleado);
+
+    // Antes el mostrador cobraba 50 ignorando el descuento que la tienda en linea si aplicaba.
+    expect(repoDe(DetalleNotaVenta).create).toHaveBeenCalledWith(
+      expect.objectContaining({ precioLista: 50, descuentoUnitario: 5, precioUnitario: 45, costoUnitario: 31.5, subtotal: 90 }),
+    );
+  });
+
+  it('una variante sin costo conocido deja el costo de la linea vacio', async () => {
+    const { service, repoDe } = crearService();
+
+    await service.crear(dtoBase, usuarioEmpleado);
+
+    expect(repoDe(DetalleNotaVenta).create).toHaveBeenCalledWith(expect.objectContaining({ precioLista: 50, precioUnitario: 50, costoUnitario: null }));
+  });
+
   it('rechaza la venta si el stock es insuficiente', async () => {
     const { service } = crearService({ inventarios: [{ id: 3, idAlmacen: 2, idVarianteProducto: 7, stockDisponible: 1 }] });
 
@@ -236,14 +260,15 @@ describe('VentasService', () => {
       expect.objectContaining({ idCaja: 10, tipo: 'INGRESO', monto: '100.00' }),
       expect.anything(),
     );
+    // El codigo definitivo sale del id de la nota (99), como en la venta en linea y la liquidacion de reservas.
+    const notaGuardada = notaVentaRepo.save.mock.calls.at(-1)?.[0] as { codigoNota: string };
+    expect(notaGuardada.codigoNota).toBe('NV-000099');
+    const movimientoGuardado = movimientoCajaRepo.save.mock.calls.at(-1)?.[0] as { concepto: string };
+    expect(movimientoGuardado.concepto).toBe('Venta presencial NV-000099');
     expect(pagoRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ idNotaVenta: 99, monto: 100, concepto: 'PAGO_TOTAL' }),
       expect.anything(),
     );
-    const ventaGuardada = notaVentaRepo.save.mock.calls.at(-1)?.[0] as { codigoNota: string };
-    expect(ventaGuardada.codigoNota).toBe('NV-000099');
-    const movimientoGuardado = movimientoCajaRepo.save.mock.calls.at(-1)?.[0] as { concepto: string };
-    expect(movimientoGuardado.concepto).toBe('Venta presencial NV-000099');
     const inventarioGuardado = repoDe(Inventario).save.mock.calls[0][0] as { stockDisponible: number };
     expect(inventarioGuardado.stockDisponible).toBe(8);
     expect(response.id).toBe(99);
@@ -301,7 +326,8 @@ describe('VentasService', () => {
       const creado = repoDe(Usuario).save.mock.calls[0][0] as Record<string, unknown>;
       expect(creado).toMatchObject({ email: EMAIL_CONSUMIDOR_FINAL, tipoUsuario: 'C', activo: false, estadoAcceso: 'SUSPENDIDO' });
       expect(String(creado.passwordHash)).toMatch(/^\$2[aby]\$/);
-      expect(repoDe(Cliente).save).toHaveBeenCalledWith(expect.objectContaining({ idUsuario: 50 }));
+      // Marcado para que los analisis de clientes lo excluyan.
+      expect(repoDe(Cliente).save).toHaveBeenCalledWith(expect.objectContaining({ idUsuario: 50, esConsumidorFinal: true }));
       expect(notaVentaRepo.create).toHaveBeenCalledWith(expect.objectContaining({ idCliente: 50 }), expect.anything());
     });
 

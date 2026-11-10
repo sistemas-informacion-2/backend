@@ -1,4 +1,6 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -6,7 +8,7 @@ import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import type { AppConfig } from '../../../config/configuration.js';
 import { DisponibilidadService } from '../../inventario/services/disponibilidad.service.js';
-import { precioConDescuento } from '../../inventario/utils/precio.util.js';
+import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
 import { DetalleNotaVenta } from '../../comercial/entities/detalle-nota-venta.entity.js';
 import { NotaVenta } from '../../comercial/entities/nota-venta.entity.js';
 import { Pago } from '../../comercial/entities/pago.entity.js';
@@ -25,6 +27,8 @@ import type {
   MetodoPagoOnlineDto,
   PagoTarjetaDto,
 } from '../dto/checkout.dto.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 
 const METODOS_SOPORTADOS: CodigoMetodoOnline[] = ['QR', 'STRIPE', 'TARJETA'];
 const VIGENCIA_QR_MS = 15 * 60 * 1000;
@@ -33,17 +37,6 @@ const TARJETA_RECHAZADA = '4000000000000002';
 
 function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
-}
-
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
 }
 
 function esViolacionUnica(error: unknown): boolean {
@@ -70,8 +63,17 @@ interface LineaCompra {
   idVarianteProducto: number;
   descripcion: string;
   cantidad: number;
+  precioLista: number;
+  descuentoUnitario: number;
   precioUnitario: number;
+  costoUnitario: number | null;
   subtotal: number;
+}
+
+/** Unidades descontadas de una fila de inventario, con su stock ya actualizado (para el kardex). */
+interface PorcionDescontada {
+  cantidad: number;
+  fila: { idAlmacen: number; idVarianteProducto: number; stockDisponible: number; stockReservado: number };
 }
 
 interface ResumenCarrito {
@@ -123,12 +125,13 @@ export class CheckoutService {
     private readonly disponibilidad: DisponibilidadService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly notificaciones: NotificacionesService,
+    private readonly tenant: TenantContext,
   ) {}
 
   /** Metodos habilitados para pagar en linea (CU17) que este servidor sabe procesar. */
   async metodos(usuario: ActiveUser): Promise<MetodoPagoOnlineDto[]> {
     this.idCliente(usuario);
-    const pasarelas = await this.pasarelaRepo.find({ where: { disponibleLinea: true }, order: { id: 'ASC' } });
+    const pasarelas = await this.pasarelaRepo.find({ where: { disponibleLinea: true, idEmpresa: this.tenant.empresaId() }, order: { id: 'ASC' } });
     return pasarelas
       .filter((pasarela) => this.esOfrecible(pasarela))
       .map((pasarela) => ({
@@ -145,7 +148,8 @@ export class CheckoutService {
     await this.pasarelaOnline('STRIPE');
     const { monto, descripcion } = await this.montoAPagar(idCliente, idReserva);
 
-    const frontend = this.config.get('frontendUrl', { infer: true });
+    // Stripe devuelve al cliente a su tienda (/t/:slug): el frontend usa ese prefijo como base de sus rutas.
+    const frontend = `${this.config.get('frontendUrl', { infer: true })}/t/${this.tenant.empresa()?.slug ?? ''}`;
     const sufijo = idReserva === undefined ? '' : `?reserva=${idReserva}`;
     const sesion = await this.stripe.crearSesion({
       referencia: idReserva === undefined ? `C${idCliente}-${Date.now()}` : `${this.prefijoReserva(idCliente, idReserva)}${Date.now()}`,
@@ -295,12 +299,12 @@ export class CheckoutService {
     opciones: OpcionesFinalizar,
   ): Promise<CompraOnlineResponseDto> {
     // Se bloquea la reserva: una cancelacion o el vencimiento simultaneos no pueden cruzarse con este cobro.
-    const reserva = await manager.getRepository(Reserva).findOne({ where: { id: idReserva }, lock: { mode: 'pessimistic_write' } });
+    const reserva = await manager.getRepository(Reserva).findOne({ where: { id: idReserva, idEmpresa: this.tenant.empresaId() }, lock: { mode: 'pessimistic_write' } });
     this.validarReservaPagable(reserva, idCliente);
     const monto = Number(reserva.montoAnticipo);
     opciones.validar?.(monto);
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const pagoRepo = manager.getRepository(Pago);
     await pagoRepo.save(
       pagoRepo.create({
@@ -311,8 +315,8 @@ export class CheckoutService {
         monto,
         concepto: 'ANTICIPO_RESERVA',
         referenciaExterna: referencia,
-        fechaPago: formatearFecha(ahora),
-        horaPago: formatearHora(ahora),
+        fechaPago: fechaLocal(ahora),
+        horaPago: horaLocal(ahora),
       }),
     );
 
@@ -356,11 +360,13 @@ export class CheckoutService {
     // El stock sale unicamente de la sucursal que el cliente tenia elegida en el catalogo al armar
     // el carrito: nunca de otra, aunque esa otra tenga mas unidades (por eso ya no se reparte ni se
     // "adivina" la sucursal mas conveniente — se evita despachar desde una ciudad que el cliente ni vio).
+    // Las salidas van al kardex cuando la nota ya tiene id (mas abajo), en esta misma transaccion.
+    const salidas: Array<{ linea: LineaCompra; porciones: PorcionDescontada[] }> = [];
     for (const linea of resumen.lineas) {
-      await this.descontarStock(manager, linea, resumen.idSucursal);
+      salidas.push({ linea, porciones: await this.descontarStock(manager, linea, resumen.idSucursal) });
     }
 
-    const ahora = new Date();
+    const ahora = relojAhora();
     const notaRepo = manager.getRepository(NotaVenta);
     const nota = await notaRepo.save(
       notaRepo.create({
@@ -377,8 +383,8 @@ export class CheckoutService {
         tipoVenta: 'E_COMMERCE',
         nroFactura: null,
         nitRazonSocial: null,
-        fechaEmision: formatearFecha(ahora),
-        horaEmision: formatearHora(ahora),
+        fechaEmision: fechaLocal(ahora),
+        horaEmision: horaLocal(ahora),
         subtotal: resumen.total,
         montoAnticipoAplicado: 0,
         descuento: 0,
@@ -397,12 +403,28 @@ export class CheckoutService {
           idNotaVenta: nota.id,
           idVarianteProducto: linea.idVarianteProducto,
           descripcion: linea.descripcion,
+          precioLista: linea.precioLista,
+          descuentoUnitario: linea.descuentoUnitario,
           precioUnitario: linea.precioUnitario,
+          costoUnitario: linea.costoUnitario,
           cantidad: linea.cantidad,
           subtotal: linea.subtotal,
         }),
       ),
     );
+
+    for (const { linea, porciones } of salidas) {
+      for (const { fila, cantidad } of porciones) {
+        await registrarMovimiento(manager, fila, {
+          tipo: 'SALIDA_VENTA',
+          cantidad: -cantidad,
+          costoUnitario: linea.costoUnitario,
+          referenciaTipo: 'NOTA_VENTA',
+          referenciaId: nota.id,
+          idUsuario: idCliente,
+        });
+      }
+    }
 
     // El indice unico de referencia_externa frena aqui un segundo intento del mismo cobro (doble clic, recarga).
     const pagoRepo = manager.getRepository(Pago);
@@ -415,8 +437,8 @@ export class CheckoutService {
         monto: resumen.total,
         concepto: 'PAGO_TOTAL',
         referenciaExterna: referencia,
-        fechaPago: formatearFecha(ahora),
-        horaPago: formatearHora(ahora),
+        fechaPago: fechaLocal(ahora),
+        horaPago: horaLocal(ahora),
       }),
     );
 
@@ -452,7 +474,7 @@ export class CheckoutService {
   /** Lo que se cobrara ahora: el total del carrito (con aviso de stock) o el anticipo de la reserva. */
   private async montoAPagar(idCliente: number, idReserva?: number): Promise<{ monto: number; descripcion: string }> {
     if (idReserva !== undefined) {
-      const reserva = await this.dataSource.getRepository(Reserva).findOne({ where: { id: idReserva } });
+      const reserva = await this.dataSource.getRepository(Reserva).findOne({ where: { id: idReserva, idEmpresa: this.tenant.empresaId() } });
       this.validarReservaPagable(reserva, idCliente);
       return { monto: Number(reserva.montoAnticipo), descripcion: `Anticipo de la reserva ${reserva.codigoReserva} en FashionStore` };
     }
@@ -469,7 +491,7 @@ export class CheckoutService {
     if (!reserva || reserva.idCliente !== idCliente) throw new NotFoundException('Reserva no encontrada');
     if (reserva.estado === 'PAGADA') throw new ConflictException('El anticipo de esta reserva ya esta pagado');
     if (reserva.estado !== 'PENDIENTE') throw new ConflictException(`La reserva esta ${reserva.estado.toLowerCase()}; no admite pagos`);
-    if (reserva.fechaLimite.getTime() < Date.now()) throw new ConflictException('La reserva ya vencio; haz una nueva');
+    if (reserva.fechaLimite.getTime() < relojAhora().getTime()) throw new ConflictException('La reserva ya vencio; haz una nueva');
     if (Number(reserva.montoAnticipo) <= 0) throw new ConflictException('Esta reserva no tiene anticipo por pagar');
   }
 
@@ -482,9 +504,9 @@ export class CheckoutService {
    * pero nunca de otra sucursal): la que el cliente eligió en el catálogo. Si
    * ahí no alcanza, no se reparte con otra sucursal — se avisa y no se cobra.
    */
-  private async descontarStock(manager: EntityManager, linea: LineaCompra, idSucursal: number): Promise<void> {
-    const filas = await manager.query<Array<{ id: number; stock_disponible: number }>>(
-      `SELECT i.id, i.stock_disponible
+  private async descontarStock(manager: EntityManager, linea: LineaCompra, idSucursal: number): Promise<PorcionDescontada[]> {
+    const filas = await manager.query<Array<{ id: number; id_almacen: number; stock_disponible: number; stock_reservado: number }>>(
+      `SELECT i.id, i.id_almacen, i.stock_disponible, i.stock_reservado
          FROM inventario i
          JOIN almacen a ON a.id = i.id_almacen
          JOIN sucursal s ON s.id = a.id_sucursal
@@ -493,19 +515,31 @@ export class CheckoutService {
            ON ps.id_producto = v.id_producto AND ps.id_sucursal = a.id_sucursal AND ps.activo = true
         WHERE i.id_variante_producto = $1
           AND a.id_sucursal = $2
+          AND a.id_empresa = $3
           AND a.activo = true
           AND s.activo = true
           AND i.stock_disponible > 0
         ORDER BY i.stock_disponible DESC, i.id ASC
           FOR UPDATE OF i`,
-      [linea.idVarianteProducto, idSucursal],
+      [linea.idVarianteProducto, idSucursal, this.tenant.empresaId()],
     );
 
     let restante = linea.cantidad;
+    const porciones: PorcionDescontada[] = [];
     for (const fila of filas) {
       if (restante === 0) break;
       const tomar = Math.min(fila.stock_disponible, restante);
       await manager.query('UPDATE inventario SET stock_disponible = stock_disponible - $1 WHERE id = $2', [tomar, fila.id]);
+      // La fila esta bloqueada (FOR UPDATE): el stock resultante es exacto sin volver a leerla.
+      porciones.push({
+        cantidad: tomar,
+        fila: {
+          idAlmacen: fila.id_almacen,
+          idVarianteProducto: linea.idVarianteProducto,
+          stockDisponible: fila.stock_disponible - tomar,
+          stockReservado: fila.stock_reservado,
+        },
+      });
       restante -= tomar;
     }
 
@@ -514,6 +548,7 @@ export class CheckoutService {
         `Ya no hay stock suficiente de ${linea.descripcion} en tu sucursal. No se te cobró nada; ajusta tu carrito o cambia de sucursal`,
       );
     }
+    return porciones;
   }
 
   private async resumenCarrito(manager: EntityManager, idCliente: number): Promise<ResumenCarrito> {
@@ -534,12 +569,15 @@ export class CheckoutService {
           throw new ConflictException(`"${producto?.nombre ?? 'Un producto'}" ya no esta disponible; quitalo del carrito para continuar`);
         }
         // Se cobra el precio vigente, no el guardado en el carrito.
-        const precioUnitario = precioConDescuento(Number(producto.precio), Number(producto.descuentoPorcentaje));
+        const { precioLista, descuentoUnitario, precioUnitario } = calcularPrecioVenta(Number(producto.precio), producto.descuentoPorcentaje);
         return {
           idVarianteProducto: detalle.idVarianteProducto,
           descripcion: `${producto.nombre} (${detalle.variante.talla}/${detalle.variante.color})`.slice(0, 255),
           cantidad: detalle.cantidad,
+          precioLista,
+          descuentoUnitario,
           precioUnitario,
+          costoUnitario: detalle.variante.costoPromedio ?? null,
           subtotal: redondear(precioUnitario * detalle.cantidad),
         };
       });
@@ -576,7 +614,7 @@ export class CheckoutService {
   }
 
   private async pasarelaOnline(codigo: CodigoMetodoOnline): Promise<PasarelaPago> {
-    const pasarela = await this.pasarelaRepo.findOne({ where: { codigo, disponibleLinea: true } });
+    const pasarela = await this.pasarelaRepo.findOne({ where: { codigo, disponibleLinea: true, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela || !this.esOfrecible(pasarela)) throw new ConflictException('Este metodo de pago no esta disponible por ahora');
     return pasarela;
   }

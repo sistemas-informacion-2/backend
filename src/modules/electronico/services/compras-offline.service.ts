@@ -9,6 +9,7 @@ import { ProductoSucursal } from '../../inventario/entities/producto-sucursal.en
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { precioConDescuento } from '../../inventario/utils/precio.util.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { CODIGO_COMPRA_SIN_STOCK, type EstadoCompraOfflineDto, type SincronizarCompraOfflineDto } from '../dto/compra-offline.dto.js';
 import { Carrito } from '../entities/carrito.entity.js';
 import { DetalleCarrito } from '../entities/detalle-carrito.entity.js';
@@ -33,7 +34,10 @@ interface LineaCompraOffline {
  */
 @Injectable()
 export class ComprasOfflineService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async sincronizar(dto: SincronizarCompraOfflineDto, usuario: ActiveUser): Promise<EstadoCompraOfflineDto> {
     const idCliente = this.idCliente(usuario);
@@ -43,7 +47,7 @@ export class ComprasOfflineService {
 
     const preciosVistos = new Map(dto.detalles.map((detalle) => [detalle.idVariante, Number(detalle.precioUnitario)]));
     const lineas = await this.dataSource.transaction(async (manager) => {
-      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: dto.idSucursal } });
+      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: dto.idSucursal, idEmpresa: this.tenant.empresaId() } });
       if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
       if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
 
@@ -74,7 +78,7 @@ export class ComprasOfflineService {
   }
 
   private notaDe(idLocal: string, idCliente: number): Promise<NotaVenta | null> {
-    return this.dataSource.getRepository(NotaVenta).findOne({ where: { idLocalOffline: idLocal, idCliente } });
+    return this.dataSource.getRepository(NotaVenta).findOne({ where: { idLocalOffline: idLocal, idCliente, idEmpresa: this.tenant.empresaId() } });
   }
 
   private estadoCompletada(idLocal: string, nota: NotaVenta): EstadoCompraOfflineDto {
@@ -84,10 +88,11 @@ export class ComprasOfflineService {
   private async construirLineas(manager: EntityManager, dto: SincronizarCompraOfflineDto): Promise<LineaCompraOffline[]> {
     const cantidades = new Map<number, number>();
     for (const detalle of dto.detalles) cantidades.set(detalle.idVariante, (cantidades.get(detalle.idVariante) ?? 0) + detalle.cantidad);
+    // Los ids llegan del dispositivo: solo cuentan las variantes de esta empresa.
     // Ordenadas: las filas se bloquean siempre en el mismo orden, sin interbloqueos.
     const ids = [...cantidades.keys()].sort((a, b) => a - b);
 
-    const variantes = await manager.getRepository(VarianteProducto).find({ where: { id: In(ids) }, relations: { producto: true } });
+    const variantes = await manager.getRepository(VarianteProducto).find({ where: { id: In(ids), idEmpresa: this.tenant.empresaId() }, relations: { producto: true } });
     const activados = await manager.getRepository(ProductoSucursal).find({
       where: { idSucursal: dto.idSucursal, idProducto: In([...new Set(variantes.map((variante) => variante.idProducto))]), activo: true },
     });
@@ -105,7 +110,7 @@ export class ComprasOfflineService {
 
   /** Mide todas las variantes bajo bloqueo: el 409 lista cada prenda afectada, no solo la primera. */
   private async validarStock(manager: EntityManager, idSucursal: number, lineas: LineaCompraOffline[]): Promise<void> {
-    const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal, activo: true }, select: { id: true } });
+    const almacenes = await manager.getRepository(Almacen).find({ where: { idSucursal, activo: true, idEmpresa: this.tenant.empresaId() }, select: { id: true } });
     const afectados: Array<{ id_variante: number; stock_solicitado: number; stock_actual: number }> = [];
     for (const linea of lineas) {
       const inventarios =

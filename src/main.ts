@@ -1,3 +1,5 @@
+// Primero: fija la zona horaria del proceso antes de que se cree cualquier Date.
+import './config/zona-horaria.js';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';

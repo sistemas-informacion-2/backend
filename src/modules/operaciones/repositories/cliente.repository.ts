@@ -2,16 +2,22 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
 import { Cliente } from '../entities/cliente.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class ClienteRepository {
-  constructor(@InjectRepository(Cliente) private readonly repo: Repository<Cliente>) {}
+  constructor(
+    @InjectRepository(Cliente) private readonly repo: Repository<Cliente>,
+    private readonly tenant: TenantContext,
+  ) {}
+
+  // El cliente no tiene id_empresa propio: su PK es el usuario, y la empresa es la del usuario.
 
   findByUsuarioId(
     idUsuario: number,
     manager: EntityManager = this.repo.manager,
   ): Promise<Cliente | null> {
-    return manager.getRepository(Cliente).findOne({ where: { idUsuario } });
+    return manager.getRepository(Cliente).findOne({ where: { idUsuario, usuario: { idEmpresa: this.tenant.empresaId() } } });
   }
 
   findByUsuarioIdConDatos(
@@ -23,6 +29,7 @@ export class ClienteRepository {
       .createQueryBuilder('cliente')
       .leftJoinAndSelect('cliente.usuario', 'usuario')
       .where('cliente.id_usuario = :idUsuario', { idUsuario })
+      .andWhere('usuario.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .getOne();
   }
 
@@ -40,6 +47,7 @@ export class ClienteRepository {
       .createQueryBuilder('cliente')
       .leftJoinAndSelect('cliente.usuario', 'usuario')
       .where("usuario.tipo_usuario = :tipoUsuario", { tipoUsuario: 'C' })
+      .andWhere('usuario.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('usuario.id', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);

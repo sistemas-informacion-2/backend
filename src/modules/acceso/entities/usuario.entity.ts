@@ -1,14 +1,28 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { RolUsuario } from './rol-usuario.entity.js';
 import { Sesion } from './sesion.entity.js';
 
-export type TipoUsuario = 'A' | 'E' | 'C';
+/** A = administrador de empresa, E = empleado, C = cliente, S = superadmin de la plataforma (sin empresa). */
+export type TipoUsuario = 'A' | 'E' | 'C' | 'S';
 export type EstadoAcceso = 'HABILITADO' | 'BLOQUEADO' | 'SUSPENDIDO';
 
+// El email es unico dentro de cada empresa (una persona puede tener cuenta en
+// varias tiendas) y, aparte, entre los superadmin de la plataforma.
+@Index('uq_usuario_empresa_email', ['idEmpresa', 'email'], { unique: true })
+@Index('uq_usuario_plataforma_email', ['email'], { unique: true, where: '"id_empresa" IS NULL' })
 @Entity('usuario')
 export class Usuario {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa del usuario; null solo para el superadmin de la plataforma. */
+  @Column({ name: 'id_empresa', type: 'int', nullable: true })
+  idEmpresa: number | null;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa> | null;
 
   @Column({ type: 'varchar', length: 100 })
   nombre: string;
@@ -16,7 +30,7 @@ export class Usuario {
   @Column({ type: 'varchar', length: 100 })
   apellido: string;
 
-  @Column({ type: 'varchar', length: 150, unique: true })
+  @Column({ type: 'varchar', length: 150 })
   email: string;
 
   @Column({ type: 'varchar', length: 20, nullable: true })

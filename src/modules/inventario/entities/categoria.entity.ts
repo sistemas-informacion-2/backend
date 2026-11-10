@@ -1,10 +1,20 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type Relation } from 'typeorm';
+import { Empresa } from '../../plataforma/entities/empresa.entity.js';
 import { TemporadaCategoria } from './temporada-categoria.entity.js';
 
+@Index('uq_categoria_empresa_slug', ['idEmpresa', 'slug'], { unique: true })
 @Entity('categoria')
 export class Categoria {
   @PrimaryGeneratedColumn()
   id: number;
+
+  /** Empresa (tienda) duena del registro. */
+  @Column({ name: 'id_empresa', type: 'int' })
+  idEmpresa: number;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'id_empresa' })
+  empresa: Relation<Empresa>;
 
   @Column({ name: 'id_categoria_padre', type: 'int', nullable: true })
   idCategoriaPadre: number | null;
@@ -22,7 +32,7 @@ export class Categoria {
   @Column({ type: 'varchar', length: 100 })
   nombre: string;
 
-  @Column({ type: 'varchar', length: 120, unique: true })
+  @Column({ type: 'varchar', length: 120 })
   slug: string;
 
   @Column({ type: 'text', nullable: true })

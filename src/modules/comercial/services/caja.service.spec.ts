@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CajaService } from './caja.service.js';
 import type { Caja } from '../entities/caja.entity.js';
 import type { MovimientoCaja } from '../entities/movimiento-caja.entity.js';
@@ -78,6 +78,7 @@ function crearService(overrides: {
       movimientoRepo as never,
       sucursalRepo as never,
       empleadoSucursalRepo as never,
+      { empresaId: () => 1 } as never,
     ),
     cajaRepo,
     movimientoRepo,
@@ -190,10 +191,54 @@ describe('CajaService', () => {
 
     await expect(service.cerrar(1, {}, empleado())).rejects.toThrow(ForbiddenException);
     await expect(
-      service.registrarMovimiento(1, { tipo: 'EGRESO', concepto: 'Compra', monto: 10 }, empleado()),
+      service.registrarMovimiento(1, { tipo: 'EGRESO', categoria: 'OTRO_EGRESO', concepto: 'Compra', monto: 10 }, empleado()),
     ).rejects.toThrow(ForbiddenException);
     expect(cajaRepo.save).not.toHaveBeenCalled();
     expect(movimientoRepo.save).not.toHaveBeenCalled();
+  });
+
+  describe('categoria de los movimientos manuales', () => {
+    const conCajaAbierta = () => {
+      const movimientoRepo = { findByCaja: vi.fn(), create: vi.fn((datos) => ({ id: 1, ...datos })), save: vi.fn((datos) => Promise.resolve(datos)) };
+      const { service } = crearService({ cajaRepo: { findByIdConDetalle: vi.fn().mockResolvedValue(cajaBase()) }, movimientoRepo });
+      return { service, movimientoRepo };
+    };
+
+    it('registra un gasto operativo con su subcategoria', async () => {
+      const { service, movimientoRepo } = conCajaAbierta();
+
+      const respuesta = await service.registrarMovimiento(
+        1,
+        { tipo: 'EGRESO', categoria: 'GASTO_OPERATIVO', subcategoriaGasto: 'ALQUILER', concepto: 'Alquiler de noviembre', monto: 1500 },
+        empleado(),
+      );
+
+      expect(movimientoRepo.create).toHaveBeenCalledWith(expect.objectContaining({ categoria: 'GASTO_OPERATIVO', subcategoriaGasto: 'ALQUILER' }));
+      expect(respuesta).toMatchObject({ categoria: 'GASTO_OPERATIVO', subcategoriaGasto: 'ALQUILER' });
+    });
+
+    it('un gasto operativo exige subcategoria', async () => {
+      const { service, movimientoRepo } = conCajaAbierta();
+
+      await expect(service.registrarMovimiento(1, { tipo: 'EGRESO', categoria: 'GASTO_OPERATIVO', concepto: 'Luz', monto: 80 }, empleado())).rejects.toThrow(BadRequestException);
+      expect(movimientoRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('la categoria tiene que corresponder al tipo: un retiro no es un ingreso', async () => {
+      const { service, movimientoRepo } = conCajaAbierta();
+
+      await expect(service.registrarMovimiento(1, { tipo: 'INGRESO', categoria: 'RETIRO', concepto: 'x', monto: 10 }, empleado())).rejects.toThrow(BadRequestException);
+      await expect(service.registrarMovimiento(1, { tipo: 'EGRESO', categoria: 'APORTE', concepto: 'x', monto: 10 }, empleado())).rejects.toThrow(BadRequestException);
+      expect(movimientoRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('fuera de los gastos operativos no guarda subcategoria', async () => {
+      const { service, movimientoRepo } = conCajaAbierta();
+
+      await service.registrarMovimiento(1, { tipo: 'EGRESO', categoria: 'RETIRO', subcategoriaGasto: 'SUELDOS', concepto: 'Retiro del dueno', monto: 200 }, empleado());
+
+      expect(movimientoRepo.create).toHaveBeenCalledWith(expect.objectContaining({ categoria: 'RETIRO', subcategoriaGasto: null }));
+    });
   });
 
   it('rechaza registrar movimientos en una caja cerrada', async () => {
@@ -202,7 +247,7 @@ describe('CajaService', () => {
     });
 
     await expect(
-      service.registrarMovimiento(1, { tipo: 'INGRESO', concepto: 'Venta', monto: 10 }, empleado()),
+      service.registrarMovimiento(1, { tipo: 'INGRESO', categoria: 'OTRO_INGRESO', concepto: 'Venta', monto: 10 }, empleado()),
     ).rejects.toThrow(ConflictException);
     expect(movimientoRepo.save).not.toHaveBeenCalled();
   });

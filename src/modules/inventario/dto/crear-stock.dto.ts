@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 
 export class CrearStockDto {
   @Type(() => Number)
@@ -29,4 +29,11 @@ export class CrearStockDto {
   @IsInt()
   @Min(0)
   stockMaximo?: number;
+
+  /** Costo por unidad del stock inicial: alimenta el costo promedio de la variante (base del margen). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  costoUnitario?: number;
 }

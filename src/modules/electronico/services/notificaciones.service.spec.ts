@@ -63,7 +63,7 @@ function crearService(overrides: {
   } as unknown as DataSource;
 
   return {
-    service: new NotificacionesService(dataSource, notificacionRepo as never, usuarioRepo as never, dispositivoRepo as never, pushService as never, { listarDeUsuarios: vi.fn().mockResolvedValue([]) } as never, { habilitado: false, enviar: vi.fn() } as never),
+    service: new NotificacionesService(dataSource, notificacionRepo as never, usuarioRepo as never, dispositivoRepo as never, pushService as never, { listarDeUsuarios: vi.fn().mockResolvedValue([]) } as never, { habilitado: false, enviar: vi.fn() } as never, { empresaId: () => 1 } as never),
     notificacionRepo,
     usuarioRepo,
     dispositivoRepo,
@@ -124,7 +124,7 @@ describe('NotificacionesService', () => {
     });
 
     expect(usuarioRepo.find).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tipoUsuario: 'C', activo: true } }),
+      expect.objectContaining({ where: { tipoUsuario: 'C', activo: true, idEmpresa: 1 } }),
     );
     expect(resultado.cantidadEnviada).toBe(2);
     const filas = insert.mock.calls[0][1] as Array<{ mensaje: string }>;

@@ -1,14 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 /**
- * Stock que un cliente puede comprar en linea. El catalogo es global, pero el stock vive en los
+ * Stock que un cliente puede comprar en linea. El catalogo es de toda la empresa, pero el stock vive en los
  * almacenes de cada sucursal, asi que una variante solo cuenta en los almacenes activos de las
  * sucursales activas donde su producto esta activado (PRODUCTO_SUCURSAL).
  */
 @Injectable()
 export class DisponibilidadService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly tenant: TenantContext,
+  ) {}
 
   /**
    * Devuelve un mapa idVariante -> unidades; las variantes sin stock vendible
@@ -31,8 +35,9 @@ export class DisponibilidadService {
           AND a.activo = true
           AND s.activo = true
           AND ($2::int IS NULL OR a.id_sucursal = $2::int)
+          AND a.id_empresa = $3
         GROUP BY i.id_variante_producto`,
-      [idsVariante, idSucursal ?? null],
+      [idsVariante, idSucursal ?? null, this.tenant.empresaId()],
     );
 
     return new Map(filas.map((fila) => [fila.id_variante, fila.stock]));

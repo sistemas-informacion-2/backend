@@ -5,7 +5,7 @@ function crearBuilder(respuestas: unknown[]) {
   const query = vi.fn();
   respuestas.forEach((respuesta) => query.mockResolvedValueOnce(respuesta));
   const dataSource = { query } as never;
-  return { service: new ReportBuilderService(dataSource), query };
+  return { service: new ReportBuilderService(dataSource, { empresaId: () => 7 } as never), query };
 }
 
 describe('ReportBuilderService', () => {
@@ -29,6 +29,7 @@ describe('ReportBuilderService', () => {
   it('agrupa al haber medidas y resume con SUM', async () => {
     const { service, query } = crearBuilder([
       [{ total: 3 }],
+      // Como lo entrega pg para una columna date: medianoche local del proceso.
       [{ fecha_emision: new Date(2026, 8, 1), sucursal: 'La Paz', monto_total: 150.5, cantidad: 2 }],
     ]);
 
@@ -42,14 +43,59 @@ describe('ReportBuilderService', () => {
 
     expect(query).toHaveBeenCalledTimes(2);
     const sql = query.mock.calls[1][0] as string;
-    expect(sql).toContain('SUM(nv.monto_total)::float8');
+    // La cantidad une el detalle: el monto de cada nota se reparte entre sus lineas en vez de repetirse.
+    expect(sql).toContain('ROUND(SUM((nv.monto_total * COALESCE(dnv.peso, 1))), 2)::float8 AS "monto_total"');
+    expect(sql).toContain('SUM(dnv.cantidad)::float8 AS "cantidad"');
+    expect(sql).toContain('LEFT JOIN LATERAL (SELECT d.*,');
     expect(sql).toContain('GROUP BY nv.fecha_emision, sc.nombre');
-    expect(sql).toContain('ORDER BY SUM(nv.monto_total) DESC');
-    expect(sql).toContain('LIMIT $1 OFFSET $2');
+    expect(sql).toContain('ORDER BY SUM((nv.monto_total * COALESCE(dnv.peso, 1))) DESC');
+    expect(sql).toContain('WHERE nv.id_empresa = $1');
+    expect(sql).toContain('LIMIT $2 OFFSET $3');
     expect(resultado.columns).toEqual(['fecha_emision', 'sucursal', 'monto_total', 'cantidad']);
     expect(resultado.columnLabels).toEqual(['Fecha', 'Sucursal', 'Monto total', 'Cantidad']);
     expect(resultado.total).toBe(3);
     expect(resultado.rows[0]).toEqual(['2026-09-01', 'La Paz', 150.5, 2]);
+  });
+
+  it('sin el detalle, las medidas de cabecera se suman tal cual', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], []]);
+    await service.ejecutar({ reportType: 'VENTAS', selectedFields: ['sucursal', 'monto_total', 'descuento'] });
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('SUM(nv.monto_total)::float8 AS "monto_total"');
+    expect(sql).toContain('SUM(nv.descuento)::float8 AS "descuento"');
+    expect(sql).not.toContain('detalle_nota_venta');
+    expect(sql).not.toContain('peso');
+  });
+
+  it('un filtro sobre el detalle tambien reparte, y el filtro sobre el monto sigue siendo el de la nota', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], []]);
+    await service.ejecutar({
+      reportType: 'VENTAS',
+      selectedFields: ['sucursal', 'monto_total'],
+      filters: [
+        { campo: 'producto', operador: 'eq', valor: 'Camisa' },
+        { campo: 'monto_total', operador: 'gte', valor: 100 },
+      ],
+    });
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('ROUND(SUM((nv.monto_total * COALESCE(dnv.peso, 1))), 2)::float8');
+    expect(sql).toContain('pr.nombre = $1 AND nv.monto_total >= $2');
+  });
+
+  it('por nota y producto, cada producto recibe su parte del monto de la nota', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], []]);
+    await service.ejecutar({ reportType: 'VENTAS', selectedFields: ['codigo_nota', 'producto', 'monto_total'] });
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('ROUND(SUM((nv.monto_total * COALESCE(dnv.peso, 1))), 2)::float8 AS "monto_total"');
+    expect(sql).toContain('GROUP BY nv.codigo_nota, pr.nombre');
+  });
+
+  it('COMPRAS reparte el total entre lineas cuando se pide la cantidad', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], []]);
+    await service.ejecutar({ reportType: 'COMPRAS', selectedFields: ['proveedor', 'total', 'cantidad'] });
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('ROUND(SUM((nc.total * COALESCE(dnc.peso, 1))), 2)::float8 AS "total"');
+    expect(sql).toContain('FROM detalle_nota_compra d WHERE d.id_nota_compra = nc.id) dnc ON TRUE');
   });
 
   it('sin medidas hace un SELECT plano sin GROUP BY', async () => {
@@ -89,7 +135,35 @@ describe('ReportBuilderService', () => {
     const [sql, parametros] = query.mock.calls[1] as [string, unknown[]];
     expect(sql).toContain('nv.monto_total >= $1');
     expect(sql).toContain(`JOIN sucursal sc`);
-    expect(parametros).toEqual([100, 25, 0]);
+    expect(parametros).toEqual([100, 7, 25, 0]);
+  });
+
+  it('siempre limita a la empresa actual, tambien el conteo y aunque los filtros se combinen con OR', async () => {
+    const { service, query } = crearBuilder([[{ total: 0 }], []]);
+
+    await service.ejecutar({
+      reportType: 'COMPRAS',
+      selectedFields: ['total'],
+      filters: [
+        { campo: 'total', operador: 'gte', valor: 1 },
+        { campo: 'total', operador: 'lte', valor: 9 },
+      ],
+      matchType: 'OR',
+    });
+
+    for (const [sql, parametros] of query.mock.calls as Array<[string, unknown[]]>) {
+      expect(sql).toContain('WHERE (nc.total >= $1 OR nc.total <= $2) AND nc.id_empresa = $3');
+      expect(parametros[2]).toBe(7);
+    }
+  });
+
+  it('INVENTARIO filtra la empresa por el almacen', async () => {
+    const { service, query } = crearBuilder([[{ total: 0 }], []]);
+
+    await service.ejecutar({ reportType: 'INVENTARIO', selectedFields: ['producto'] });
+
+    expect(query.mock.calls[1][0]).toContain('JOIN almacen alm');
+    expect(query.mock.calls[1][0]).toContain('WHERE alm.id_empresa = $1');
   });
 
   it('matchType "AND" (o ausente) combina los filtros con AND, sin paréntesis', async () => {

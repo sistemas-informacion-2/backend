@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { MovimientoInventario } from '../../inventario/entities/movimiento-inventario.entity.js';
 import { ReservasService } from './reservas.service.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
@@ -39,10 +40,13 @@ function reservaBase(overrides: Partial<Reserva> = {}): Reserva {
 
 type RepoStub = Record<string, ReturnType<typeof vi.fn>>;
 
-function crearService(config: { repos?: Map<unknown, RepoStub>; reserva?: Reserva | null; vencidas?: number[] } = {}) {
+function crearService(config: { repos?: Map<unknown, RepoStub>; reserva?: Reserva | null; vencidas?: Array<{ id: number; idEmpresa: number }> } = {}) {
   const repos = config.repos ?? new Map<unknown, RepoStub>();
+  const kardex = { create: vi.fn((datos: unknown) => datos), save: vi.fn(async (datos: unknown) => datos) };
   const manager = {
     getRepository: (entidad: unknown) => {
+      // El kardex se escribe en todos los movimientos de stock; aqui solo se acepta.
+      if (entidad === MovimientoInventario && !repos.has(entidad)) return kardex;
       const repo = repos.get(entidad);
       if (!repo) throw new Error(`Repo no mockeado: ${(entidad as { name: string }).name}`);
       return repo;
@@ -56,12 +60,13 @@ function crearService(config: { repos?: Map<unknown, RepoStub>; reserva?: Reserv
     findByIdConDetalle: vi.fn().mockResolvedValue(config.reserva === undefined ? reservaBase() : config.reserva),
     findByCliente: vi.fn().mockResolvedValue([]),
     findPage: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-    findIdsVencidas: vi.fn().mockResolvedValue(config.vencidas ?? []),
+    findVencidas: vi.fn().mockResolvedValue(config.vencidas ?? []),
     findNotaVenta: vi.fn().mockResolvedValue(null),
   };
   const empleadoSucursalRepo = { find: vi.fn().mockResolvedValue([{ idSucursal: 1 }]) };
-  const service = new ReservasService(reservaRepo as never, dataSource as never, {} as never, empleadoSucursalRepo as never);
-  return { service, repos, reservaRepo, dataSource, empleadoSucursalRepo };
+  const tenant = { empresaId: () => 1, ejecutarParaEmpresa: vi.fn((_idEmpresa: number, tarea: () => Promise<unknown>) => tarea()) };
+  const service = new ReservasService(reservaRepo as never, dataSource as never, {} as never, empleadoSucursalRepo as never, tenant as never);
+  return { service, repos, reservaRepo, dataSource, empleadoSucursalRepo, tenant };
 }
 
 /** Repos para el camino feliz de `crear`, con stock configurable. */
@@ -295,9 +300,12 @@ describe('ReservasService', () => {
       repos.set(DetalleReserva, { find: vi.fn().mockResolvedValue([{ idVarianteProducto: 3, cantidad: 2 }]) });
       repos.set(Almacen, { find: vi.fn().mockResolvedValue([{ id: 1 }]) });
       repos.set(Inventario, { find: vi.fn().mockResolvedValue([inventario]), save: vi.fn(async (fila: unknown) => fila) });
-      const { service } = crearService({ repos, vencidas: [10] });
+      const { service, tenant } = crearService({ repos, vencidas: [{ id: 10, idEmpresa: 3 }] });
 
       await expect(service.vencerVencidas()).resolves.toBe(1);
+
+      // Cada reserva vencida se procesa dentro del contexto de su propia empresa.
+      expect(tenant.ejecutarParaEmpresa).toHaveBeenCalledWith(3, expect.any(Function));
 
       expect(reserva.estado).toBe('CANCELADA');
       expect(reserva.observaciones).toContain('vencimiento');
@@ -307,7 +315,7 @@ describe('ReservasService', () => {
     it('ignora una reserva que se completo antes de tomar el bloqueo', async () => {
       const reserva = reservaBase({ estado: 'COMPLETADA', fechaLimite: new Date(Date.now() - 1000) });
       const repos = new Map<unknown, RepoStub>([[Reserva, { findOne: vi.fn().mockResolvedValue(reserva) }]]);
-      const { service } = crearService({ repos, vencidas: [10] });
+      const { service } = crearService({ repos, vencidas: [{ id: 10, idEmpresa: 1 }] });
 
       await expect(service.vencerVencidas()).resolves.toBe(0);
       expect(reserva.estado).toBe('COMPLETADA');

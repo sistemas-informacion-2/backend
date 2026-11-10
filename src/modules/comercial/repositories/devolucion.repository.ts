@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
 import { DetalleNotaDevolucion } from '../entities/detalle-nota-devolucion.entity.js';
 import { NotaDevolucion, type TipoDevolucion } from '../entities/nota-devolucion.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 export interface FiltrosDevoluciones {
   page: number;
@@ -19,11 +20,15 @@ export interface FiltrosDevoluciones {
 
 @Injectable()
 export class DevolucionRepository {
-  constructor(@InjectRepository(NotaDevolucion) private readonly repo: Repository<NotaDevolucion>) {}
+  constructor(
+    @InjectRepository(NotaDevolucion) private readonly repo: Repository<NotaDevolucion>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   async findPage(query: FiltrosDevoluciones): Promise<{ items: NotaDevolucion[]; total: number }> {
     const builder = this.repo
       .createQueryBuilder('devolucion')
+      .where('devolucion.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .leftJoinAndSelect('devolucion.cliente', 'cliente')
       .leftJoinAndSelect('cliente.usuario', 'clienteUsuario')
       .leftJoinAndSelect('devolucion.cajero', 'cajero')
@@ -61,7 +66,7 @@ export class DevolucionRepository {
 
   findByIdConDetalle(id: number): Promise<NotaDevolucion | null> {
     return this.repo.findOne({
-      where: { id },
+      where: { id, idEmpresa: this.tenant.empresaId() },
       relations: {
         cliente: { usuario: true },
         cajero: { usuario: true },

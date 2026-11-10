@@ -31,8 +31,21 @@ export class DetalleNotaVenta {
   @Column({ type: 'varchar', length: 255 })
   descripcion: string;
 
+  /** Precio de lista del producto al vender (antes del descuento por producto). */
+  @Column({ name: 'precio_lista', type: 'decimal', precision: 12, scale: 2, transformer: TRANSFORMER_DECIMAL })
+  precioLista: number;
+
+  /** Descuento por unidad del producto (precio_lista - precio_unitario). El descuento global de la nota va aparte. */
+  @Column({ name: 'descuento_unitario', type: 'decimal', precision: 12, scale: 2, default: 0, transformer: TRANSFORMER_DECIMAL })
+  descuentoUnitario: number;
+
+  /** Precio cobrado por unidad. */
   @Column({ name: 'precio_unitario', type: 'decimal', precision: 12, scale: 2, transformer: TRANSFORMER_DECIMAL })
   precioUnitario: number;
+
+  /** Costo promedio de la variante al vender: base del margen. null = la variante no tenia costo conocido. */
+  @Column({ name: 'costo_unitario', type: 'decimal', precision: 12, scale: 4, nullable: true, transformer: TRANSFORMER_DECIMAL })
+  costoUnitario: number | null;
 
   @Column({ type: 'int' })
   cantidad: number;

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { MovimientoInventario } from '../../inventario/entities/movimiento-inventario.entity.js';
 import { DevolucionesService } from './devoluciones.service.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
@@ -41,7 +42,7 @@ function notaBase(overrides: Partial<NotaVenta> = {}): NotaVenta {
     impuesto: 0,
     montoTotal: 180,
     estadoPago: 'Pagado',
-    detalles: [{ idVarianteProducto: 3, variante: { sku: 'SKU-3' }, descripcion: 'Polera (M/Negro)', cantidad: 2, subtotal: 200, precioUnitario: 100 }] as never,
+    detalles: [{ id: 61, idVarianteProducto: 3, variante: { sku: 'SKU-3' }, descripcion: 'Polera (M/Negro)', cantidad: 2, subtotal: 200, precioUnitario: 100 }] as never,
     ...overrides,
   } as NotaVenta;
 }
@@ -115,8 +116,11 @@ function crearService(escenario: Escenario = {}) {
   });
   repos.set(EmpleadoSucursal, { findOne: vi.fn().mockResolvedValue({ idEmpleado: 5, idSucursal: 1, activo: true }) });
 
+  const kardex = { create: vi.fn((datos: unknown) => datos), save: vi.fn(async (datos: unknown) => datos) };
   const manager = {
     getRepository: (entidad: unknown) => {
+      // El kardex se escribe en todos los movimientos de stock; aqui solo se acepta.
+      if (entidad === MovimientoInventario && !repos.has(entidad)) return kardex;
       const repo = repos.get(entidad);
       if (!repo) throw new Error(`Repo no mockeado: ${(entidad as { name: string }).name}`);
       return repo;
@@ -130,7 +134,7 @@ function crearService(escenario: Escenario = {}) {
     findPage: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   };
   const empleadoSucursalRepo = { find: vi.fn().mockResolvedValue((escenario.visibles ?? [1]).map((idSucursal) => ({ idSucursal }))) };
-  const service = new DevolucionesService(devolucionRepo as never, { notificarPorPush: vi.fn() } as never, dataSource as never, empleadoSucursalRepo as never);
+  const service = new DevolucionesService(devolucionRepo as never, { notificarPorPush: vi.fn() } as never, dataSource as never, empleadoSucursalRepo as never, { empresaId: () => 1 } as never);
   return { service, repos, guardados, inventarioNuevo, devolucionRepo };
 }
 
@@ -196,6 +200,22 @@ describe('DevolucionesService', () => {
       expect(guardados.pagos[0]).toMatchObject({ concepto: 'REEMBOLSO', monto: 90, idNotaVenta: 20, idReserva: null, idMovimientoCaja: 55 });
       expect(guardados.notas[0]).toMatchObject({ idCajero: 5, tipoDevolucion: 'PRODUCTO_ENTREGADO', montoTotalReembolsado: 90 });
       expect(guardados.notas[1]).toMatchObject({ codigoDevolucion: 'DV-000008' });
+      // La linea devuelta apunta a la linea de venta de la que sale.
+      expect(guardados.detalles[0]).toMatchObject({ idVarianteProducto: 3, idDetalleNotaVenta: 61, cantidad: 1 });
+    });
+
+    it('con la variante repetida en la nota, apunta a su primera linea', async () => {
+      const nota = notaBase({
+        detalles: [
+          { id: 75, idVarianteProducto: 3, variante: { sku: 'SKU-3' }, descripcion: 'Polera (M/Negro)', cantidad: 1, subtotal: 100, precioUnitario: 100 },
+          { id: 64, idVarianteProducto: 3, variante: { sku: 'SKU-3' }, descripcion: 'Polera (M/Negro)', cantidad: 1, subtotal: 100, precioUnitario: 100 },
+        ] as never,
+      });
+      const { service, guardados } = crearService({ nota });
+
+      await service.crear({ ...base, motivoDevolucion: 'FALLA_FABRICA', items: [item(2, 'MERMA_DEFECTUOSO')] }, cajero);
+
+      expect(guardados.detalles[0]).toMatchObject({ idDetalleNotaVenta: 64, cantidad: 2 });
     });
 
     it('la merma no incrementa el stock vendible', async () => {
@@ -331,7 +351,7 @@ describe('DevolucionesService', () => {
       await service.crear(base, cajero);
 
       expect(guardados.notas[0]).toMatchObject({ tipoDevolucion: 'CANCELACION_RESERVA', idReserva: 30, idNotaVenta: null, montoTotalReembolsado: 40 });
-      expect(guardados.detalles[0]).toMatchObject({ estadoProducto: 'NO_APLICA', idVarianteProducto: null, idAlmacen: null, montoSubtotal: 40 });
+      expect(guardados.detalles[0]).toMatchObject({ estadoProducto: 'NO_APLICA', idVarianteProducto: null, idDetalleNotaVenta: null, idAlmacen: null, montoSubtotal: 40 });
       expect(guardados.pagos[0]).toMatchObject({ concepto: 'REEMBOLSO', idReserva: 30, idNotaVenta: null, monto: 40 });
       expect(repos.get(Inventario)?.findOne).not.toHaveBeenCalled();
     });

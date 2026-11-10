@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +10,8 @@ import { Cliente } from '../../operaciones/entities/cliente.entity.js';
 import { PasarelaPago } from '../entities/pasarela-pago.entity.js';
 import { VarianteProducto } from '../../inventario/entities/variante-producto.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
+import { calcularPrecioVenta } from '../../inventario/utils/precio.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 import { Caja } from '../entities/caja.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
@@ -22,6 +25,8 @@ import type { CrearVentaDto } from '../dto/crear-venta.dto.js';
 import type { VentasQueryDto } from '../dto/ventas-query.dto.js';
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
 import type { VentaPaginatedResponseDto, VentaResponseDto } from '../dto/venta-response.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
 
 /**
  * NOTA_VENTA.id_cliente es obligatorio, pero en una venta de mostrador no se pide registrar al comprador. Esas ventas
@@ -38,7 +43,10 @@ interface Asignacion {
 interface LineaVenta {
   idVarianteProducto: number;
   descripcion: string;
+  precioLista: number;
+  descuentoUnitario: number;
   precioUnitario: number;
+  costoUnitario: number | null;
   cantidad: number;
   subtotal: number;
   asignaciones: Asignacion[];
@@ -51,6 +59,7 @@ export class VentasService {
     private readonly notaVentaRepo: NotaVentaRepository,
     private readonly pagoRepo: PagoRepository,
     private readonly movimientoCajaRepo: MovimientoCajaRepository,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: VentasQueryDto): Promise<VentaPaginatedResponseDto> {
@@ -116,18 +125,20 @@ export class VentasService {
       const montoTotal = redondear(subtotal - descuento + impuesto);
       if (montoTotal < 0) throw new BadRequestException('El total de la venta no puede ser negativo');
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       // Una venta hecha sin conexion conserva su fecha; el dinero entra a la caja cuando llega al servidor.
       const emision = resolverFechaEmision(dto.fechaOffline, ahora);
-      // Codigo provisorio hasta conocer el id: con count()+1 chocaba con los NV-<id> que emiten el
-      // checkout y la liquidacion de reservas en cuanto habia una de esas notas de por medio.
+      // Igual que la venta en linea y la liquidacion de reservas, el codigo sale del id (NV-000123): un conteo
+      // de notas chocaria con esos codigos y, con codigos unicos por empresa, entre empresas. Hasta tener el id,
+      // la nota y su movimiento llevan un codigo provisional unico.
       const codigoProvisional = `TMP-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
       const movimiento = this.movimientoCajaRepo.create(
         {
           idCaja: caja.id,
           tipo: 'INGRESO',
-          concepto: 'Venta presencial',
+          categoria: 'VENTA',
+          concepto: `Venta presencial ${codigoProvisional}`,
           monto: montoTotal.toFixed(2),
           observaciones: null,
           fechaHora: ahora,
@@ -148,8 +159,8 @@ export class VentasService {
           tipoVenta: 'DIRECTA_PRESENCIAL',
           nroFactura: dto.nroFactura?.trim() || null,
           nitRazonSocial: dto.nitRazonSocial?.trim() || null,
-          fechaEmision: formatearFecha(emision),
-          horaEmision: formatearHora(emision),
+          fechaEmision: fechaLocal(emision),
+          horaEmision: horaLocal(emision),
           subtotal,
           montoAnticipoAplicado: 0,
           descuento,
@@ -173,7 +184,10 @@ export class VentasService {
             idNotaVenta: venta.id,
             idVarianteProducto: linea.idVarianteProducto,
             descripcion: linea.descripcion,
+            precioLista: linea.precioLista,
+            descuentoUnitario: linea.descuentoUnitario,
             precioUnitario: linea.precioUnitario,
+            costoUnitario: linea.costoUnitario,
             cantidad: linea.cantidad,
             subtotal: linea.subtotal,
           }),
@@ -182,6 +196,14 @@ export class VentasService {
         for (const { inventario, cantidad } of linea.asignaciones) {
           inventario.stockDisponible -= cantidad;
           await inventarioRepo.save(inventario);
+          await registrarMovimiento(manager, inventario, {
+            tipo: 'SALIDA_VENTA',
+            cantidad: -cantidad,
+            costoUnitario: linea.costoUnitario,
+            referenciaTipo: 'NOTA_VENTA',
+            referenciaId: venta.id,
+            idUsuario: usuario.sub,
+          });
         }
       }
 
@@ -193,8 +215,8 @@ export class VentasService {
             idNotaVenta: venta.id,
             monto: montoTotal,
             concepto: 'PAGO_TOTAL',
-            fechaPago: formatearFecha(emision),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(emision),
+            horaPago: horaLocal(emision),
           },
           manager,
         ),
@@ -209,11 +231,11 @@ export class VentasService {
 
   /**
    * Devuelve el id del cliente generico "Consumidor Final", creandolo la primera vez. Va dentro de la transaccion de la
-   * venta: si dos primeras ventas coinciden, una falla por el correo unico y basta con repetirla (no se cobra nada).
+   * venta: si dos primeras ventas coinciden, una falla por el correo unico (por empresa) y basta con repetirla (no se cobra nada).
    */
   private async obtenerConsumidorFinal(manager: EntityManager): Promise<number> {
     const usuarioRepo = manager.getRepository(Usuario);
-    let usuario = await usuarioRepo.findOne({ where: { email: EMAIL_CONSUMIDOR_FINAL } });
+    let usuario = await usuarioRepo.findOne({ where: { email: EMAIL_CONSUMIDOR_FINAL, idEmpresa: this.tenant.empresaId() } });
     if (!usuario) {
       usuario = await usuarioRepo.save(
         usuarioRepo.create({
@@ -234,30 +256,32 @@ export class VentasService {
     const clienteRepo = manager.getRepository(Cliente);
     const cliente = await clienteRepo.findOne({ where: { idUsuario: usuario.id } });
     if (!cliente) {
-      await clienteRepo.save(clienteRepo.create({ idUsuario: usuario.id, ciudadResidencia: null, direccionPrincipal: null, puntosFidelidad: 0 }));
+      await clienteRepo.save(
+        clienteRepo.create({ idUsuario: usuario.id, ciudadResidencia: null, direccionPrincipal: null, puntosFidelidad: 0, esConsumidorFinal: true }),
+      );
     }
     return usuario.id;
   }
 
   private async validarCliente(manager: EntityManager, idCliente: number): Promise<void> {
-    const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente } });
+    const cliente = await manager.getRepository(Cliente).findOne({ where: { idUsuario: idCliente, usuario: { idEmpresa: this.tenant.empresaId() } } });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
   }
 
   private async validarSucursal(manager: EntityManager, idSucursal: number): Promise<void> {
-    const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+    const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
     if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
   }
 
   private async obtenerCajaAbierta(manager: EntityManager, idSucursal: number): Promise<Caja> {
-    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta' } });
+    const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
     if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta');
     return caja;
   }
 
   private async validarPasarela(manager: EntityManager, idPasarela: number): Promise<void> {
-    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela } });
+    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela) throw new NotFoundException('Metodo de pago no encontrado');
     if (!pasarela.disponiblePresencial) {
       throw new BadRequestException('El metodo de pago no esta habilitado para caja');
@@ -280,7 +304,7 @@ export class VentasService {
 
     for (const item of items) {
       const variante = await varianteRepo.findOne({
-        where: { id: item.idVarianteProducto },
+        where: { id: item.idVarianteProducto, idEmpresa: this.tenant.empresaId() },
         relations: { producto: true },
       });
       if (!variante) throw new NotFoundException(`Variante ${item.idVarianteProducto} no encontrada`);
@@ -312,11 +336,18 @@ export class VentasService {
       }
       if (restante > 0) throw new BadRequestException(`Stock insuficiente para la variante ${variante.sku}`);
 
-      const precioUnitario = Number(variante.producto?.precio ?? 0);
+      // Mismo precio que en la tienda en linea y en las reservas: con el descuento vigente del producto.
+      const { precioLista, descuentoUnitario, precioUnitario } = calcularPrecioVenta(
+        Number(variante.producto?.precio ?? 0),
+        variante.producto?.descuentoPorcentaje,
+      );
       lineas.push({
         idVarianteProducto: variante.id,
         descripcion: `${variante.producto?.nombre ?? 'Producto'} (${variante.talla}/${variante.color})`,
+        precioLista,
+        descuentoUnitario,
         precioUnitario,
+        costoUnitario: variante.costoPromedio ?? null,
         cantidad: item.cantidad,
         subtotal: redondear(precioUnitario * item.cantidad),
         asignaciones,
@@ -354,15 +385,4 @@ function resolverFechaEmision(fechaOffline: string | undefined, ahora: Date): Da
     throw new BadRequestException(`La fecha de una venta sin conexion debe ser de los ultimos ${DIAS_MAX_VENTA_OFFLINE} dias`);
   }
   return fecha;
-}
-
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
 }

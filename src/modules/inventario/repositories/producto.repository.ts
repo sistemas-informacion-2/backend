@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
 import { Producto } from '../entities/producto.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 const RELACIONES_DETALLE = {
   categoria: true,
@@ -21,7 +22,10 @@ interface FiltrosProducto {
 
 @Injectable()
 export class ProductoRepository {
-  constructor(@InjectRepository(Producto) private readonly repo: Repository<Producto>) {}
+  constructor(
+    @InjectRepository(Producto) private readonly repo: Repository<Producto>,
+    private readonly tenant: TenantContext,
+  ) {}
 
   /** Lista simple para el catálogo público: solo activos, sin paginación. */
   findActivos(filtros: { search?: string; idCategoria?: number; idTemporada?: number; soloOfertas?: boolean }): Promise<Producto[]> {
@@ -42,7 +46,8 @@ export class ProductoRepository {
 
   findRelacionados(idCategoria: number, excluirId: number, limite: number): Promise<Producto[]> {
     return this.crearBuilder()
-      .where('producto.id_categoria = :idCategoria', { idCategoria })
+      .where('producto.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
+      .andWhere('producto.id_categoria = :idCategoria', { idCategoria })
       .andWhere('producto.id != :excluirId', { excluirId })
       .andWhere('producto.activo = true')
       .orderBy('producto.id', 'DESC')
@@ -89,11 +94,11 @@ export class ProductoRepository {
   }
 
   findById(id: number, manager: EntityManager = this.repo.manager): Promise<Producto | null> {
-    return manager.getRepository(Producto).findOne({ where: { id } });
+    return manager.getRepository(Producto).findOne({ where: { id, idEmpresa: this.tenant.empresaId() } });
   }
 
   findByIdConDetalle(id: number, manager: EntityManager = this.repo.manager): Promise<Producto | null> {
-    return manager.getRepository(Producto).findOne({ where: { id }, relations: RELACIONES_DETALLE });
+    return manager.getRepository(Producto).findOne({ where: { id, idEmpresa: this.tenant.empresaId() }, relations: RELACIONES_DETALLE });
   }
 
   create(datos: Partial<Producto>, manager: EntityManager = this.repo.manager): Producto {
@@ -114,7 +119,9 @@ export class ProductoRepository {
       .leftJoinAndSelect('producto.variantes', 'variante');
   }
 
+  /** Siempre limita a la empresa actual: lo usan el catalogo publico y el listado del panel. */
   private aplicarFiltros<T extends { andWhere: any }>(builder: T, filtros: FiltrosProducto, incluirSubcategorias = false): T {
+    builder.andWhere('producto.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() });
     if (filtros.search?.trim()) {
       const search = `%${filtros.search.trim().toLowerCase()}%`;
       builder.andWhere(

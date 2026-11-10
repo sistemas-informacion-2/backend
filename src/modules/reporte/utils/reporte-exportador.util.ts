@@ -1,5 +1,5 @@
 import { FORMATOS_EXPORTACION, type FormatoExportacion, type ReportResultDto } from '../dto/reporte-builder.dto.js';
-import { fechaLocal } from './fecha.util.js';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 
 export interface ArchivoReporte {
   buffer: Buffer;

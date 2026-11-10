@@ -1,3 +1,4 @@
+import { ahora as relojAhora } from '../../../common/utils/reloj.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
@@ -30,6 +31,9 @@ import {
   type OrigenDevolucionResponseDto,
 } from '../dto/devoluciones.dto.js';
 import type { PaginacionClienteQueryDto } from '../dto/paginacion-cliente-query.dto.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { fechaLocal, horaLocal } from '../../../common/utils/fecha.util.js';
+import { registrarMovimiento } from '../../inventario/utils/kardex.util.js';
 
 /** Valores por defecto de INVENTARIO cuando la devolucion abre el registro de una variante en un almacen. */
 const STOCK_MINIMO_INICIAL = 5;
@@ -40,23 +44,14 @@ function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
-function formatearFecha(fecha: Date): string {
-  const anio = fecha.getFullYear();
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-  const dia = String(fecha.getDate()).padStart(2, '0');
-  return `${anio}-${mes}-${dia}`;
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toTimeString().slice(0, 8);
-}
-
 function normalizarCodigo(codigo?: string): string | undefined {
   return codigo?.trim().toUpperCase() || undefined;
 }
 
 interface LineaNota {
   idVarianteProducto: number;
+  /** Primera linea de la nota con esta variante (las lineas repetidas de una variante se suman en una). */
+  idDetalleNotaVenta: number;
   sku: string;
   descripcion: string;
   cantidadComprada: number;
@@ -92,6 +87,7 @@ export class DevolucionesService {
     private readonly notificaciones: NotificacionesService,
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listar(query: DevolucionesQueryDto, usuario: ActiveUser): Promise<DevolucionesPaginatedResponseDto> {
@@ -157,7 +153,7 @@ export class DevolucionesService {
 
     let avisoReembolso = null as NotificacionPush | null;
     const idDevolucion = await this.dataSource.transaction(async (manager) => {
-      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal } });
+      const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
       if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
       if (!sucursal.activo) throw new ConflictException('La sucursal esta inactiva');
       await this.validarAccesoSucursal(usuario, idSucursal);
@@ -170,7 +166,7 @@ export class DevolucionesService {
         );
       }
 
-      const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta' } });
+      const caja = await manager.getRepository(Caja).findOne({ where: { idSucursal, estado: 'Abierta', idEmpresa: this.tenant.empresaId() } });
       if (!caja) throw new ConflictException('La sucursal no tiene una caja abierta para entregar el reembolso');
       const idCajero = await this.resolverCajero(manager, usuario, dto.idCajero ?? caja.idCajero, idSucursal);
       if (dto.idPasarela !== undefined) await this.validarPasarelaPresencial(manager, dto.idPasarela);
@@ -181,13 +177,14 @@ export class DevolucionesService {
           : this.construirLineaReserva(origen);
       const total = redondear(lineas.reduce((suma, linea) => suma + linea.montoSubtotal, 0));
 
-      const ahora = new Date();
+      const ahora = relojAhora();
       const referencia = origen.tipo === 'PRODUCTO_ENTREGADO' ? origen.nota.codigoNota : origen.reserva.codigoReserva;
       const movimientoRepo = manager.getRepository(MovimientoCaja);
       const movimiento = await movimientoRepo.save(
         movimientoRepo.create({
           idCaja: caja.id,
           tipo: 'EGRESO',
+          categoria: 'REEMBOLSO',
           concepto: `Reembolso devolucion ${referencia}`.slice(0, 150),
           monto: total.toFixed(2),
           observaciones: null,
@@ -219,7 +216,7 @@ export class DevolucionesService {
       const detalleRepo = manager.getRepository(DetalleNotaDevolucion);
       await detalleRepo.save(lineas.map((linea) => detalleRepo.create({ ...linea, idNotaDevolucion: devolucion.id })));
 
-      await this.reingresarStock(manager, lineas);
+      await this.reingresarStock(manager, lineas, devolucion.id, usuario.sub);
 
       if (total > 0) {
         const pagoRepo = manager.getRepository(Pago);
@@ -231,8 +228,8 @@ export class DevolucionesService {
             idReserva: origen.tipo === 'CANCELACION_RESERVA' ? origen.reserva.id : null,
             monto: total,
             concepto: 'REEMBOLSO',
-            fechaPago: formatearFecha(ahora),
-            horaPago: formatearHora(ahora),
+            fechaPago: fechaLocal(ahora),
+            horaPago: horaLocal(ahora),
           }),
         );
       }
@@ -266,7 +263,7 @@ export class DevolucionesService {
 
     if (notaCodigo) {
       const nota = await manager.getRepository(NotaVenta).findOne({
-        where: { codigoNota: notaCodigo },
+        where: { codigoNota: notaCodigo, idEmpresa: this.tenant.empresaId() },
         relations: { cliente: { usuario: true }, sucursal: true, detalles: { variante: true } },
       });
       if (!nota) throw new NotFoundException('Nota de venta no encontrada');
@@ -278,7 +275,7 @@ export class DevolucionesService {
     }
 
     const reserva = await manager.getRepository(Reserva).findOne({
-      where: { codigoReserva: reservaCodigo },
+      where: { codigoReserva: reservaCodigo, sucursal: { idEmpresa: this.tenant.empresaId() } },
       relations: { cliente: { usuario: true }, sucursal: true },
     });
     if (!reserva) throw new NotFoundException('Reserva no encontrada');
@@ -296,11 +293,13 @@ export class DevolucionesService {
   /** Suma las lineas repetidas de una misma variante y prorratea descuento/impuesto de la nota en el precio. */
   private agruparLineas(nota: NotaVenta, devueltas: Map<number, number>): LineaNota[] {
     const factor = Number(nota.subtotal) > 0 ? Number(nota.montoTotal) / Number(nota.subtotal) : 1;
-    const porVariante = new Map<number, { sku: string; descripcion: string; cantidad: number; importe: number }>();
+    const porVariante = new Map<number, { idDetalle: number; sku: string; descripcion: string; cantidad: number; importe: number }>();
 
-    for (const detalle of nota.detalles ?? []) {
+    const detalles = [...(nota.detalles ?? [])].sort((a, b) => a.id - b.id);
+    for (const detalle of detalles) {
       if (detalle.idVarianteProducto === null) continue;
       const acumulado = porVariante.get(detalle.idVarianteProducto) ?? {
+        idDetalle: detalle.id,
         sku: detalle.variante?.sku ?? '',
         descripcion: detalle.descripcion,
         cantidad: 0,
@@ -313,6 +312,7 @@ export class DevolucionesService {
 
     return [...porVariante.entries()].map(([idVarianteProducto, linea]) => ({
       idVarianteProducto,
+      idDetalleNotaVenta: linea.idDetalle,
       sku: linea.sku,
       descripcion: linea.descripcion,
       cantidadComprada: linea.cantidad,
@@ -376,7 +376,7 @@ export class DevolucionesService {
   }
 
   private dentroDePlazo(nota: NotaVenta): boolean {
-    return Date.now() - this.fechaEmision(nota).getTime() <= PLAZO_DEVOLUCION_DIAS * MS_POR_DIA;
+    return relojAhora().getTime() - this.fechaEmision(nota).getTime() <= PLAZO_DEVOLUCION_DIAS * MS_POR_DIA;
   }
 
   private validarMotivo(tipo: TipoDevolucion, motivo: CrearDevolucionDto['motivoDevolucion']): void {
@@ -416,7 +416,7 @@ export class DevolucionesService {
         throw new BadRequestException('Elige el almacen que recibe las prendas que vuelven al inventario');
       }
       if (item.idAlmacen !== undefined && !almacenes.has(item.idAlmacen)) {
-        const almacen = await manager.getRepository(Almacen).findOne({ where: { id: item.idAlmacen } });
+        const almacen = await manager.getRepository(Almacen).findOne({ where: { id: item.idAlmacen, idEmpresa: this.tenant.empresaId() } });
         if (!almacen) throw new NotFoundException(`Almacen ${item.idAlmacen} no encontrado`);
         if (!almacen.activo) throw new ConflictException(`El almacen "${almacen.nombre}" esta inactivo`);
         if (almacen.idSucursal !== idSucursal) {
@@ -430,6 +430,7 @@ export class DevolucionesService {
       const linea = origen.lineas.find((candidata) => candidata.idVarianteProducto === item.idVarianteProducto) as LineaNota;
       return {
         idVarianteProducto: item.idVarianteProducto,
+        idDetalleNotaVenta: linea.idDetalleNotaVenta,
         idAlmacen: item.idAlmacen ?? null,
         descripcion: linea.descripcion.slice(0, 255),
         precioUnitario: linea.precioReembolsable,
@@ -447,6 +448,7 @@ export class DevolucionesService {
     return [
       {
         idVarianteProducto: null,
+        idDetalleNotaVenta: null,
         idAlmacen: null,
         descripcion: `Reembolso del anticipo de la reserva ${origen.reserva.codigoReserva}`.slice(0, 255),
         precioUnitario: pendiente,
@@ -457,8 +459,11 @@ export class DevolucionesService {
     ];
   }
 
-  /** Solo las prendas en estado REINGRESO_INVENTARIO vuelven a stock_disponible; la merma no toca el stock vendible. */
-  private async reingresarStock(manager: EntityManager, lineas: LineaDevolucion[]): Promise<void> {
+  /**
+   * Solo las prendas en estado REINGRESO_INVENTARIO vuelven a stock_disponible; la merma no toca el stock vendible,
+   * pero queda en el kardex (cantidad 0) para saber cuanto se perdio por fallas.
+   */
+  private async reingresarStock(manager: EntityManager, lineas: LineaDevolucion[], idDevolucion: number, idUsuario: number): Promise<void> {
     const inventarioRepo = manager.getRepository(Inventario);
     // Orden fijo para que devoluciones simultaneas bloqueen las filas en el mismo orden y no se interbloqueen.
     const reingresos = lineas
@@ -470,11 +475,12 @@ export class DevolucionesService {
         where: { idAlmacen: linea.idAlmacen as number, idVarianteProducto: linea.idVarianteProducto as number },
         lock: { mode: 'pessimistic_write' },
       });
+      let fila: Inventario;
       if (existente) {
         existente.stockDisponible += linea.cantidad;
-        await inventarioRepo.save(existente);
+        fila = await inventarioRepo.save(existente);
       } else {
-        await inventarioRepo.save(
+        fila = await inventarioRepo.save(
           inventarioRepo.create({
             idAlmacen: linea.idAlmacen as number,
             idVarianteProducto: linea.idVarianteProducto as number,
@@ -485,6 +491,27 @@ export class DevolucionesService {
           }),
         );
       }
+      await registrarMovimiento(manager, fila, {
+        tipo: 'DEVOLUCION_REINGRESO',
+        cantidad: linea.cantidad,
+        referenciaTipo: 'NOTA_DEVOLUCION',
+        referenciaId: idDevolucion,
+        idUsuario,
+      });
+    }
+
+    const mermas = lineas.filter((linea) => linea.estadoProducto === 'MERMA_DEFECTUOSO' && linea.idAlmacen !== null && linea.idVarianteProducto !== null);
+    for (const linea of mermas) {
+      const fila = await inventarioRepo.findOne({ where: { idAlmacen: linea.idAlmacen as number, idVarianteProducto: linea.idVarianteProducto as number } });
+      if (!fila) continue;
+      await registrarMovimiento(manager, fila, {
+        tipo: 'MERMA',
+        cantidad: 0,
+        referenciaTipo: 'NOTA_DEVOLUCION',
+        referenciaId: idDevolucion,
+        idUsuario,
+        motivo: `${linea.cantidad} unidad(es) devueltas con falla`,
+      });
     }
   }
 
@@ -506,7 +533,7 @@ export class DevolucionesService {
   }
 
   private async validarPasarelaPresencial(manager: EntityManager, idPasarela: number): Promise<void> {
-    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela } });
+    const pasarela = await manager.getRepository(PasarelaPago).findOne({ where: { id: idPasarela, idEmpresa: this.tenant.empresaId() } });
     if (!pasarela) throw new NotFoundException('Metodo de pago no encontrado');
     if (!pasarela.disponiblePresencial) throw new BadRequestException('El metodo de pago no esta habilitado para caja');
   }
@@ -528,6 +555,7 @@ export class DevolucionesService {
 
 interface LineaDevolucion {
   idVarianteProducto: number | null;
+  idDetalleNotaVenta: number | null;
   idAlmacen: number | null;
   descripcion: string;
   precioUnitario: number;

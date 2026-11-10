@@ -32,7 +32,7 @@ function preparar(opciones: { stock?: number; nota?: Partial<NotaVenta> | null; 
   ]);
   const manager = { getRepository: (entidad: unknown) => repos.get(entidad) };
   const dataSource = { getRepository: (entidad: unknown) => repos.get(entidad), transaction: vi.fn(async (fn: (m: typeof manager) => unknown) => fn(manager)) };
-  return { service: new ComprasOfflineService(dataSource as never), detalles, reservas, inventarios, carritoGuardado, dataSource };
+  return { service: new ComprasOfflineService(dataSource as never, { empresaId: () => 2 } as never), detalles, reservas, inventarios, carritoGuardado, dataSource, repos };
 }
 
 describe('ComprasOfflineService (RF-SYNC-01)', () => {
@@ -69,6 +69,17 @@ describe('ComprasOfflineService (RF-SYNC-01)', () => {
   it('avisa si el precio cambio mientras estaba sin conexion', async () => {
     const { service } = preparar({ precio: 120 });
     await expect(service.sincronizar(compra, cliente)).resolves.toMatchObject({ montoTotal: 240, preciosActualizados: true });
+  });
+
+  it('solo busca la sucursal, las variantes, los almacenes y la nota dentro de la empresa del request', async () => {
+    const { service, repos } = preparar();
+    await service.sincronizar(compra, cliente);
+
+    const consulta = (entidad: unknown, metodo: 'find' | 'findOne') => (repos.get(entidad) as Record<string, ReturnType<typeof vi.fn>>)[metodo].mock.calls[0][0];
+    expect(consulta(Sucursal, 'findOne').where).toMatchObject({ id: 1, idEmpresa: 2 });
+    expect(consulta(VarianteProducto, 'find').where).toMatchObject({ idEmpresa: 2 });
+    expect(consulta(Almacen, 'find').where).toMatchObject({ idSucursal: 1, idEmpresa: 2 });
+    expect(consulta(NotaVenta, 'findOne').where).toMatchObject({ idLocalOffline: compra.idLocal, idCliente: 7, idEmpresa: 2 });
   });
 
   it('solo un cliente puede sincronizar', async () => {

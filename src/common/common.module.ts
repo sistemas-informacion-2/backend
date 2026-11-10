@@ -10,12 +10,15 @@ import { TransformInterceptor } from './interceptors/transform.interceptor.js';
 import { AuditInterceptor } from './interceptors/audit.interceptor.js';
 import { IdempotenciaInterceptor } from './interceptors/idempotencia.interceptor.js';
 import { SolicitudIdempotente } from './entities/solicitud-idempotente.entity.js';
+import { TenantGuard } from './tenant/tenant.guard.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Bitacora, SolicitudIdempotente])],
   providers: [
     BitacoraRepository,
+    // El orden importa: TenantGuard necesita el usuario que deja JwtAuthGuard.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useExisting: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },

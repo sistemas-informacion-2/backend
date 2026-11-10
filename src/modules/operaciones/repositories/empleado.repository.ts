@@ -2,10 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, type EntityManager, type Repository } from 'typeorm';
 import { Empleado } from '../entities/empleado.entity.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 
 @Injectable()
 export class EmpleadoRepository {
-  constructor(@InjectRepository(Empleado) private readonly repo: Repository<Empleado>) {}
+  constructor(
+    @InjectRepository(Empleado) private readonly repo: Repository<Empleado>,
+    private readonly tenant: TenantContext,
+  ) {}
+
+  // El empleado no tiene id_empresa propio: su PK es el usuario, y la empresa es la del usuario.
 
   findByUsuarioIdConDatos(
     idUsuario: number,
@@ -18,6 +24,7 @@ export class EmpleadoRepository {
       .leftJoinAndSelect('empleado.asignacionesSucursal', 'asignacion')
       .leftJoinAndSelect('asignacion.sucursal', 'sucursal')
       .where('empleado.id_usuario = :idUsuario', { idUsuario })
+      .andWhere('usuario.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .getOne();
   }
 
@@ -38,6 +45,7 @@ export class EmpleadoRepository {
       .leftJoinAndSelect('empleado.asignacionesSucursal', 'asignacion')
       .leftJoinAndSelect('asignacion.sucursal', 'sucursal')
       .where('usuario.tipo_usuario = :tipoUsuario', { tipoUsuario: 'E' })
+      .andWhere('usuario.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
       .orderBy('usuario.id', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
