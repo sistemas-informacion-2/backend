@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import { LimitesPlanService } from '../../../common/tenant/limites-plan.service.js';
 import { Caja } from '../../comercial/entities/caja.entity.js';
 import { SucursalRepository } from '../repositories/sucursal.repository.js';
 import { CiudadRepository } from '../repositories/ciudad.repository.js';
@@ -15,6 +16,7 @@ export class SucursalesService {
     private readonly sucursalRepo: SucursalRepository,
     private readonly ciudadRepo: CiudadRepository,
     @InjectRepository(Caja) private readonly cajaRepo: Repository<Caja>,
+    private readonly limites: LimitesPlanService,
   ) {}
 
   async listar(): Promise<SucursalResponseDto[]> {
@@ -29,6 +31,7 @@ export class SucursalesService {
 
   async crear(dto: CrearSucursalDto): Promise<SucursalResponseDto> {
     await this.validarCiudad(dto.idCiudad);
+    await this.limites.verificar('sucursales');
 
     const sucursal = this.sucursalRepo.create({
       idCiudad: dto.idCiudad,
@@ -51,6 +54,7 @@ export class SucursalesService {
 
     if (dto.idCiudad !== undefined) await this.validarCiudad(dto.idCiudad);
     if (dto.activo === false && sucursal.activo) await this.validarSinCajaAbierta(id);
+    if (dto.activo === true && !sucursal.activo) await this.limites.verificar('sucursales');
 
     Object.assign(sucursal, {
       ...(dto.idCiudad !== undefined && { idCiudad: dto.idCiudad }),

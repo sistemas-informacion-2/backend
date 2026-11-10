@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Public } from '../../../common/decorators/public.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { PermitidoSinPlan } from '../../../common/decorators/plan.decorator.js';
 import { AuthService } from '../services/auth.service.js';
 import { LoginDto } from '../dto/login.dto.js';
 import { RefreshTokenDto } from '../dto/refresh-token.dto.js';
@@ -15,7 +16,9 @@ import type { ActiveUser } from '../types/jwt-payload.type.js';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // Login, sesion y perfil siguen abiertos con el plan vencido: el dueno tiene que poder entrar a renovarlo.
   @Public()
+  @PermitidoSinPlan()
   @Post('login')
   @ApiOperation({ summary: 'Autentica un usuario y retorna tokens + perfil' })
   login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthResponseDto> {
@@ -31,6 +34,7 @@ export class AuthController {
     return this.authService.registrarCliente(dto, req.ip ?? null, req.headers['user-agent'] ?? null);
   }
 
+  @PermitidoSinPlan()
   @Get('me')
   @ApiOperation({ summary: 'Retorna el perfil del usuario autenticado' })
   me(@CurrentUser() user: ActiveUser): Promise<PerfilDto> {
@@ -38,6 +42,7 @@ export class AuthController {
   }
 
   @Public()
+  @PermitidoSinPlan()
   @Post('refresh')
   @ApiOperation({ summary: 'Rota el par de tokens usando el refresh token' })
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
@@ -45,6 +50,7 @@ export class AuthController {
   }
 
   @Public()
+  @PermitidoSinPlan()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Cierra la sesión asociada al refresh token' })

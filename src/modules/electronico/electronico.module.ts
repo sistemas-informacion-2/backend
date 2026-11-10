@@ -45,6 +45,7 @@ import { PushService } from './services/push.service.js';
     StripeService,
     CheckoutService,
   ],
-  exports: [TypeOrmModule],
+  // StripeService tambien cobra los planes de DOMINATR (PlataformaModule).
+  exports: [TypeOrmModule, StripeService],
 })
 export class ElectronicoModule {}

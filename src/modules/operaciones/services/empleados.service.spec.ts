@@ -62,7 +62,7 @@ function crearService(overrides: {
   };
 
   return {
-    service: new EmpleadosService(dataSource, empleadoRepo as never, {} as never, {} as never, { empresaId: () => 1 } as never),
+    service: new EmpleadosService(dataSource, empleadoRepo as never, {} as never, {} as never, { empresaId: () => 1 } as never, { verificar: vi.fn() } as never),
     empleadoRepo,
     usuarioRepo,
   };

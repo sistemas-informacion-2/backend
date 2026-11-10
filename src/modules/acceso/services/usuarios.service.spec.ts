@@ -35,6 +35,7 @@ describe('UsuariosService', () => {
     const rolRepo = { findActiveByIds: vi.fn().mockResolvedValue([]) };
     const rolUsuarioRepo = { reemplazarRoles: vi.fn() };
     const sesionRepo = { cerrarAbiertasPorUsuario: vi.fn() };
+    const limites = { verificar: vi.fn().mockResolvedValue(undefined) };
     const dataSource = {
       transaction: vi.fn(async (callback: (manager: object) => unknown) => callback({})),
     } as unknown as DataSource;
@@ -44,6 +45,7 @@ describe('UsuariosService', () => {
       rolRepo as never,
       rolUsuarioRepo as never,
       sesionRepo as never,
+      limites as never,
     );
 
     const response = await service.crear({
@@ -62,6 +64,43 @@ describe('UsuariosService', () => {
     const datosGuardados = usuarioRepo.create.mock.calls[0][0] as Usuario;
     await expect(bcrypt.compare('secreto', datosGuardados.passwordHash)).resolves.toBe(true);
     expect(response.email).toBe('ana@example.com');
+    expect(limites.verificar).toHaveBeenCalledWith('usuarios', expect.anything());
+  });
+
+  it('no crea personal si el plan ya llego a su limite de usuarios', async () => {
+    const usuarioRepo = { findByEmail: vi.fn().mockResolvedValue(null), create: vi.fn(), save: vi.fn() };
+    const limites = { verificar: vi.fn().mockRejectedValue(new Error('Tu plan permite hasta 3 usuarios activos')) };
+    const dataSource = {
+      transaction: vi.fn(async (callback: (manager: object) => unknown) => callback({})),
+    } as unknown as DataSource;
+    const service = new UsuariosService(dataSource, usuarioRepo as never, {} as never, {} as never, {} as never, limites as never);
+
+    await expect(
+      service.crear({ nombre: 'Luis', apellido: 'Rojas', email: 'luis@example.com', password: 'secreto1', tipoUsuario: 'A' }),
+    ).rejects.toThrow('Tu plan permite hasta 3 usuarios activos');
+    expect(usuarioRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('reactivar a un empleado cuenta para el limite; reactivar a un cliente no', async () => {
+    const limites = { verificar: vi.fn().mockResolvedValue(undefined) };
+    const dataSource = {
+      transaction: vi.fn(async (callback: (manager: object) => unknown) => callback({})),
+    } as unknown as DataSource;
+    const crear = (usuario: Usuario) =>
+      new UsuariosService(
+        dataSource,
+        { findByIdConRolesParaGestion: vi.fn().mockResolvedValue(usuario), save: vi.fn().mockResolvedValue(usuario) } as never,
+        {} as never,
+        {} as never,
+        { cerrarAbiertasPorUsuario: vi.fn() } as never,
+        limites as never,
+      );
+
+    await crear(usuarioBase({ activo: false, tipoUsuario: 'C' })).actualizar(1, { activo: true });
+    expect(limites.verificar).not.toHaveBeenCalled();
+
+    await crear(usuarioBase({ activo: false, tipoUsuario: 'E' })).actualizar(1, { activo: true });
+    expect(limites.verificar).toHaveBeenCalledWith('usuarios', expect.anything());
   });
 
   it('rechaza crear un usuario con email duplicado', async () => {
@@ -75,6 +114,7 @@ describe('UsuariosService', () => {
       {} as never,
       {} as never,
       {} as never,
+      { verificar: vi.fn() } as never,
     );
 
     await expect(
@@ -104,6 +144,7 @@ describe('UsuariosService', () => {
       {} as never,
       {} as never,
       sesionRepo as never,
+      { verificar: vi.fn() } as never,
     );
 
     await service.eliminar(1);

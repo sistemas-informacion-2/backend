@@ -2,11 +2,13 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post } fr
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
+import { RequierePlan } from '../../../common/decorators/plan.decorator.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { GuardarGraficoDto, type DatosGraficoDto, type GraficoGuardadoDto } from '../dto/modelos.dto.js';
 import { GraficosService } from '../services/graficos.service.js';
 
 @ApiTags('BI')
+@RequierePlan('bi')
 @Controller('bi/graficos')
 @RequirePermission('analitica:bi:usar')
 export class GraficosController {

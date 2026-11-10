@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
+import { RequierePlan } from '../../../common/decorators/plan.decorator.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import {
   CreateReportTemplateDto,
@@ -24,6 +25,9 @@ import { ReportsService } from '../services/reports.service.js';
  * whitelist de campos; `run` ejecuta el builder, `export` descarga en
  * pdf/excel/html/json (respuesta binaria, sin envoltorio envelope) y
  * `generativo` interpreta pedidos por voz o texto en lenguaje natural.
+ *
+ * Planes: el constructor (catalogo, run, plantillas) y el generativo son "reportes avanzados"; los predefinidos y
+ * la exportacion (que tambien usan los predefinidos) estan en todos los planes.
  */
 @ApiTags('Reporte')
 @Controller('reports')
@@ -32,18 +36,21 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('catalog')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Catálogo de reportes dinámicos para el Report Builder' })
   catalogo(): ReportTypeDefinitionDto[] {
     return this.reportsService.catalogo();
   }
 
   @Post('run')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Ejecuta un reporte dinámico con campos, filtros, orden y paginación' })
   ejecutar(@Body() request: ReportRunRequestDto): Promise<ReportResultDto> {
     return this.reportsService.ejecutar(request);
   }
 
   @Post('generativo')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Interpreta un pedido en lenguaje natural (voz o texto) y genera el reporte' })
   generativo(@Body() body: ReporteGenerativoRequestDto): Promise<ReporteGenerativoResponseDto> {
     return this.reportsService.generativo(body.prompt);
@@ -78,12 +85,14 @@ export class ReportsController {
   }
 
   @Get('templates')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Lista las plantillas guardadas del usuario actual' })
   listarPlantillas(@CurrentUser() usuario: ActiveUser): Promise<ReportTemplateDto[]> {
     return this.reportsService.listarPlantillas(usuario.sub);
   }
 
   @Post('templates')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Guarda la configuración actual como plantilla' })
   crearPlantilla(
     @Body() body: CreateReportTemplateDto,
@@ -93,6 +102,7 @@ export class ReportsController {
   }
 
   @Put('templates/:id')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Actualiza una plantilla propia del usuario' })
   actualizarPlantilla(
     @Param('id', ParseIntPipe) id: number,
@@ -103,6 +113,7 @@ export class ReportsController {
   }
 
   @Delete('templates/:id')
+  @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Elimina una plantilla propia del usuario' })
   eliminarPlantilla(
     @Param('id', ParseIntPipe) id: number,

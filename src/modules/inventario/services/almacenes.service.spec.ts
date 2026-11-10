@@ -28,9 +28,11 @@ function crearService(overrides: {
     ...overrides.almacenRepo,
   };
   const sucursalRepo = { findOne: vi.fn(), ...overrides.sucursalRepo };
+  const limites = { verificar: vi.fn().mockResolvedValue(undefined) };
 
   return {
-    service: new AlmacenesService(almacenRepo as never, sucursalRepo as never, { empresaId: () => 1 } as never),
+    service: new AlmacenesService(almacenRepo as never, sucursalRepo as never, { empresaId: () => 1 } as never, limites as never),
+    limites,
     almacenRepo,
     sucursalRepo,
   };

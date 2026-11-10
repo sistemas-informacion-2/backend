@@ -2,11 +2,13 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post } fr
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
+import { RequierePlan } from '../../../common/decorators/plan.decorator.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { PreguntarDto, type ConversacionDetalleDto, type ConversacionResumenDto, type RespuestaAgenteDto } from '../agente/agente.dto.js';
 import { AgenteService } from '../agente/agente.service.js';
 
 @ApiTags('BI')
+@RequierePlan('bi')
 @Controller('bi')
 @RequirePermission('analitica:bi:usar')
 export class AgenteController {

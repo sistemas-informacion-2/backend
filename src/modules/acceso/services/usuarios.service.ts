@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { LimitesPlanService } from '../../../common/tenant/limites-plan.service.js';
+import type { Usuario } from '../entities/usuario.entity.js';
 import { UsuarioRepository } from '../repositories/usuario.repository.js';
 import { RolRepository } from '../repositories/rol.repository.js';
 import { RolUsuarioRepository } from '../repositories/rol-usuario.repository.js';
@@ -25,6 +27,7 @@ export class UsuariosService {
     private readonly rolRepo: RolRepository,
     private readonly rolUsuarioRepo: RolUsuarioRepository,
     private readonly sesionRepo: SesionRepository,
+    private readonly limites: LimitesPlanService,
   ) {}
 
   async listar(query: UsuariosQueryDto): Promise<UsuariosPaginatedResponseDto> {
@@ -51,6 +54,7 @@ export class UsuariosService {
 
     return this.dataSource.transaction(async (manager) => {
       await this.validarEmailDisponible(email, undefined, manager);
+      if (esPersonalInterno(dto.tipoUsuario)) await this.limites.verificar('usuarios', manager);
       const roles = await this.validarRoles(dto.roles ?? [], manager);
       const passwordHash = await bcrypt.hash(dto.password, 10);
       const usuario = this.usuarioRepo.create(
@@ -82,6 +86,7 @@ export class UsuariosService {
     return this.dataSource.transaction(async (manager) => {
       const usuario = await this.usuarioRepo.findByIdConRolesParaGestion(id, manager);
       if (!usuario) throw new NotFoundException('Usuario no encontrado');
+      const contabaEnElPlan = cuentaEnElPlan(usuario);
 
       if (dto.email !== undefined) {
         const email = this.normalizarEmail(dto.email);
@@ -97,6 +102,8 @@ export class UsuariosService {
       if (dto.activo !== undefined) usuario.activo = dto.activo;
       if (dto.password !== undefined) usuario.passwordHash = await bcrypt.hash(dto.password, 10);
       if (dto.estadoAcceso === 'HABILITADO') usuario.intentosFallidos = 0;
+      // Reactivar a alguien del personal (o pasar un cliente a personal) ocupa un lugar del plan.
+      if (!contabaEnElPlan && cuentaEnElPlan(usuario)) await this.limites.verificar('usuarios', manager);
 
       await this.usuarioRepo.save(usuario, manager);
 
@@ -165,4 +172,13 @@ export class UsuariosService {
   private normalizarEmail(email: string): string {
     return email.trim().toLowerCase();
   }
+}
+
+/** Administradores y empleados: los clientes de la tienda no cuentan para el limite de usuarios del plan. */
+function esPersonalInterno(tipoUsuario: string): boolean {
+  return tipoUsuario === 'A' || tipoUsuario === 'E';
+}
+
+function cuentaEnElPlan(usuario: Pick<Usuario, 'activo' | 'tipoUsuario'>): boolean {
+  return usuario.activo && esPersonalInterno(usuario.tipoUsuario);
 }

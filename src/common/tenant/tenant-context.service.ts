@@ -1,7 +1,19 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 import type { EstadoEmpresa } from '../../modules/plataforma/entities/empresa.entity.js';
+import type { CodigoPlan } from '../../modules/plataforma/entities/plan.entity.js';
 import { EmpresaResolver } from './empresa-resolver.service.js';
+
+/** Lo del plan que se revisa en cada request: funciones habilitadas y limites (null = sin limite). */
+export interface PlanActual {
+  codigo: CodigoPlan;
+  nombre: string;
+  maxUsuarios: number | null;
+  maxSucursales: number | null;
+  maxAlmacenes: number | null;
+  reportesAvanzados: boolean;
+  bi: boolean;
+}
 
 /** Lo minimo de la empresa que necesita cualquier capa durante un request. */
 export interface EmpresaActual {
@@ -9,6 +21,9 @@ export interface EmpresaActual {
   slug: string;
   nombre: string;
   estado: EstadoEmpresa;
+  plan: PlanActual;
+  /** null = el plan no vence. */
+  planVenceEl: Date | null;
 }
 
 const CLAVE_EMPRESA = 'empresa';
@@ -40,11 +55,16 @@ export class TenantContext {
    * una consulta sin empresa podria mezclar datos de varias tiendas.
    */
   empresaId(): number {
+    return this.empresaRequerida().id;
+  }
+
+  /** La empresa actual completa (con su plan); falla igual que empresaId() si no hay ninguna. */
+  empresaRequerida(): EmpresaActual {
     const empresa = this.empresa();
     if (!empresa) {
       throw new InternalServerErrorException('Esta operacion requiere una empresa y no hay ninguna en el contexto');
     }
-    return empresa.id;
+    return empresa;
   }
 
   /** Corre `tarea` dentro de un contexto propio con `empresa`: para cron y tareas fuera de un request. */

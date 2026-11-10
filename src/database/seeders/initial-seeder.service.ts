@@ -78,13 +78,16 @@ const ROLES_BASE: Array<{ nombre: string; descripcion: string; permisos: string[
   },
 ];
 
-/** Datos del primer administrador de una empresa. */
-export interface DatosAdministrador {
+/**
+ * Datos del primer administrador de una empresa. La contrasena viene en claro (seeders, alta del superadmin) o ya
+ * cifrada (registro desde el portal: se cifro antes de esperar el pago, para no guardarla en claro).
+ */
+export type DatosAdministrador = {
   nombre: string;
   apellido: string;
   email: string;
-  password: string;
-}
+  telefono?: string | null;
+} & ({ password: string; passwordHash?: never } | { passwordHash: string; password?: never });
 
 /**
  * Siembra los datos minimos del sistema y es idempotente: se llama en cada
@@ -154,7 +157,8 @@ export class InitialSeederService {
         nombre: datos.nombre,
         apellido: datos.apellido,
         email: datos.email.trim().toLowerCase(),
-        passwordHash: await bcrypt.hash(datos.password, 10),
+        telefono: datos.telefono ?? null,
+        passwordHash: datos.passwordHash !== undefined ? datos.passwordHash : await bcrypt.hash(datos.password, 10),
         idEmpresa,
         tipoUsuario: 'A',
         estadoAcceso: 'HABILITADO',

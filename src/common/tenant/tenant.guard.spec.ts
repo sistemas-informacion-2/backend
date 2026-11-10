@@ -1,20 +1,33 @@
-import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, HttpException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { PERMITIDO_SIN_PLAN, REQUIERE_PLAN } from '../decorators/plan.decorator.js';
+import { ES_RUTA_PLATAFORMA } from '../decorators/solo-plataforma.decorator.js';
 import { TenantGuard } from './tenant.guard.js';
-import type { EmpresaActual } from './tenant-context.service.js';
+import type { EmpresaActual, PlanActual } from './tenant-context.service.js';
 
-const fashion: EmpresaActual = { id: 1, slug: 'fashionstore', nombre: 'FashionStore', estado: 'ACTIVA' };
-const otra: EmpresaActual = { id: 2, slug: 'otra', nombre: 'Otra', estado: 'ACTIVA' };
-const suspendida: EmpresaActual = { id: 3, slug: 'suspendida', nombre: 'Suspendida', estado: 'SUSPENDIDA' };
-const empresas = [fashion, otra, suspendida];
+const DIA_MS = 86_400_000;
+const empresarial: PlanActual = { codigo: 'EMPRESARIAL', nombre: 'Empresarial', maxUsuarios: 200, maxSucursales: 10, maxAlmacenes: 20, reportesAvanzados: true, bi: true };
+const emprendedor: PlanActual = { codigo: 'EMPRENDEDOR', nombre: 'Emprendedor', maxUsuarios: 20, maxSucursales: 1, maxAlmacenes: 1, reportesAvanzados: false, bi: false };
 
-function crearGuard(slugPorDefecto = 'fashionstore', esRutaPlataforma = false) {
+function empresa(id: number, slug: string, extra: Partial<EmpresaActual> = {}): EmpresaActual {
+  return { id, slug, nombre: slug, estado: 'ACTIVA', plan: empresarial, planVenceEl: null, ...extra };
+}
+
+const fashion = empresa(1, 'fashionstore');
+const otra = empresa(2, 'otra');
+const suspendida = empresa(3, 'suspendida', { estado: 'SUSPENDIDA' });
+const vencida = empresa(4, 'vencida', { planVenceEl: new Date(Date.now() - 5 * DIA_MS) });
+const enGracia = empresa(5, 'en-gracia', { planVenceEl: new Date(Date.now() - 1 * DIA_MS) });
+const basica = empresa(6, 'basica', { plan: emprendedor, planVenceEl: new Date(Date.now() + 20 * DIA_MS) });
+const empresas = [fashion, otra, suspendida, vencida, enGracia, basica];
+
+function crearGuard(slugPorDefecto = 'fashionstore', metadatos: Record<string, unknown> = {}) {
   const resolver = {
-    porSlug: vi.fn(async (slug: string) => empresas.find((empresa) => empresa.slug === slug) ?? null),
-    porId: vi.fn(async (id: number) => empresas.find((empresa) => empresa.id === id) ?? null),
+    porSlug: vi.fn(async (slug: string) => empresas.find((e) => e.slug === slug) ?? null),
+    porId: vi.fn(async (id: number) => empresas.find((e) => e.id === id) ?? null),
   };
   const tenant = { establecer: vi.fn() };
   const config = { get: vi.fn().mockReturnValue(slugPorDefecto) };
-  const reflector = { getAllAndOverride: vi.fn().mockReturnValue(esRutaPlataforma) };
+  const reflector = { getAllAndOverride: vi.fn((clave: string) => metadatos[clave]) };
   const guard = new TenantGuard(resolver as never, tenant as never, config as never, reflector as never);
   return { guard, tenant };
 }
@@ -26,6 +39,15 @@ function contexto(headers: Record<string, string> = {}, user?: { empresaId?: num
     getClass: () => undefined,
     switchToHttp: () => ({ getRequest: () => ({ headers, user }) }),
   } as never;
+}
+
+async function errorDe(promesa: Promise<unknown>): Promise<HttpException> {
+  try {
+    await promesa;
+  } catch (error) {
+    return error as HttpException;
+  }
+  throw new Error('Se esperaba un error');
 }
 
 describe('TenantGuard', () => {
@@ -80,7 +102,7 @@ describe('TenantGuard', () => {
   });
 
   it('las rutas de plataforma no usan empresa y son solo del superadmin', async () => {
-    const { guard, tenant } = crearGuard('fashionstore', true);
+    const { guard, tenant } = crearGuard('fashionstore', { [ES_RUTA_PLATAFORMA]: true });
 
     await expect(guard.canActivate(contexto())).resolves.toBe(true);
     await expect(guard.canActivate(contexto({}, { empresaId: null, tipoUsuario: 'S' }))).resolves.toBe(true);
@@ -99,5 +121,40 @@ describe('TenantGuard', () => {
 
     await expect(guard.canActivate(contexto({ 'x-empresa': 'suspendida' }))).rejects.toThrow(ForbiddenException);
     await expect(guard.canActivate(contexto({}, { empresaId: 3 }))).rejects.toThrow(ForbiddenException);
+  });
+
+  describe('plan', () => {
+    it('con el plan vencido (pasada la gracia) responde 402 PLAN_VENCIDO', async () => {
+      const { guard, tenant } = crearGuard();
+
+      const error = await errorDe(guard.canActivate(contexto({}, { empresaId: 4, tipoUsuario: 'A' })));
+
+      expect(error.getStatus()).toBe(402);
+      expect(error.getResponse()).toMatchObject({ error: 'PLAN_VENCIDO' });
+      expect(tenant.establecer).not.toHaveBeenCalled();
+    });
+
+    it('con el plan vencido deja pasar las rutas @PermitidoSinPlan (login, Mi plan)', async () => {
+      const { guard, tenant } = crearGuard('fashionstore', { [PERMITIDO_SIN_PLAN]: true });
+
+      await expect(guard.canActivate(contexto({ 'x-empresa': 'vencida' }))).resolves.toBe(true);
+      expect(tenant.establecer).toHaveBeenCalledWith(vencida);
+    });
+
+    it('en los dias de gracia la tienda sigue operando', async () => {
+      const { guard } = crearGuard();
+
+      await expect(guard.canActivate(contexto({}, { empresaId: 5, tipoUsuario: 'A' }))).resolves.toBe(true);
+    });
+
+    it('una ruta @RequierePlan responde 403 PLAN_SIN_FUNCION si el plan no la incluye', async () => {
+      const { guard } = crearGuard('fashionstore', { [REQUIERE_PLAN]: 'bi' });
+
+      const error = await errorDe(guard.canActivate(contexto({}, { empresaId: 6, tipoUsuario: 'A' })));
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toMatchObject({ error: 'PLAN_SIN_FUNCION' });
+      await expect(guard.canActivate(contexto({}, { empresaId: 1, tipoUsuario: 'A' }))).resolves.toBe(true);
+    });
   });
 });

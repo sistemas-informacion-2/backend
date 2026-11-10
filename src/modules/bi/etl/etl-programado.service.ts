@@ -5,6 +5,7 @@ import { CronJob } from 'cron';
 import { DataSource } from 'typeorm';
 import type { AppConfig } from '../../../config/configuration.js';
 import { ZONA_HORARIA } from '../../../common/utils/fecha.util.js';
+import { DIAS_GRACIA } from '../../../common/tenant/plan-vigencia.js';
 import { EtlService } from './etl.service.js';
 
 const NOMBRE_TAREA = 'bi-etl-nocturno';
@@ -40,9 +41,19 @@ export class EtlProgramadoService implements OnModuleInit {
     }
   }
 
-  /** Carga el DW de cada empresa activa; devuelve cuantas terminaron bien. */
+  /**
+   * Carga el DW de cada empresa activa cuyo plan incluye el BI (y no vencio hace mas de la gracia); devuelve
+   * cuantas terminaron bien. Las demas no lo usan: cargarlo seria trabajo de mas cada noche.
+   */
   async cargarTodas(): Promise<number> {
-    const empresas = await this.dataSource.query<Array<{ id: number; slug: string }>>(`SELECT id, slug FROM empresa WHERE estado = 'ACTIVA' ORDER BY id`);
+    const empresas = await this.dataSource.query<Array<{ id: number; slug: string }>>(
+      `SELECT e.id, e.slug
+         FROM empresa e
+         JOIN plan p ON p.id = e.id_plan
+        WHERE e.estado = 'ACTIVA' AND p.bi
+          AND (e.plan_vence_el IS NULL OR e.plan_vence_el > now() - interval '${DIAS_GRACIA} days')
+        ORDER BY e.id`,
+    );
     let correctas = 0;
     for (const empresa of empresas) {
       try {

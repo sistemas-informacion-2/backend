@@ -140,6 +140,9 @@ export class HistoricoDemoService {
         slug: opciones.slug,
         nombre: 'Tienda Demo BI',
         razonSocial: 'Tienda Demo BI SRL',
+        // La tienda de demostracion del BI: plan completo y sin vencimiento.
+        codigoPlan: 'EMPRESARIAL',
+        planVenceEl: null,
         admin: { nombre: 'Admin', apellido: 'Demo', email: adminEmail, password: PASSWORD_DEMO },
       });
       await this.tenant.ejecutarParaEmpresa(empresa.id, () => this.simular(empresa.id, adminEmail, inicio, fin, opciones));

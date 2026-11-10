@@ -2,11 +2,13 @@ import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
+import { RequierePlan } from '../../../common/decorators/plan.decorator.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { EtlService, type EjecucionEtl, type ResumenEtl } from '../etl/etl.service.js';
 
 @ApiTags('BI')
+@RequierePlan('bi')
 @Controller('bi/etl')
 export class EtlController {
   constructor(

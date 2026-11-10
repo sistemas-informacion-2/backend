@@ -1,11 +1,13 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator.js';
+import { RequierePlan } from '../../../common/decorators/plan.decorator.js';
 import { ModelosQueryDto, type PronosticoModeloDto, type ResumenModelosDto } from '../dto/modelos.dto.js';
 import type { ResultadoHerramienta } from '../herramientas/herramienta.js';
 import { ModelosService } from '../services/modelos.service.js';
 
 @ApiTags('BI')
+@RequierePlan('bi')
 @Controller('bi/modelos')
 @RequirePermission('analitica:bi:usar')
 export class ModelosController {

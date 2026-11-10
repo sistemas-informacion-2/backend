@@ -6,6 +6,7 @@ import { EmpresasService } from '../services/empresas.service.js';
 import {
   ActualizarEmpresaDto,
   CambiarEstadoEmpresaDto,
+  CambiarPlanEmpresaDto,
   CrearEmpresaDto,
   type EmpresaPublicaResponseDto,
   type EmpresaResponseDto,
@@ -52,5 +53,11 @@ export class EmpresasController {
   @ApiOperation({ summary: 'Suspende o reactiva una empresa (no borra datos)' })
   cambiarEstado(@Param('id', ParseIntPipe) id: number, @Body() dto: CambiarEstadoEmpresaDto): Promise<EmpresaResponseDto> {
     return this.empresasService.cambiarEstado(id, dto);
+  }
+
+  @Patch(':id/plan')
+  @ApiOperation({ summary: 'Cambia el plan de una empresa y fija su vencimiento (null = no vence)' })
+  cambiarPlan(@Param('id', ParseIntPipe) id: number, @Body() dto: CambiarPlanEmpresaDto): Promise<EmpresaResponseDto> {
+    return this.empresasService.cambiarPlan(id, dto);
   }
 }

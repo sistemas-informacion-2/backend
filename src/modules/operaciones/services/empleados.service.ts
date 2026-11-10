@@ -6,6 +6,7 @@ import { EmpleadoRepository } from '../repositories/empleado.repository.js';
 import { AsignacionSucursalRepository } from '../repositories/asignacion-sucursal.repository.js';
 import { Usuario } from '../../acceso/entities/usuario.entity.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { LimitesPlanService } from '../../../common/tenant/limites-plan.service.js';
 import { Sucursal } from '../entities/sucursal.entity.js';
 import { toEmpleadoResponse } from '../mappers/empleado.mapper.js';
 import type { CrearEmpleadoDto } from '../dto/crear-empleado.dto.js';
@@ -22,6 +23,7 @@ export class EmpleadosService {
     private readonly asignacionSucursalRepo: AsignacionSucursalRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     private readonly tenant: TenantContext,
+    private readonly limites: LimitesPlanService,
   ) {}
 
   async listar(query: EmpleadosQueryDto): Promise<EmpleadosPaginatedResponseDto> {
@@ -49,6 +51,7 @@ export class EmpleadosService {
 
     return this.dataSource.transaction(async (manager) => {
       await this.validarEmailDisponible(email, undefined, manager);
+      await this.limites.verificar('usuarios', manager);
 
       const passwordHash = await bcrypt.hash(dto.password, 10);
       const usuario = await manager.getRepository(Usuario).save(
@@ -109,6 +112,7 @@ export class EmpleadosService {
       if (dto.apellido !== undefined) usuario.apellido = dto.apellido.trim();
       if (dto.telefono !== undefined) usuario.telefono = dto.telefono?.trim() || null;
       if (dto.sexo !== undefined) usuario.sexo = dto.sexo?.trim() || null;
+      if (dto.activo === true && !usuario.activo) await this.limites.verificar('usuarios', manager);
       if (dto.activo !== undefined) usuario.activo = dto.activo;
       if (dto.password !== undefined) usuario.passwordHash = await bcrypt.hash(dto.password, 10);
 

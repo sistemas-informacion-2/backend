@@ -9,6 +9,7 @@ import type { ActualizarAlmacenDto } from '../dto/actualizar-almacen.dto.js';
 import type { AlmacenesQueryDto } from '../dto/almacenes-query.dto.js';
 import type { AlmacenResponseDto } from '../dto/almacen-response.dto.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { LimitesPlanService } from '../../../common/tenant/limites-plan.service.js';
 
 @Injectable()
 export class AlmacenesService {
@@ -16,6 +17,7 @@ export class AlmacenesService {
     private readonly almacenRepo: AlmacenRepository,
     @InjectRepository(Sucursal) private readonly sucursalRepo: Repository<Sucursal>,
     private readonly tenant: TenantContext,
+    private readonly limites: LimitesPlanService,
   ) {}
 
   async listar(query: AlmacenesQueryDto): Promise<AlmacenResponseDto[]> {
@@ -32,6 +34,7 @@ export class AlmacenesService {
   async crear(dto: CrearAlmacenDto): Promise<AlmacenResponseDto> {
     await this.validarSucursal(dto.idSucursal);
     await this.validarNombreDisponible(dto.idSucursal, dto.nombre);
+    if (dto.activo ?? true) await this.limites.verificar('almacenes');
 
     const almacen = this.almacenRepo.create({
       idSucursal: dto.idSucursal,
@@ -55,6 +58,7 @@ export class AlmacenesService {
     if (nombre.toLowerCase() !== almacen.nombre.toLowerCase() || idSucursal !== almacen.idSucursal) {
       await this.validarNombreDisponible(idSucursal, nombre, id);
     }
+    if (dto.activo === true && !almacen.activo) await this.limites.verificar('almacenes');
 
     Object.assign(almacen, {
       idSucursal,
