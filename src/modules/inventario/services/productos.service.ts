@@ -26,7 +26,7 @@ import type { ProductoResponseDto, ProductosPaginatedResponseDto } from '../dto/
 import type { ProductoDetallePublicoDto } from '../dto/producto-detalle-publico.dto.js';
 
 /** Cuantos productos se sugieren en "Tambien te puede interesar". */
-const LIMITE_RELACIONADOS = 6;
+const LIMITE_RELACIONADOS = 12;
 
 function esViolacionDeLlaveForanea(error: unknown): boolean {
   const conDetalle = error as { driverError?: { code?: string; routine?: string }; message?: string };
@@ -92,8 +92,11 @@ export class ProductosService {
   async relacionados(id: number): Promise<ProductoResponseDto[]> {
     const producto = await this.productoRepo.findById(id);
     if (!producto || !producto.activo) throw new NotFoundException('Producto no encontrado');
-    const relacionados = await this.productoRepo.findRelacionados(producto.idCategoria, id, LIMITE_RELACIONADOS);
-    return relacionados.map(toProductoResponseDto);
+    const deLaCategoria = await this.productoRepo.findRelacionados(producto.idCategoria, id, LIMITE_RELACIONADOS);
+    // Primero lo más parecido; si la categoría tiene pocos, se completa con el resto del catálogo.
+    const faltan = LIMITE_RELACIONADOS - deLaCategoria.length;
+    const otros = faltan > 0 ? await this.productoRepo.findOtrosActivos([id, ...deLaCategoria.map((item) => item.id)], faltan) : [];
+    return [...deLaCategoria, ...otros].map(toProductoResponseDto);
   }
 
   async listar(query: ProductosQueryDto): Promise<ProductosPaginatedResponseDto> {
