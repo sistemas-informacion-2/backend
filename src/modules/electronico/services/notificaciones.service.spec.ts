@@ -63,7 +63,7 @@ function crearService(overrides: {
   } as unknown as DataSource;
 
   return {
-    service: new NotificacionesService(dataSource, notificacionRepo as never, usuarioRepo as never, dispositivoRepo as never, pushService as never, { empresaId: () => 1 } as never),
+    service: new NotificacionesService(dataSource, notificacionRepo as never, usuarioRepo as never, dispositivoRepo as never, pushService as never, { listarDeUsuarios: vi.fn().mockResolvedValue([]) } as never, { habilitado: false, enviar: vi.fn() } as never, { empresaId: () => 1 } as never),
     notificacionRepo,
     usuarioRepo,
     dispositivoRepo,

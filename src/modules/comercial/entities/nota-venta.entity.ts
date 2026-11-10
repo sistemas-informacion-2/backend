@@ -102,6 +102,10 @@ export class NotaVenta {
   @Column({ name: 'tipo_venta', type: 'enum', enum: ['DIRECTA_PRESENCIAL', 'ANTICIPO_RESERVA', 'PRESENCIAL_LIQUIDACION', 'E_COMMERCE'], enumName: 'tipo_nota_venta_enum' })
   tipoVenta: TipoNotaVenta;
 
+  /** RF-SYNC-01: id que el navegador dio a la compra hecha sin conexion. Unico: la misma compra no se registra dos veces. */
+  @Column({ name: 'id_local_offline', type: 'varchar', length: 50, nullable: true, unique: true })
+  idLocalOffline: string | null;
+
   @Column({ name: 'nro_factura', type: 'varchar', length: 50, nullable: true })
   nroFactura: string | null;
 

@@ -18,7 +18,13 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get<ConfigService<AppConfig, true>>(ConfigService);
 
-  app.enableCors({ origin: config.get('corsOrigin', { infer: true }) });
+  // CORS_ORIGIN admite varios origenes separados por coma (p. ej. `vite dev` en :5173 y `vite preview` en :4173).
+  const origenes = config
+    .get('corsOrigin', { infer: true })
+    .split(',')
+    .map((origen) => origen.trim())
+    .filter(Boolean);
+  app.enableCors({ origin: origenes.length === 1 ? origenes[0] : origenes });
   app.setGlobalPrefix('api');
 
   const server = app.getHttpAdapter().getInstance();

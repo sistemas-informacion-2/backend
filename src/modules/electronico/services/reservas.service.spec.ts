@@ -31,6 +31,7 @@ function reservaBase(overrides: Partial<Reserva> = {}): Reserva {
     montoAnticipo: 40,
     montoTotal: 200,
     observaciones: null,
+    idLocalOffline: null,
     detalles: [],
     pagos: [],
     ...overrides,
@@ -51,7 +52,10 @@ function crearService(config: { repos?: Map<unknown, RepoStub>; reserva?: Reserv
       return repo;
     },
   };
-  const dataSource = { transaction: vi.fn((cb: (m: unknown) => unknown) => cb(manager)) };
+  const dataSource = {
+    transaction: vi.fn((cb: (m: unknown) => unknown) => cb(manager)),
+    getRepository: (entidad: unknown) => manager.getRepository(entidad),
+  };
   const reservaRepo = {
     findByIdConDetalle: vi.fn().mockResolvedValue(config.reserva === undefined ? reservaBase() : config.reserva),
     findByCliente: vi.fn().mockResolvedValue([]),

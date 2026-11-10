@@ -72,6 +72,13 @@ export class Reserva {
   @Column({ type: 'text', nullable: true })
   observaciones: string | null;
 
+  /**
+   * Historico: pedidos sin conexion que antes se convertian en reserva. Ya no se llena; se conserva por los registros
+   * existentes (RF-SYNC-01 ahora genera una Nota de Venta).
+   */
+  @Column({ name: 'id_local_offline', type: 'varchar', length: 40, nullable: true, unique: true })
+  idLocalOffline: string | null;
+
   @OneToMany(() => DetalleReserva, (detalle) => detalle.reserva)
   detalles: Relation<DetalleReserva>[];
 

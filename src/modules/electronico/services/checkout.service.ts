@@ -78,6 +78,8 @@ interface PorcionDescontada {
 
 interface ResumenCarrito {
   idCarrito: number;
+  /** RF-SYNC-01: compra hecha sin conexion que se esta pagando, si la hay. */
+  idLocalOffline: string | null;
   /** Sucursal elegida en el catálogo (CU08): de ahí sale todo el stock de esta compra, sin repartir entre varias. */
   idSucursal: number;
   lineas: LineaCompra[];
@@ -375,6 +377,7 @@ export class CheckoutService {
         idPasarela: pasarela.id,
         idMovimientoCaja: null,
         idCarrito: resumen.idCarrito,
+        idLocalOffline: resumen.idLocalOffline,
         idReserva: null,
         tipo: 'ONLINE',
         tipoVenta: 'E_COMMERCE',
@@ -440,7 +443,7 @@ export class CheckoutService {
     );
 
     await manager.getRepository(DetalleCarrito).delete({ idCarrito: resumen.idCarrito });
-    await manager.getRepository(Carrito).update({ id: resumen.idCarrito }, { fechaActualizacion: ahora });
+    await manager.getRepository(Carrito).update({ id: resumen.idCarrito }, { fechaActualizacion: ahora, idLocalOffline: null });
 
     const notificacionRepo = manager.getRepository(NotificacionPush);
     const notificacion = await notificacionRepo.save(
@@ -581,6 +584,7 @@ export class CheckoutService {
 
     return {
       idCarrito: carrito.id,
+      idLocalOffline: carrito.idLocalOffline ?? null,
       idSucursal: carrito.idSucursal,
       lineas,
       total: redondear(lineas.reduce((suma, linea) => suma + linea.subtotal, 0)),

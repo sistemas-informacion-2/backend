@@ -38,7 +38,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? (exceptionResponse as { error: string }).error
         : HttpStatus[statusCode];
 
+    // Campos extra de la excepcion (p. ej. codigo_error e items_afectados del 409 de RF-SYNC-01) se conservan
+    // para que el cliente pueda resolver el error; statusCode/message/error siempre salen con la forma de siempre.
+    const extra =
+      exceptionResponse && typeof exceptionResponse === 'object'
+        ? Object.fromEntries(Object.entries(exceptionResponse).filter(([clave]) => !['statusCode', 'message', 'error'].includes(clave)))
+        : {};
+
     response.status(statusCode).json({
+      ...extra,
       statusCode,
       message: Array.isArray(message) ? message : [message],
       error,

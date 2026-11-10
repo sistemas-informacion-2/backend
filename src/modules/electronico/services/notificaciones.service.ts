@@ -9,6 +9,9 @@ import { renderizarPlantilla } from '../utils/plantilla.util.js';
 import { DispositivoPushRepository } from '../repositories/dispositivo-push.repository.js';
 import type { RegistrarDispositivoPushDto } from '../dto/dispositivo-push.dto.js';
 import { PushService, type MensajePush } from './push.service.js';
+import { SuscripcionWebPushRepository } from '../repositories/suscripcion-web-push.repository.js';
+import { esEndpointDePush, WebPushService } from './web-push.service.js';
+import type { ConfiguracionWebPushDto, RegistrarWebPushDto } from '../dto/web-push.dto.js';
 import type { CrearNotificacionDto } from '../dto/crear-notificacion.dto.js';
 import type { NotificacionesQueryDto } from '../dto/notificaciones-query.dto.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
@@ -21,6 +24,8 @@ import type {
 
 /** Pantalla que abre la app al tocar el push. */
 const URL_NOTIFICACIONES = '/cuenta/notificaciones';
+/** Pagina que abre el navegador al tocar el aviso: la campana se despliega sola. */
+const URL_NOTIFICACIONES_WEB = '/?notificaciones=abiertas';
 
 type NotificacionParaPush = Pick<NotificacionPush, 'id' | 'idUsuario' | 'titulo' | 'mensaje'>;
 
@@ -34,6 +39,8 @@ export class NotificacionesService {
     @InjectRepository(Usuario) private readonly usuarioRepo: Repository<Usuario>,
     private readonly dispositivoRepo: DispositivoPushRepository,
     private readonly pushService: PushService,
+    private readonly suscripcionesWeb: SuscripcionWebPushRepository,
+    private readonly webPush: WebPushService,
     private readonly tenant: TenantContext,
   ) {}
 
@@ -151,11 +158,11 @@ export class NotificacionesService {
   }
 
   /**
-   * Avisa por push notificaciones ya guardadas. Corre en segundo plano: quien notifica no espera a Expo
-   * ni falla si Expo falla (la notificacion ya esta en BD y se ve al abrir la app).
+   * Avisa por push (celular y navegador) notificaciones ya guardadas. Corre en segundo plano: quien notifica no
+   * espera a los servicios push ni falla si fallan (la notificacion ya esta en BD y se ve al abrir la app).
    */
   notificarPorPush(notificaciones: NotificacionParaPush[]): void {
-    void this.enviarPush(notificaciones).catch((error: unknown) => {
+    void Promise.all([this.enviarPush(notificaciones), this.enviarWebPush(notificaciones)]).catch((error: unknown) => {
       this.logger.error(`No se pudo preparar el push: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
@@ -181,6 +188,53 @@ export class NotificacionesService {
       })),
     );
     await this.pushService.enviar(mensajes);
+  }
+
+  private async enviarWebPush(notificaciones: NotificacionParaPush[]): Promise<void> {
+    if (notificaciones.length === 0 || !this.webPush.habilitado) return;
+    const suscripciones = await this.suscripcionesWeb.listarDeUsuarios([...new Set(notificaciones.map((notificacion) => notificacion.idUsuario))]);
+    await this.webPush.enviar(
+      notificaciones.flatMap((notificacion) =>
+        suscripciones
+          .filter((suscripcion) => suscripcion.idUsuario === notificacion.idUsuario)
+          .map((suscripcion) => ({
+            suscripcion,
+            titulo: notificacion.titulo,
+            mensaje: notificacion.mensaje,
+            url: URL_NOTIFICACIONES_WEB,
+            etiqueta: `notificacion-${notificacion.id}`,
+          })),
+      ),
+    );
+  }
+
+  configuracionWebPush(): ConfiguracionWebPushDto {
+    return { habilitado: this.webPush.habilitado, clavePublica: this.webPush.clavePublica };
+  }
+
+  async registrarWebPush(idUsuario: number, dto: RegistrarWebPushDto): Promise<void> {
+    if (!esEndpointDePush(dto.endpoint)) throw new BadRequestException('La direccion de notificaciones no es valida');
+    await this.suscripcionesWeb.registrar(idUsuario, dto.endpoint, dto.keys.p256dh, dto.keys.auth);
+  }
+
+  async darDeBajaWebPush(idUsuario: number, endpoint: string): Promise<void> {
+    await this.suscripcionesWeb.eliminar(endpoint, idUsuario);
+  }
+
+  /** Aviso de prueba a los navegadores del usuario; no se guarda como notificacion. */
+  async probarWebPush(idUsuario: number): Promise<{ enviados: number }> {
+    const suscripciones = await this.suscripcionesWeb.listarDeUsuarios([idUsuario]);
+    const enviados = await this.webPush.enviar(
+      suscripciones.map((suscripcion) => ({
+        suscripcion,
+        titulo: 'FashionStore',
+        mensaje: 'Las notificaciones están activas en este dispositivo.',
+        url: '/',
+        // Etiqueta distinta cada vez: con la misma, el navegador reemplaza el aviso sin volver a alertar.
+        etiqueta: `prueba-${Date.now()}`,
+      })),
+    );
+    return { enviados };
   }
 
   async registrarDispositivo(idUsuario: number, dto: RegistrarDispositivoPushDto): Promise<void> {

@@ -34,6 +34,16 @@ export class ProductoRepository {
   }
 
   /** Productos activos de la misma categoria (exacta) para "Tambien te puede interesar". */
+  /** Otros productos activos del catálogo, para completar las recomendaciones cuando la categoría tiene pocos. */
+  findOtrosActivos(excluirIds: number[], limite: number): Promise<Producto[]> {
+    return this.crearBuilder()
+      .where('producto.id NOT IN (:...excluirIds)', { excluirIds })
+      .andWhere('producto.activo = true')
+      .orderBy('producto.id', 'DESC')
+      .take(limite)
+      .getMany();
+  }
+
   findRelacionados(idCategoria: number, excluirId: number, limite: number): Promise<Producto[]> {
     return this.crearBuilder()
       .where('producto.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })

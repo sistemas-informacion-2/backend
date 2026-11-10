@@ -14,6 +14,8 @@ const CAMPOS_SENSIBLES = [
   'apiKey',
   'apiSecret',
   'clientSecret',
+  'endpoint',
+  'keys',
 ];
 
 /**
@@ -36,6 +38,8 @@ export class AuditInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap(() => {
+        // Un reenvio con Idempotency-Key no cambio nada: ya quedo registrado la primera vez.
+        if ((request as { respuestaRepetida?: boolean }).respuestaRepetida) return;
         this.bitacoraRepo
           .registrar({
             idUsuario: request.user?.sub ?? null,

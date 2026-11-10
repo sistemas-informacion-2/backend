@@ -37,6 +37,10 @@ export class Carrito {
   @JoinColumn({ name: 'id_sucursal' })
   sucursal: Relation<Sucursal> | null;
 
+  // RF-SYNC-01: compra hecha sin conexion que este carrito esta por pagar; pasa a la Nota de Venta al cobrarse.
+  @Column({ name: 'id_local_offline', type: 'varchar', length: 50, nullable: true })
+  idLocalOffline: string | null;
+
   @Column({ name: 'session_id', type: 'varchar', length: 100, nullable: true })
   sessionId: string | null;
 

@@ -126,6 +126,8 @@ export class VentasService {
       if (montoTotal < 0) throw new BadRequestException('El total de la venta no puede ser negativo');
 
       const ahora = relojAhora();
+      // Una venta hecha sin conexion conserva su fecha; el dinero entra a la caja cuando llega al servidor.
+      const emision = resolverFechaEmision(dto.fechaOffline, ahora);
       // Igual que la venta en linea y la liquidacion de reservas, el codigo sale del id (NV-000123): un conteo
       // de notas chocaria con esos codigos y, con codigos unicos por empresa, entre empresas. Hasta tener el id,
       // la nota y su movimiento llevan un codigo provisional unico.
@@ -157,8 +159,8 @@ export class VentasService {
           tipoVenta: 'DIRECTA_PRESENCIAL',
           nroFactura: dto.nroFactura?.trim() || null,
           nitRazonSocial: dto.nitRazonSocial?.trim() || null,
-          fechaEmision: fechaLocal(ahora),
-          horaEmision: horaLocal(ahora),
+          fechaEmision: fechaLocal(emision),
+          horaEmision: horaLocal(emision),
           subtotal,
           montoAnticipoAplicado: 0,
           descuento,
@@ -213,8 +215,8 @@ export class VentasService {
             idNotaVenta: venta.id,
             monto: montoTotal,
             concepto: 'PAGO_TOTAL',
-            fechaPago: fechaLocal(ahora),
-            horaPago: horaLocal(ahora),
+            fechaPago: fechaLocal(emision),
+            horaPago: horaLocal(emision),
           },
           manager,
         ),
@@ -371,3 +373,16 @@ function redondear(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
+const DIAS_MAX_VENTA_OFFLINE = 7;
+const MARGEN_RELOJ_MS = 5 * 60 * 1000;
+
+/** La fecha viene del dispositivo: se acota para que no sirva para registrar ventas futuras o muy atrasadas. */
+function resolverFechaEmision(fechaOffline: string | undefined, ahora: Date): Date {
+  if (!fechaOffline) return ahora;
+  const fecha = new Date(fechaOffline);
+  const antiguedad = ahora.getTime() - fecha.getTime();
+  if (antiguedad < -MARGEN_RELOJ_MS || antiguedad > DIAS_MAX_VENTA_OFFLINE * 24 * 60 * 60 * 1000) {
+    throw new BadRequestException(`La fecha de una venta sin conexion debe ser de los ultimos ${DIAS_MAX_VENTA_OFFLINE} dias`);
+  }
+  return fecha;
+}

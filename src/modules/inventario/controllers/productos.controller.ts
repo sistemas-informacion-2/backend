@@ -40,7 +40,7 @@ export class ProductosController {
 
   @Public()
   @Get(':id/relacionados')
-  @ApiOperation({ summary: 'Productos activos de la misma categoria' })
+  @ApiOperation({ summary: 'Recomendaciones: productos de la misma categoria, completados con el resto del catalogo' })
   relacionados(@Param('id', ParseIntPipe) id: number): Promise<ProductoResponseDto[]> {
     return this.productosService.relacionados(id);
   }

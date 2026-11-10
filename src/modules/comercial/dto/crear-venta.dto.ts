@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsInt,
+  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
@@ -53,6 +54,11 @@ export class CrearVentaDto {
   @IsString()
   @MaxLength(50)
   nroFactura?: string;
+
+  /** Momento real de una venta hecha sin conexion; sin este campo, la venta se fecha al recibirla. */
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  fechaOffline?: string;
 
   @IsArray()
   @ArrayMinSize(1)

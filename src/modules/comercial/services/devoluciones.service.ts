@@ -7,6 +7,7 @@ import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { Almacen } from '../../inventario/entities/almacen.entity.js';
 import { Inventario } from '../../inventario/entities/inventario.entity.js';
 import { NotificacionPush } from '../../electronico/entities/notificacion-push.entity.js';
+import { NotificacionesService } from '../../electronico/services/notificaciones.service.js';
 import { Reserva } from '../../electronico/entities/reserva.entity.js';
 import { EmpleadoSucursal } from '../../operaciones/entities/empleado-sucursal.entity.js';
 import { Sucursal } from '../../operaciones/entities/sucursal.entity.js';
@@ -83,6 +84,7 @@ type Origen = OrigenNota | OrigenReserva;
 export class DevolucionesService {
   constructor(
     private readonly devolucionRepo: DevolucionRepository,
+    private readonly notificaciones: NotificacionesService,
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(EmpleadoSucursal) private readonly empleadoSucursalRepo: Repository<EmpleadoSucursal>,
     private readonly tenant: TenantContext,
@@ -149,6 +151,7 @@ export class DevolucionesService {
       throw new ForbiddenException('Solo el administrador puede autorizar una devolucion fuera de plazo');
     }
 
+    let avisoReembolso = null as NotificacionPush | null;
     const idDevolucion = await this.dataSource.transaction(async (manager) => {
       const sucursal = await manager.getRepository(Sucursal).findOne({ where: { id: idSucursal, idEmpresa: this.tenant.empresaId() } });
       if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
@@ -233,7 +236,7 @@ export class DevolucionesService {
 
       if (origen.tipo === 'PRODUCTO_ENTREGADO' && origen.nota.tipoVenta === 'E_COMMERCE') {
         const notificacionRepo = manager.getRepository(NotificacionPush);
-        await notificacionRepo.save(
+        avisoReembolso = await notificacionRepo.save(
           notificacionRepo.create({
             idUsuario: origen.nota.idCliente,
             titulo: 'Reembolso registrado',
@@ -245,6 +248,8 @@ export class DevolucionesService {
       return devolucion.id;
     });
 
+    // Despues de confirmar: si la transaccion falla no debe llegar ningun aviso.
+    if (avisoReembolso) this.notificaciones.notificarPorPush([avisoReembolso]);
     return this.obtener(idDevolucion, usuario);
   }
 
