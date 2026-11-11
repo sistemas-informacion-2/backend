@@ -48,6 +48,11 @@ function sesionStripe(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Intento de la app ya autorizado por el cliente 7 para su carrito de Bs 200 (= 2874 centavos de USD). */
+function intentoStripe(overrides: Record<string, unknown> = {}) {
+  return { id: 'pi_app', status: 'requires_capture', referencia: 'C7-123', moneda: 'usd', montoMinor: 2874, ...overrides };
+}
+
 interface Escenario {
   reserva?: ReturnType<typeof reservaBase> | null;
   carrito?: ReturnType<typeof carritoBase> | null;
@@ -57,6 +62,8 @@ interface Escenario {
   pasarelas?: Array<{ id: number; codigo: string; metodo: string; descripcion: string | null; disponibleLinea: boolean }>;
   pagoPrevio?: Record<string, unknown> | null;
   sesionStripe?: ReturnType<typeof sesionStripe>;
+  intentoStripe?: ReturnType<typeof intentoStripe>;
+  llavePublicable?: string;
 }
 
 function crearService(escenario: Escenario = {}) {
@@ -152,6 +159,9 @@ function crearService(escenario: Escenario = {}) {
     aMonedaStripe: (bob: number) => Math.round((bob / 6.96) * 100),
     crearSesion: vi.fn().mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.test/pagar', monto: 28.74 }),
     obtenerSesion: vi.fn().mockResolvedValue(escenario.sesionStripe ?? sesionStripe()),
+    llavePublicable: escenario.llavePublicable ?? 'pk_test_123',
+    crearIntento: vi.fn().mockResolvedValue({ id: 'pi_app', clientSecret: 'pi_app_secret_abc', monto: 28.74 }),
+    obtenerIntento: vi.fn().mockResolvedValue(escenario.intentoStripe ?? intentoStripe()),
     capturar: vi.fn(async () => {
       orden.push('capturar');
       return { capturaId: 'pi_1' };
@@ -452,6 +462,115 @@ describe('CheckoutService', () => {
       const { service } = crearService({ stripeConfigurado: false });
 
       await expect(service.iniciarStripe(cliente)).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('Stripe en la app movil', () => {
+    it('crea el intento por el total del carrito y entrega lo que necesita la hoja de pago', async () => {
+      const { service, stripe } = crearService();
+
+      await expect(service.iniciarStripeApp(cliente)).resolves.toEqual({
+        paymentIntentId: 'pi_app',
+        clientSecret: 'pi_app_secret_abc',
+        publishableKey: 'pk_test_123',
+        montoBob: 200,
+        montoCobrado: 28.74,
+        monedaCobro: 'USD',
+      });
+      expect(stripe.crearIntento).toHaveBeenCalledWith({
+        montoBob: 200,
+        referencia: expect.stringMatching(/^C7-\d+$/),
+        descripcion: 'Compra en FashionStore (2 prendas)',
+      });
+      expect(stripe.crearSesion).not.toHaveBeenCalled();
+    });
+
+    it('sin llave publicable no crea el intento', async () => {
+      const { service, stripe } = crearService({ llavePublicable: '' });
+
+      await expect(service.iniciarStripeApp(cliente)).rejects.toThrow('no esta disponible en la app');
+      expect(stripe.crearIntento).not.toHaveBeenCalled();
+    });
+
+    it('sin llave secreta tampoco: Stripe no se ofrece', async () => {
+      const { service } = crearService({ stripeConfigurado: false });
+
+      await expect(service.iniciarStripeApp(cliente)).rejects.toThrow(ConflictException);
+    });
+
+    it('confirma: registra la compra con la referencia del intento y cobra al final', async () => {
+      const { service, stripe, orden, guardados } = crearService();
+
+      const compra = await service.confirmarStripeApp(cliente, 'pi_app');
+
+      expect(compra).toMatchObject({ codigoNota: 'NV-000040', metodo: 'Stripe' });
+      expect(guardados.pagos[0]).toMatchObject({ referenciaExterna: 'STRIPE:pi_app', monto: 200 });
+      expect(stripe.obtenerIntento).toHaveBeenCalledWith('pi_app');
+      expect(stripe.capturar).toHaveBeenCalledWith('pi_app');
+      expect(orden.indexOf('capturar')).toBe(orden.length - 1);
+      expect(stripe.cancelar).not.toHaveBeenCalled();
+    });
+
+    it('no cobra un intento de otro cliente', async () => {
+      const { service, stripe } = crearService({ intentoStripe: intentoStripe({ referencia: 'C99-123' }) });
+
+      await expect(service.confirmarStripeApp(cliente, 'pi_app')).rejects.toThrow(NotFoundException);
+      expect(stripe.capturar).not.toHaveBeenCalled();
+      expect(stripe.cancelar).not.toHaveBeenCalled();
+    });
+
+    it('no cobra un intento que el cliente aun no autorizo', async () => {
+      const { service, stripe } = crearService({ intentoStripe: intentoStripe({ status: 'requires_payment_method' }) });
+
+      await expect(service.confirmarStripeApp(cliente, 'pi_app')).rejects.toThrow('todavia no confirma');
+      expect(stripe.capturar).not.toHaveBeenCalled();
+    });
+
+    it('si el monto cambio, no cobra y libera la retencion', async () => {
+      const { service, stripe } = crearService({ intentoStripe: intentoStripe({ montoMinor: 1000 }) });
+
+      await expect(service.confirmarStripeApp(cliente, 'pi_app')).rejects.toThrow('cambio');
+      expect(stripe.capturar).not.toHaveBeenCalled();
+      expect(stripe.cancelar).toHaveBeenCalledWith('pi_app');
+    });
+
+    it('si Stripe falla al cobrar, libera la retencion', async () => {
+      const { service, stripe } = crearService();
+      stripe.capturar.mockRejectedValue(new Error('Stripe rechazo'));
+
+      await expect(service.confirmarStripeApp(cliente, 'pi_app')).rejects.toThrow('Stripe rechazo');
+      expect(stripe.cancelar).toHaveBeenCalledWith('pi_app');
+    });
+
+    it('confirmar dos veces devuelve la misma compra sin cobrar de nuevo', async () => {
+      const { service, stripe } = crearService({
+        pagoPrevio: { notaVenta: { id: 40, idCliente: 7, codigoNota: 'NV-000040', montoTotal: 200 }, pasarela: { metodo: 'Stripe' } },
+      });
+
+      await expect(service.confirmarStripeApp(cliente, 'pi_app')).resolves.toMatchObject({ idNotaVenta: 40 });
+      expect(stripe.obtenerIntento).not.toHaveBeenCalled();
+      expect(stripe.capturar).not.toHaveBeenCalled();
+    });
+
+    it('anticipo: crea el intento por el anticipo y lo cobra dejando la reserva PAGADA', async () => {
+      const inicio = crearService({ reserva: reservaBase() });
+      await expect(inicio.service.iniciarStripeApp(cliente, 9)).resolves.toMatchObject({ montoBob: 40 });
+      expect(inicio.stripe.crearIntento).toHaveBeenCalledWith(expect.objectContaining({ montoBob: 40, referencia: expect.stringMatching(/^R7-9-\d+$/) }));
+
+      const reserva = reservaBase();
+      const { service, stripe } = crearService({ reserva, intentoStripe: intentoStripe({ referencia: 'R7-9-123', montoMinor: 575 }) });
+      await expect(service.confirmarStripeApp(cliente, 'pi_app', 9)).resolves.toMatchObject({ tipo: 'ANTICIPO_RESERVA', codigoReserva: 'RS-000009' });
+      expect(reserva.estado).toBe('PAGADA');
+      expect(stripe.capturar).toHaveBeenCalledWith('pi_app');
+    });
+
+    it('anticipo: no cobra un intento del carrito ni de otra reserva', async () => {
+      const delCarrito = crearService({ reserva: reservaBase() });
+      await expect(delCarrito.service.confirmarStripeApp(cliente, 'pi_app', 9)).rejects.toThrow(NotFoundException);
+
+      const deOtra = crearService({ reserva: reservaBase(), intentoStripe: intentoStripe({ referencia: 'R7-10-123', montoMinor: 575 }) });
+      await expect(deOtra.service.confirmarStripeApp(cliente, 'pi_app', 9)).rejects.toThrow(NotFoundException);
+      expect(deOtra.stripe.capturar).not.toHaveBeenCalled();
     });
   });
 

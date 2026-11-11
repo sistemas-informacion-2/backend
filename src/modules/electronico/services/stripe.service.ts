@@ -20,6 +20,18 @@ export interface SesionStripe {
   paymentIntentStatus: string | null;
 }
 
+/** Intento de pago que crea la app movil y autoriza el cliente en la hoja de pago nativa de Stripe. */
+export interface IntentoStripe {
+  id: string;
+  /** `requires_capture` cuando el cliente ya autorizo la tarjeta y falta cobrar. */
+  status: string;
+  /** `metadata.referencia` que se envio al crear el intento (identifica al cliente). */
+  referencia: string;
+  moneda: string;
+  /** Monto autorizado en unidades menores (centavos). */
+  montoMinor: number;
+}
+
 /**
  * Cliente de Stripe Checkout. La sesion se crea con captura manual: el cliente solo autoriza la tarjeta en la
  * pagina de Stripe y el cobro real (`capturar`) ocurre al final de la transaccion del checkout.
@@ -44,6 +56,11 @@ export class StripeService {
     return this.config.get('stripe.currency', { infer: true });
   }
 
+  /** Llave publicable que necesita la app movil para abrir la hoja de pago. Vacia si no se configuro. */
+  get llavePublicable(): string {
+    return this.config.get('stripe.publishableKey', { infer: true });
+  }
+
   /** El monto en Bs se cobra como su equivalente en la moneda configurada, en unidades menores (centavos). */
   aMonedaStripe(montoBob: number): number {
     const tasa = this.config.get('stripe.bobRate', { infer: true });
@@ -51,10 +68,7 @@ export class StripeService {
   }
 
   async crearSesion(datos: { referencia: string; montoBob: number; descripcion: string; urlRetorno: string; urlCancelado: string }): Promise<{ id: string; url: string; monto: number }> {
-    const montoMinor = this.aMonedaStripe(datos.montoBob);
-    if (montoMinor < MINIMO_UNIDADES_MENORES) {
-      throw new ServiceUnavailableException('El monto es demasiado pequeño para cobrarlo con Stripe');
-    }
+    const montoMinor = this.montoCobrable(datos.montoBob);
 
     // Stripe reemplaza {CHECKOUT_SESSION_ID} por el id real; la pagina de retorno lo usa para confirmar.
     const separador = datos.urlRetorno.includes('?') ? '&' : '?';
@@ -94,6 +108,39 @@ export class StripeService {
     };
   }
 
+  /**
+   * Para la app movil: crea el intento de pago con captura manual, igual que la sesion de Checkout. La app lo
+   * autoriza con la hoja de pago nativa y el cobro real (`capturar`) ocurre al registrar la compra. Solo tarjeta:
+   * es el medio que admite captura manual y no saca al cliente de la app.
+   */
+  async crearIntento(datos: { referencia: string; montoBob: number; descripcion: string }): Promise<{ id: string; clientSecret: string; monto: number }> {
+    const montoMinor = this.montoCobrable(datos.montoBob);
+    const intento = await this.llamar('crear el intento de pago', () =>
+      this.stripe.paymentIntents.create({
+        amount: montoMinor,
+        currency: this.moneda,
+        capture_method: 'manual',
+        allowed_payment_method_types: ['card'],
+        description: datos.descripcion.slice(0, 250),
+        metadata: { referencia: datos.referencia },
+      }),
+    );
+
+    if (!intento.client_secret) throw new BadGatewayException('Stripe no devolvio los datos para pagar');
+    return { id: intento.id, clientSecret: intento.client_secret, monto: montoMinor / 100 };
+  }
+
+  async obtenerIntento(id: string): Promise<IntentoStripe> {
+    const intento = await this.llamar('consultar el pago', () => this.stripe.paymentIntents.retrieve(id));
+    return {
+      id: intento.id,
+      status: intento.status,
+      referencia: intento.metadata?.referencia ?? '',
+      moneda: intento.currency,
+      montoMinor: intento.amount,
+    };
+  }
+
   /** Cobra lo que el cliente autorizo. La clave de idempotencia evita cobrar dos veces el mismo pago. */
   async capturar(paymentIntentId: string): Promise<{ capturaId: string }> {
     const intento = await this.llamar('cobrar el pago', () =>
@@ -110,6 +157,14 @@ export class StripeService {
     } catch (error) {
       this.logger.warn(`No se pudo liberar la autorizacion ${paymentIntentId}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private montoCobrable(montoBob: number): number {
+    const montoMinor = this.aMonedaStripe(montoBob);
+    if (montoMinor < MINIMO_UNIDADES_MENORES) {
+      throw new ServiceUnavailableException('El monto es demasiado pequeño para cobrarlo con Stripe');
+    }
+    return montoMinor;
   }
 
   private get stripe(): Stripe {

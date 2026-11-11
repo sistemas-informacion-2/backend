@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { StripeService } from './stripe.service.js';
 
 function crearService(cfg: { secretKey?: string } = {}) {
-  const valores: Record<string, unknown> = { 'stripe.secretKey': cfg.secretKey ?? 'sk_test_123', 'stripe.currency': 'usd', 'stripe.bobRate': 6.96 };
+  const valores: Record<string, unknown> = { 'stripe.secretKey': cfg.secretKey ?? 'sk_test_123', 'stripe.publishableKey': 'pk_test_123', 'stripe.currency': 'usd', 'stripe.bobRate': 6.96 };
   const config = { get: (clave: string) => valores[clave] };
   const service = new StripeService(config as never);
   const cliente = {
@@ -21,6 +21,8 @@ function crearService(cfg: { secretKey?: string } = {}) {
       },
     },
     paymentIntents: {
+      create: vi.fn().mockResolvedValue({ id: 'pi_1', client_secret: 'pi_1_secret_abc' }),
+      retrieve: vi.fn().mockResolvedValue({ id: 'pi_1', status: 'requires_capture', metadata: { referencia: 'C7-123' }, currency: 'usd', amount: 2874 }),
       capture: vi.fn().mockResolvedValue({ id: 'pi_1', status: 'succeeded' }),
       cancel: vi.fn().mockResolvedValue({ id: 'pi_1', status: 'canceled' }),
     },
@@ -94,6 +96,43 @@ describe('StripeService', () => {
       paymentIntentStatus: 'requires_capture',
     });
     expect(cliente.checkout.sessions.retrieve).toHaveBeenCalledWith('cs_test_1', { expand: ['payment_intent'] });
+  });
+
+  it('para la app crea el intento con captura manual, solo tarjeta y la referencia en metadata', async () => {
+    const { service, cliente } = crearService();
+
+    const intento = await service.crearIntento({ referencia: 'C7-123', montoBob: 200, descripcion: 'Compra en Moda Andina (2 prendas)' });
+
+    expect(intento).toEqual({ id: 'pi_1', clientSecret: 'pi_1_secret_abc', monto: 28.74 });
+    expect(cliente.paymentIntents.create).toHaveBeenCalledWith({
+      amount: 2874,
+      currency: 'usd',
+      capture_method: 'manual',
+      allowed_payment_method_types: ['card'],
+      description: 'Compra en Moda Andina (2 prendas)',
+      metadata: { referencia: 'C7-123' },
+    });
+    expect(service.llavePublicable).toBe('pk_test_123');
+  });
+
+  it('el intento tambien rechaza montos por debajo del minimo sin llamar a Stripe', async () => {
+    const { service, cliente } = crearService();
+
+    await expect(service.crearIntento({ referencia: 'C7-123', montoBob: 2, descripcion: 'x' })).rejects.toThrow(ServiceUnavailableException);
+    expect(cliente.paymentIntents.create).not.toHaveBeenCalled();
+  });
+
+  it('lee el intento con su estado, su referencia y el monto autorizado', async () => {
+    const { service, cliente } = crearService();
+
+    await expect(service.obtenerIntento('pi_1')).resolves.toEqual({
+      id: 'pi_1',
+      status: 'requires_capture',
+      referencia: 'C7-123',
+      moneda: 'usd',
+      montoMinor: 2874,
+    });
+    expect(cliente.paymentIntents.retrieve).toHaveBeenCalledWith('pi_1');
   });
 
   it('captura con clave de idempotencia y exige que el cobro quede completado', async () => {

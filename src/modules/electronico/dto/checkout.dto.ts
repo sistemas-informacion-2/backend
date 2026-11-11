@@ -20,6 +20,15 @@ export class ConfirmarStripeDto {
   sessionId: string;
 }
 
+export class ConfirmarStripeAppDto {
+  /** Id del intento de pago que la app autorizo con la hoja de pago de Stripe. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @Matches(/^pi_[A-Za-z0-9]+$/)
+  paymentIntentId: string;
+}
+
 export class ConfirmarQrDto {
   @IsString()
   @IsNotEmpty()
@@ -51,6 +60,18 @@ export class IniciarStripeResponseDto {
   sessionId: string;
   /** Pagina de Stripe Checkout a la que hay que enviar al cliente para que autorice el cobro. */
   urlPago: string;
+  montoBob: number;
+  /** Lo que Stripe cobrara, en `monedaCobro` (no opera con el total en Bs). */
+  montoCobrado: number;
+  monedaCobro: string;
+}
+
+/** Lo que la app movil necesita para abrir la hoja de pago nativa de Stripe. */
+export class IniciarStripeAppResponseDto {
+  paymentIntentId: string;
+  clientSecret: string;
+  /** Llave publicable (`pk_...`) de la cuenta de Stripe de la plataforma. */
+  publishableKey: string;
   montoBob: number;
   /** Lo que Stripe cobrara, en `monedaCobro` (no opera con el total en Bs). */
   montoCobrado: number;

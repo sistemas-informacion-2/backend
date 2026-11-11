@@ -23,6 +23,7 @@ import type {
   CodigoMetodoOnline,
   CompraOnlineResponseDto,
   IniciarQrResponseDto,
+  IniciarStripeAppResponseDto,
   IniciarStripeResponseDto,
   MetodoPagoOnlineDto,
   PagoTarjetaDto,
@@ -152,7 +153,7 @@ export class CheckoutService {
     const frontend = `${this.config.get('frontendUrl', { infer: true })}/t/${this.tenant.empresa()?.slug ?? ''}`;
     const sufijo = idReserva === undefined ? '' : `?reserva=${idReserva}`;
     const sesion = await this.stripe.crearSesion({
-      referencia: idReserva === undefined ? `C${idCliente}-${Date.now()}` : `${this.prefijoReserva(idCliente, idReserva)}${Date.now()}`,
+      referencia: this.referenciaStripe(idCliente, idReserva),
       montoBob: monto,
       descripcion,
       // Al volver, la pagina de retorno sabe si cobra un carrito o el anticipo de una reserva.
@@ -177,8 +178,7 @@ export class CheckoutService {
     if (previa) return previa;
 
     const sesion = await this.stripe.obtenerSesion(sessionId);
-    const prefijo = idReserva === undefined ? `C${idCliente}-` : this.prefijoReserva(idCliente, idReserva);
-    if (!sesion.referencia.startsWith(prefijo)) throw new NotFoundException('Pago de Stripe no encontrado');
+    if (!sesion.referencia.startsWith(this.prefijoStripe(idCliente, idReserva))) throw new NotFoundException('Pago de Stripe no encontrado');
     // Mientras la sesion sigue abierta Stripe aun no crea el PaymentIntent: tambien es "todavia no autorizo".
     const paymentIntentId = sesion.paymentIntentId;
     if (sesion.status !== 'complete' || !paymentIntentId || sesion.paymentIntentStatus !== 'requires_capture') {
@@ -187,6 +187,63 @@ export class CheckoutService {
       );
     }
 
+    return this.cobrarAutorizado(idCliente, pasarela, referencia, { paymentIntentId, moneda: sesion.moneda, montoMinor: sesion.montoMinor }, idReserva);
+  }
+
+  /**
+   * App movil: crea el intento de pago que el cliente autoriza en la hoja de pago nativa de Stripe, sin salir de la
+   * app. Mismo cobro que la web (captura manual, misma cuenta), sin paginas de retorno.
+   */
+  async iniciarStripeApp(usuario: ActiveUser, idReserva?: number): Promise<IniciarStripeAppResponseDto> {
+    const idCliente = this.idCliente(usuario);
+    await this.pasarelaOnline('STRIPE');
+    const publishableKey = this.stripe.llavePublicable;
+    if (!publishableKey) throw new ConflictException('El pago con Stripe no esta disponible en la app');
+    const { monto, descripcion } = await this.montoAPagar(idCliente, idReserva);
+
+    const intento = await this.stripe.crearIntento({ referencia: this.referenciaStripe(idCliente, idReserva), montoBob: monto, descripcion });
+    return {
+      paymentIntentId: intento.id,
+      clientSecret: intento.clientSecret,
+      publishableKey,
+      montoBob: monto,
+      montoCobrado: intento.monto,
+      monedaCobro: this.stripe.moneda.toUpperCase(),
+    };
+  }
+
+  /**
+   * App movil, despues de que el cliente autorizo en la hoja de pago: mismas comprobaciones que `confirmarStripe`.
+   * Confirmar dos veces (reintento tras un corte de red) devuelve la misma compra sin cobrar de nuevo.
+   */
+  async confirmarStripeApp(usuario: ActiveUser, paymentIntentId: string, idReserva?: number): Promise<CompraOnlineResponseDto> {
+    const idCliente = this.idCliente(usuario);
+    const pasarela = await this.pasarelaOnline('STRIPE');
+
+    const referencia = `STRIPE:${paymentIntentId}`;
+    const previa = await this.compraPorReferencia(referencia, idCliente);
+    if (previa) return previa;
+
+    const intento = await this.stripe.obtenerIntento(paymentIntentId);
+    if (!intento.referencia.startsWith(this.prefijoStripe(idCliente, idReserva))) throw new NotFoundException('Pago de Stripe no encontrado');
+    if (intento.status !== 'requires_capture') {
+      throw new ConflictException(intento.status === 'succeeded' ? 'Este pago ya fue procesado' : 'Stripe todavia no confirma que autorizaste el pago');
+    }
+
+    return this.cobrarAutorizado(idCliente, pasarela, referencia, { paymentIntentId, moneda: intento.moneda, montoMinor: intento.montoMinor }, idReserva);
+  }
+
+  /**
+   * Registra la compra (o el anticipo) y cobra lo que el cliente autorizo en Stripe, si el monto sigue siendo el
+   * mismo. Si la compra no se puede registrar, se libera la retencion de la tarjeta.
+   */
+  private async cobrarAutorizado(
+    idCliente: number,
+    pasarela: PasarelaPago,
+    referencia: string,
+    autorizado: { paymentIntentId: string; moneda: string; montoMinor: number },
+    idReserva?: number,
+  ): Promise<CompraOnlineResponseDto> {
     try {
       return await this.finalizar(
         idCliente,
@@ -194,17 +251,17 @@ export class CheckoutService {
         referencia,
         {
           validar: (montoBob) => {
-            if (sesion.moneda !== this.stripe.moneda || sesion.montoMinor !== this.stripe.aMonedaStripe(montoBob)) {
+            if (autorizado.moneda !== this.stripe.moneda || autorizado.montoMinor !== this.stripe.aMonedaStripe(montoBob)) {
               throw new ConflictException('El monto a pagar cambio desde que iniciaste el pago. No se te cobro nada; vuelve a intentarlo');
             }
           },
-          cobrar: () => this.stripe.capturar(paymentIntentId),
+          cobrar: () => this.stripe.capturar(autorizado.paymentIntentId),
         },
         idReserva,
       );
     } catch (error) {
       // La compra no quedo registrada: se libera la retencion ya, en vez de esperar a que la autorizacion venza.
-      await this.stripe.cancelar(paymentIntentId);
+      await this.stripe.cancelar(autorizado.paymentIntentId);
       throw error;
     }
   }
@@ -499,6 +556,15 @@ export class CheckoutService {
 
   private prefijoReserva(idCliente: number, idReserva: number): string {
     return `R${idCliente}-${idReserva}-`;
+  }
+
+  /** Con lo que empieza la referencia de un pago de Stripe de este cliente: por su carrito o por esa reserva. */
+  private prefijoStripe(idCliente: number, idReserva?: number): string {
+    return idReserva === undefined ? `C${idCliente}-` : this.prefijoReserva(idCliente, idReserva);
+  }
+
+  private referenciaStripe(idCliente: number, idReserva?: number): string {
+    return `${this.prefijoStripe(idCliente, idReserva)}${Date.now()}`;
   }
 
   /**

@@ -31,6 +31,11 @@ export interface AppConfig {
   stripe: {
     /** Llave secreta (`sk_test_...` en pruebas, `sk_live_...` en produccion). Vacia = Stripe desactivado. */
     secretKey: string;
+    /**
+     * Llave publicable (`pk_test_...` / `pk_live_...`) de la misma cuenta. La app movil la recibe al iniciar el pago
+     * para abrir la hoja de pago de Stripe; esta hecha para ir en apps. Vacia = la app no puede pagar con Stripe.
+     */
+    publishableKey: string;
     /** Moneda en la que Stripe cobra, en minusculas (`usd`). */
     currency: string;
     /** Bolivianos por cada unidad de `currency`. */
@@ -119,6 +124,7 @@ export default (): AppConfig => ({
   },
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY?.trim() ?? '',
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY?.trim() ?? '',
     currency: (process.env.STRIPE_CURRENCY ?? 'usd').toLowerCase(),
     bobRate: Number(process.env.STRIPE_BOB_RATE) || 6.96,
   },

@@ -5,10 +5,12 @@ import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import { CheckoutService } from '../services/checkout.service.js';
 import {
   ConfirmarQrDto,
+  ConfirmarStripeAppDto,
   ConfirmarStripeDto,
   PagoTarjetaDto,
   type CompraOnlineResponseDto,
   type IniciarQrResponseDto,
+  type IniciarStripeAppResponseDto,
   type IniciarStripeResponseDto,
   type MetodoPagoOnlineDto,
 } from '../dto/checkout.dto.js';
@@ -40,6 +42,18 @@ export class CheckoutController {
   @ApiOperation({ summary: 'Cobra el pago autorizado en Stripe y registra la compra' })
   confirmarStripe(@Body() dto: ConfirmarStripeDto, @CurrentUser() usuario: ActiveUser): Promise<CompraOnlineResponseDto> {
     return this.checkoutService.confirmarStripe(usuario, dto.sessionId);
+  }
+
+  @Post('stripe/intento')
+  @ApiOperation({ summary: 'App movil: crea el intento de pago de Stripe por el total del carrito para la hoja de pago nativa' })
+  iniciarStripeApp(@CurrentUser() usuario: ActiveUser): Promise<IniciarStripeAppResponseDto> {
+    return this.checkoutService.iniciarStripeApp(usuario);
+  }
+
+  @Post('stripe/intento/confirmar')
+  @ApiOperation({ summary: 'App movil: cobra el intento autorizado en la hoja de pago y registra la compra' })
+  confirmarStripeApp(@Body() dto: ConfirmarStripeAppDto, @CurrentUser() usuario: ActiveUser): Promise<CompraOnlineResponseDto> {
+    return this.checkoutService.confirmarStripeApp(usuario, dto.paymentIntentId);
   }
 
   @Post('qr')
@@ -76,6 +90,22 @@ export class CheckoutController {
     @CurrentUser() usuario: ActiveUser,
   ): Promise<CompraOnlineResponseDto> {
     return this.checkoutService.confirmarStripe(usuario, dto.sessionId, idReserva);
+  }
+
+  @Post('reservas/:idReserva/stripe/intento')
+  @ApiOperation({ summary: 'App movil: crea el intento de pago de Stripe por el anticipo de una reserva propia' })
+  iniciarStripeAppReserva(@Param('idReserva', ParseIntPipe) idReserva: number, @CurrentUser() usuario: ActiveUser): Promise<IniciarStripeAppResponseDto> {
+    return this.checkoutService.iniciarStripeApp(usuario, idReserva);
+  }
+
+  @Post('reservas/:idReserva/stripe/intento/confirmar')
+  @ApiOperation({ summary: 'App movil: cobra el anticipo autorizado en la hoja de pago y deja la reserva PAGADA' })
+  confirmarStripeAppReserva(
+    @Param('idReserva', ParseIntPipe) idReserva: number,
+    @Body() dto: ConfirmarStripeAppDto,
+    @CurrentUser() usuario: ActiveUser,
+  ): Promise<CompraOnlineResponseDto> {
+    return this.checkoutService.confirmarStripeApp(usuario, dto.paymentIntentId, idReserva);
   }
 
   @Post('reservas/:idReserva/qr')
