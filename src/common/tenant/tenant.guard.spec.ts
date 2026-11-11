@@ -95,10 +95,13 @@ describe('TenantGuard', () => {
     await expect(guard.canActivate(contexto({}, { empresaId: 99 }))).rejects.toThrow(UnauthorizedException);
   });
 
-  it('responde 404 con un slug que no existe', async () => {
+  it('responde 404 EMPRESA_NO_EXISTE con un slug que no existe', async () => {
     const { guard } = crearGuard();
 
-    await expect(guard.canActivate(contexto({ 'x-empresa': 'nadie' }))).rejects.toThrow(NotFoundException);
+    const error = await errorDe(guard.canActivate(contexto({ 'x-empresa': 'nadie' })));
+
+    expect(error).toBeInstanceOf(NotFoundException);
+    expect(error.getResponse()).toMatchObject({ message: 'La empresa "nadie" no existe', error: 'EMPRESA_NO_EXISTE' });
   });
 
   it('las rutas de plataforma no usan empresa y son solo del superadmin', async () => {
@@ -116,11 +119,23 @@ describe('TenantGuard', () => {
     await expect(guard.canActivate(contexto({ 'x-empresa': 'fashionstore' }, { empresaId: null, tipoUsuario: 'S' }))).rejects.toThrow(ForbiddenException);
   });
 
-  it('bloquea una empresa suspendida, venga por header o por token', async () => {
+  it('bloquea una empresa suspendida con 403 EMPRESA_SUSPENDIDA, venga por header o por token', async () => {
     const { guard } = crearGuard();
 
-    await expect(guard.canActivate(contexto({ 'x-empresa': 'suspendida' }))).rejects.toThrow(ForbiddenException);
-    await expect(guard.canActivate(contexto({}, { empresaId: 3 }))).rejects.toThrow(ForbiddenException);
+    for (const ctx of [contexto({ 'x-empresa': 'suspendida' }), contexto({}, { empresaId: 3 })]) {
+      const error = await errorDe(guard.canActivate(ctx));
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toMatchObject({ message: 'La empresa esta suspendida', error: 'EMPRESA_SUSPENDIDA' });
+    }
+  });
+
+  it('los demas 403 no llevan el codigo de empresa suspendida', async () => {
+    const { guard } = crearGuard();
+
+    const error = await errorDe(guard.canActivate(contexto({ 'x-empresa': 'fashionstore' }, { empresaId: 2 })));
+
+    expect(error).toBeInstanceOf(ForbiddenException);
+    expect(error.getResponse()).not.toMatchObject({ error: 'EMPRESA_SUSPENDIDA' });
   });
 
   describe('plan', () => {

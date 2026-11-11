@@ -25,6 +25,9 @@ export const HEADER_EMPRESA = 'x-empresa';
 /** Codigos en el campo `error` de la respuesta: el frontend los usa para llevar a Mi plan. */
 export const ERROR_PLAN_VENCIDO = 'PLAN_VENCIDO';
 export const ERROR_PLAN_SIN_FUNCION = 'PLAN_SIN_FUNCION';
+/** La app movil los usa para mostrar "Tienda no disponible" sin confundirlos con otros 403/404. */
+export const ERROR_EMPRESA_SUSPENDIDA = 'EMPRESA_SUSPENDIDA';
+export const ERROR_EMPRESA_NO_EXISTE = 'EMPRESA_NO_EXISTE';
 
 /**
  * Decide la empresa de cada request y la deja en TenantContext. Corre despues
@@ -87,12 +90,12 @@ export class TenantGuard implements CanActivate {
     if (!slug) return true;
 
     const empresa = await this.resolver.porSlug(slug);
-    if (!empresa) throw new NotFoundException(`La empresa "${slug}" no existe`);
+    if (!empresa) throw new NotFoundException({ message: `La empresa "${slug}" no existe`, error: ERROR_EMPRESA_NO_EXISTE });
     return this.usar(empresa, context);
   }
 
   private usar(empresa: EmpresaActual, context: ExecutionContext): boolean {
-    if (empresa.estado !== 'ACTIVA') throw new ForbiddenException('La empresa esta suspendida');
+    if (empresa.estado !== 'ACTIVA') throw new ForbiddenException({ message: 'La empresa esta suspendida', error: ERROR_EMPRESA_SUSPENDIDA });
 
     if (estadoVigencia(empresa.planVenceEl) === 'VENCIDO' && !this.metadato<boolean>(PERMITIDO_SIN_PLAN, context)) {
       throw new HttpException(
