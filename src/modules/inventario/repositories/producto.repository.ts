@@ -33,17 +33,21 @@ export class ProductoRepository {
     return builder.orderBy('producto.id', 'DESC').getMany();
   }
 
-  /** Productos activos de la misma categoria (exacta) para "Tambien te puede interesar". */
-  /** Otros productos activos del catálogo, para completar las recomendaciones cuando la categoría tiene pocos. */
+  /**
+   * Otros productos activos del catálogo de ESTA tienda, para completar las recomendaciones cuando la categoría
+   * tiene pocos. Sin el filtro de empresa se mezclaban productos de otras tiendas.
+   */
   findOtrosActivos(excluirIds: number[], limite: number): Promise<Producto[]> {
     return this.crearBuilder()
-      .where('producto.id NOT IN (:...excluirIds)', { excluirIds })
+      .where('producto.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
+      .andWhere('producto.id NOT IN (:...excluirIds)', { excluirIds })
       .andWhere('producto.activo = true')
       .orderBy('producto.id', 'DESC')
       .take(limite)
       .getMany();
   }
 
+  /** Productos activos de la misma categoria (exacta) para "Tambien te puede interesar". */
   findRelacionados(idCategoria: number, excluirId: number, limite: number): Promise<Producto[]> {
     return this.crearBuilder()
       .where('producto.id_empresa = :idEmpresa', { idEmpresa: this.tenant.empresaId() })
