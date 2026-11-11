@@ -162,12 +162,14 @@ export class NotificacionesService {
    * espera a los servicios push ni falla si fallan (la notificacion ya esta en BD y se ve al abrir la app).
    */
   notificarPorPush(notificaciones: NotificacionParaPush[]): void {
-    void Promise.all([this.enviarPush(notificaciones), this.enviarWebPush(notificaciones)]).catch((error: unknown) => {
+    // La tienda se toma aqui, todavia dentro del request (o de la tarea) que notifica.
+    const slug = this.tenant.empresa()?.slug;
+    void Promise.all([this.enviarPush(notificaciones, slug), this.enviarWebPush(notificaciones)]).catch((error: unknown) => {
       this.logger.error(`No se pudo preparar el push: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
 
-  private async enviarPush(notificaciones: NotificacionParaPush[]): Promise<void> {
+  private async enviarPush(notificaciones: NotificacionParaPush[], slug: string | undefined): Promise<void> {
     if (notificaciones.length === 0) return;
 
     const idsUsuario = [...new Set(notificaciones.map((notificacion) => notificacion.idUsuario))];
@@ -184,7 +186,7 @@ export class NotificacionesService {
         token,
         titulo: notificacion.titulo,
         mensaje: notificacion.mensaje,
-        data: { url: URL_NOTIFICACIONES, idNotificacion: notificacion.id },
+        data: { url: URL_NOTIFICACIONES, idNotificacion: notificacion.id, ...(slug && { slug }) },
       })),
     );
     await this.pushService.enviar(mensajes);

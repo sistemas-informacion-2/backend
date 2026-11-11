@@ -29,6 +29,8 @@ function crearService(overrides: {
   dispositivoRepo?: Record<string, ReturnType<typeof vi.fn>>;
   pushService?: Record<string, ReturnType<typeof vi.fn>>;
   insert?: ReturnType<typeof vi.fn>;
+  /** Tienda del contexto; null = sin tienda. Por defecto, fashionstore. */
+  empresa?: { slug: string } | null;
 } = {}) {
   const notificacionRepo = {
     findPage: vi.fn(),
@@ -63,7 +65,7 @@ function crearService(overrides: {
   } as unknown as DataSource;
 
   return {
-    service: new NotificacionesService(dataSource, notificacionRepo as never, usuarioRepo as never, dispositivoRepo as never, pushService as never, { listarDeUsuarios: vi.fn().mockResolvedValue([]) } as never, { habilitado: false, enviar: vi.fn() } as never, { empresaId: () => 1 } as never),
+    service: new NotificacionesService(dataSource, notificacionRepo as never, usuarioRepo as never, dispositivoRepo as never, pushService as never, { listarDeUsuarios: vi.fn().mockResolvedValue([]) } as never, { habilitado: false, enviar: vi.fn() } as never, { empresaId: () => 1, empresa: () => ('empresa' in overrides ? overrides.empresa : { slug: 'fashionstore' }) } as never),
     notificacionRepo,
     usuarioRepo,
     dispositivoRepo,
@@ -176,9 +178,26 @@ describe('NotificacionesService', () => {
           token: 'ExponentPushToken[a]',
           titulo: 'Tu pedido',
           mensaje: 'Hola Ana, tu pedido esta listo',
-          data: { url: '/cuenta/notificaciones', idNotificacion: 55 },
+          data: { url: '/cuenta/notificaciones', idNotificacion: 55, slug: 'fashionstore' },
         },
       ]);
+    });
+
+    it('el push lleva la tienda que avisa, y sin tienda en el contexto no lleva ninguna', async () => {
+      const avisar = async (empresa: { slug: string } | null) => {
+        const { service, pushService } = crearService({
+          empresa,
+          usuarioRepo: { findOne: vi.fn().mockResolvedValue(usuarioBase()) },
+          notificacionRepo: { save: vi.fn(async (datos) => ({ ...datos, id: 56 })) },
+          dispositivoRepo: { listarActivosDeUsuarios: vi.fn().mockResolvedValue([{ idUsuario: 1, token: 'ExponentPushToken[a]' }]) },
+        });
+        await service.enviar({ titulo: 'Aviso', mensaje: 'Hola', idUsuario: 1 });
+        await esperarSegundoPlano();
+        return (pushService.enviar.mock.calls[0][0] as Array<{ data: Record<string, unknown> }>)[0].data;
+      };
+
+      expect(await avisar({ slug: 'demo-bi' })).toEqual({ url: '/cuenta/notificaciones', idNotificacion: 56, slug: 'demo-bi' });
+      expect(await avisar(null)).toEqual({ url: '/cuenta/notificaciones', idNotificacion: 56 });
     });
 
     it('en la difusion solo avisa a quienes tienen celular, a cada token una vez', async () => {

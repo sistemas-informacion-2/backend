@@ -11,7 +11,8 @@ export interface MensajePush {
   token: string;
   titulo: string;
   mensaje: string;
-  data: { url: string; idNotificacion: number };
+  /** `slug`: la tienda que avisa. La app movil la usa para abrir el aviso en esa tienda. */
+  data: { url: string; idNotificacion: number; slug?: string };
 }
 
 interface TicketPush {
