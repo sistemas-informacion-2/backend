@@ -19,6 +19,8 @@ export interface ReportePredefinido {
   filters?: ReportFilterDto[];
   sort?: { campo: string; direccion: 'asc' | 'desc' };
   limit?: number;
+  /** Tope de filas del reporte ("las 10 prendas"): ver ReportRunRequestDto.top. */
+  top?: number;
   rango: RangoPredefinido;
 }
 
@@ -53,6 +55,8 @@ export const REPORTES_PREDEFINIDOS: readonly ReportePredefinido[] = [
     selectedFields: ['producto', 'categoria', 'cantidad', 'monto_total'],
     sort: { campo: 'cantidad', direccion: 'desc' },
     limit: 10,
+    // Sin top, "las 10" eran solo la primera pagina: con la paginacion y la exportacion salian todas.
+    top: 10,
     rango: { tipo: 'ULTIMOS_N_DIAS', dias: 30 },
   },
   {

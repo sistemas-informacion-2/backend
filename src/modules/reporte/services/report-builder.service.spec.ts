@@ -378,6 +378,25 @@ describe('ReportBuilderService', () => {
     expect(sql).toContain('DESC NULLS LAST');
   });
 
+  it('con top, el reporte termina en esa fila aunque haya más (la página y el total se acotan)', async () => {
+    // 268 clientes; top 20 de a 50 por página: una sola página de 20.
+    const primera = crearBuilder([[{ total: 268 }], []]);
+    const resultado = await primera.service.ejecutar({ reportType: 'VENTAS', selectedFields: ['cliente', 'monto_total'], top: 20, limit: 50, offset: 0 });
+    expect(resultado.total).toBe(20);
+    expect(primera.query.mock.calls[1][1].slice(-2)).toEqual([20, 0]);
+
+    // Top 20 de a 15: la segunda página trae solo las 5 que faltan.
+    const segunda = crearBuilder([[{ total: 268 }], []]);
+    await segunda.service.ejecutar({ reportType: 'VENTAS', selectedFields: ['cliente', 'monto_total'], top: 20, limit: 15, offset: 15 });
+    expect(segunda.query.mock.calls[1][1].slice(-2)).toEqual([5, 15]);
+
+    // Más allá del top no se consulta nada.
+    const fuera = crearBuilder([[{ total: 268 }]]);
+    const vacio = await fuera.service.ejecutar({ reportType: 'VENTAS', selectedFields: ['cliente', 'monto_total'], top: 20, limit: 50, offset: 50 });
+    expect(vacio.rows).toEqual([]);
+    expect(fuera.query).toHaveBeenCalledTimes(1);
+  });
+
   it('el catálogo marca los campos de dinero', () => {
     const { service } = crearBuilder([]);
     const ventas = service.catalogo().find((tipo) => tipo.id === 'VENTAS')!;

@@ -223,12 +223,52 @@ describe('ReportsService', () => {
     expect(builder.ejecutar).toHaveBeenCalledWith({ reportType: 'VENTAS', selectedFields: ['sucursal'] });
   });
 
+  it('un generativo vacío con fechas dice que no hubo ventas y cuál es la última', async () => {
+    const ejecutar = vi
+      .fn()
+      .mockResolvedValueOnce({ columns: [], columnLabels: [], columnFormats: [], rows: [], total: 0 })
+      .mockResolvedValueOnce({ columns: ['fecha_emision'], columnLabels: ['Fecha'], columnFormats: ['FECHA'], rows: [['2026-11-08']], total: 312 });
+    const { service } = crearService({
+      builder: { ejecutar },
+      nlp: {
+        interpretar: vi.fn().mockResolvedValue({
+          request: { reportType: 'VENTAS', selectedFields: ['codigo_nota', 'monto_total'], dateFrom: '2026-11-10', dateTo: '2026-11-13' },
+          interpretacion: 'Las 10 ventas más grandes.',
+        }),
+      },
+    });
+
+    const respuesta = await service.generativo('las 10 ventas mas grandes del 10 al 13 de noviembre');
+
+    expect(respuesta.interpretacion).toBe('Las 10 ventas más grandes. No hay ventas desde el 10/11/2026 hasta el 13/11/2026. La última registrada es del 08/11/2026.');
+    // La búsqueda de la última fecha no lleva el rango (por eso la encuentra).
+    expect(ejecutar.mock.calls[1][0]).toMatchObject({ selectedFields: ['fecha_emision'], sort: { campo: 'fecha_emision', direccion: 'desc' }, limit: 1 });
+    expect(ejecutar.mock.calls[1][0].dateFrom).toBeUndefined();
+  });
+
+  it('un generativo vacío sin fechas no agrega avisos', async () => {
+    const { service, builder } = crearService();
+
+    const respuesta = await service.generativo('ventas');
+
+    expect(respuesta.interpretacion).toBe('ok');
+    expect(builder.ejecutar).toHaveBeenCalledTimes(1);
+  });
+
   it('generativo sin Gemini configurado no gasta cupo', async () => {
     const { service, cuota } = crearService();
 
     await service.generativo('ventas de hoy');
 
     expect(cuota.consumir).not.toHaveBeenCalled();
+  });
+
+  it('"Prendas más vendidas" es un top 10 de verdad: la exportación no trae más', async () => {
+    const { service, builder } = crearService();
+
+    await service.exportarPredefinido('html', 'VENTAS_TOP_PRODUCTOS');
+
+    expect(builder.ejecutar).toHaveBeenCalledWith(expect.objectContaining({ top: 10, limit: 500 }));
   });
 
   it('ejecutarPredefinido pide la página indicada (offset)', async () => {

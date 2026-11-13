@@ -77,11 +77,21 @@ export class ReportBuilderService {
 
   async ejecutar(request: ReportRunRequestDto): Promise<ReportResultDto> {
     const consulta = this.armarConsulta(request);
-    const total = await this.contar(consulta.fromSql, consulta.whereSql, consulta.groupExprs, consulta.agregar, consulta.params);
+    const encontradas = await this.contar(consulta.fromSql, consulta.whereSql, consulta.groupExprs, consulta.agregar, consulta.params);
 
-    const params = [...consulta.params, consulta.limites.limit, consulta.limites.offset];
-    const sql = `${consulta.sql} LIMIT $${params.length - 1} OFFSET $${params.length}`;
-    const filas = await this.dataSource.query<Array<Record<string, unknown>>>(sql, params);
+    // Con un top, el reporte termina en la fila `top`: la ultima pagina se corta ahi y el total no lo supera.
+    const { limit, offset } = consulta.limites;
+    const top = request.top && request.top > 0 ? Math.floor(request.top) : null;
+    const total = top ? Math.min(encontradas, top) : encontradas;
+    const porTraer = top ? Math.min(limit, top - offset) : limit;
+    const filas =
+      porTraer > 0
+        ? await this.dataSource.query<Array<Record<string, unknown>>>(`${consulta.sql} LIMIT $${consulta.params.length + 1} OFFSET $${consulta.params.length + 2}`, [
+            ...consulta.params,
+            porTraer,
+            offset,
+          ])
+        : [];
 
     return {
       columns: request.selectedFields,

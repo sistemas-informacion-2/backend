@@ -112,6 +112,17 @@ export class ReportRunRequestDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  /**
+   * "Los 20 clientes con mas compras": el reporte tiene como maximo estas filas (las primeras segun el orden). No es el
+   * tamano de pagina (`limit`): la tabla pagina dentro del top y la exportacion trae solo el top.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(LIMITE_REPORTE_MAXIMO)
+  top?: number;
 }
 
 export class ReportResultDto {

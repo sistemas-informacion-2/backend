@@ -53,7 +53,7 @@ describe('GeminiReporteService', () => {
         selectedFields: ['sucursal', 'monto_total', 'campo_inventado'],
         filters: [{ campo: 'sucursal', operador: 'eq', valor: 'La Paz' }],
         sort: { campo: 'monto_total', direccion: 'desc' },
-        limit: 5,
+        top: 5,
         interpretacion: 'Ventas de La Paz ordenadas por monto, generado con IA.',
       }),
     );
@@ -65,6 +65,8 @@ describe('GeminiReporteService', () => {
     expect(request.selectedFields).toEqual(['sucursal', 'monto_total']);
     expect(request.filters).toEqual([{ campo: 'sucursal', operador: 'eq', valor: 'La Paz' }]);
     expect(request.sort).toEqual({ campo: 'monto_total', direccion: 'desc' });
+    // Un top 5: la página es de 5 y el reporte no pasa de 5 filas.
+    expect(request.top).toBe(5);
     expect(request.limit).toBe(5);
     expect(request.offset).toBe(0);
     expect(interpretacion).toBe('Ventas de La Paz ordenadas por monto, generado con IA.');
@@ -130,6 +132,75 @@ describe('GeminiReporteService', () => {
     expect(invalidas.dateTo).toBeUndefined();
     expect(alReves.dateFrom).toBe('2026-11-01');
     expect(alReves.dateTo).toBe('2026-11-10');
+  });
+
+  it('"los 20 clientes con más compras": top 20 (no una página de 20) y sin «Consumidor Final»', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({ reportType: 'VENTAS', selectedFields: ['cliente', 'monto_total'], sort: { campo: 'monto_total', direccion: 'desc' }, top: 20, interpretacion: 'Top 20 de clientes.' }),
+    );
+
+    const { request, interpretacion } = await service.interpretar('listame los 20 clientes con mas compras');
+
+    expect(request.top).toBe(20);
+    expect(request.limit).toBe(20);
+    expect(request.filters).toContainEqual({ campo: 'cliente_identificado', operador: 'eq', valor: true });
+    expect(interpretacion).toContain('No incluye las ventas a «Consumidor Final»');
+  });
+
+  it('si lista notas de venta (no agrupa por cliente), no excluye a «Consumidor Final»', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({
+        reportType: 'VENTAS',
+        selectedFields: ['codigo_nota', 'cliente', 'monto_total'],
+        sort: { campo: 'monto_total', direccion: 'desc' },
+        top: 10,
+        interpretacion: 'Las 10 ventas más grandes.',
+      }),
+    );
+
+    const { request, interpretacion } = await service.interpretar('las 10 compras de los clientes más caras');
+
+    expect(request.filters).toEqual([]);
+    expect(interpretacion).toBe('Las 10 ventas más grandes.');
+  });
+
+  it('si Gemini no manda el top, lo saca del pedido', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(respuesta({ reportType: 'VENTAS', selectedFields: ['producto', 'cantidad'], interpretacion: 'Top 20 de productos.' }));
+
+    const { request } = await service.interpretar('los 20 productos que más se vendieron');
+
+    expect(request.top).toBe(20);
+  });
+
+  it('sin una cantidad pedida no hay top, y la página es de 50', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(respuesta({ reportType: 'VENTAS', selectedFields: ['producto', 'cantidad'], interpretacion: 'x' }));
+
+    const { request } = await service.interpretar('ventas de los 3 últimos meses por producto');
+
+    expect(request.top).toBeUndefined();
+    expect(request.limit).toBe(50);
+  });
+
+  it('si el pedido ya filtra por cliente identificado, no se agrega otro filtro', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({
+        reportType: 'VENTAS',
+        selectedFields: ['cliente', 'monto_total'],
+        filters: [{ campo: 'cliente_identificado', operador: 'eq', valor: 'false' }],
+        top: 5,
+        interpretacion: 'x',
+      }),
+    );
+
+    const { request, interpretacion } = await service.interpretar('las 5 ventas más grandes a consumidor final');
+
+    expect(request.filters).toEqual([{ campo: 'cliente_identificado', operador: 'eq', valor: false }]);
+    expect(interpretacion).toBe('x');
   });
 
   it('descarta un filtro de sucursal que no existe en la BD (Gemini no debe poder inventar sedes)', async () => {

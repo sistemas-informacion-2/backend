@@ -3,14 +3,15 @@ import { fechaLocal, inicioDeMes, sumarDias, sumarMeses } from '../../../common/
 import { DataSource } from 'typeorm';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { normalizarTexto } from '../catalog/reporte-catalog.constants.js';
-import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
+import { LIMITE_REPORTE_MAXIMO, type ReportFilterDto, type ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
 
 export interface InterpretacionPrompt {
   request: ReportRunRequestDto;
   interpretacion: string;
 }
 
-const LIMITE_NLP_MAXIMO = 100;
+/** Filas por pagina; una cantidad pedida ("top N") va aparte, en `top`. */
+const LIMITE_PAGINA = 50;
 
 const CAMPOS_POR_TIPO: Record<'VENTAS' | 'INVENTARIO' | 'COMPRAS', string[]> = {
   VENTAS: ['fecha_emision', 'sucursal', 'producto', 'categoria', 'monto_total', 'cantidad'],
@@ -89,7 +90,7 @@ export class ReporteNlpService {
 
     const tipo = this.detectarTipo(prompt);
     const { desde, hasta, periodoTexto } = this.detectarPeriodo(prompt);
-    const { sucursal, limite, esTop, esCritico } = await this.detectarContexto(prompt, tipo);
+    const { sucursal, top, esTop, esCritico } = await this.detectarContexto(prompt, tipo);
 
     const request: ReportRunRequestDto = {
       reportType: tipo,
@@ -101,15 +102,17 @@ export class ReporteNlpService {
       sort: esTop ? { campo: 'cantidad', direccion: 'desc' } : ORDEN_POR_DEFECTO[tipo],
       dateFrom: desde,
       dateTo: hasta,
-      limit: limite,
+      // Una cantidad pedida ("las 5 prendas") es un top, no el tamano de pagina.
+      limit: top ? Math.min(top, LIMITE_PAGINA) : LIMITE_PAGINA,
       offset: 0,
+      ...(top ? { top } : {}),
     };
 
     partes.push(`Reporte de ${NOMBRE_POR_TIPO[tipo]}`);
     partes.push(`columnas: ${request.selectedFields.map((campo) => ETIQUETAS[campo] ?? campo).join(', ')}`);
     if (sucursal) partes.push(`sucursal "${sucursal}"`);
     if (periodoTexto) partes.push(`período: ${periodoTexto}`);
-    if (esTop) partes.push(`las ${limite} primeras por cantidad vendida`);
+    if (esTop) partes.push(top ? `las ${top} primeras por cantidad vendida` : 'ordenadas por cantidad vendida');
     if (esCritico) partes.push('solo stock crítico');
     if (!sucursal && !periodoTexto && !esTop && !esCritico) {
       partes.push('(no se reconocieron instrucciones específicas, se muestran las ventas recientes)');
@@ -169,13 +172,13 @@ export class ReporteNlpService {
   private async detectarContexto(
     prompt: string,
     tipo: 'VENTAS' | 'INVENTARIO' | 'COMPRAS',
-  ): Promise<{ sucursal?: string; limite: number; esTop: boolean; esCritico: boolean }> {
-    let limite = 50;
+  ): Promise<{ sucursal?: string; top?: number; esTop: boolean; esCritico: boolean }> {
+    let top: number | undefined;
     const maximo =
       prompt.match(/(\d+)\s*(prendas|productos|variantes|articulos)/) ??
       prompt.match(/\bl[ao]s?\s*(\d+)\s*(mas vendid[oa]s|primer[oa]s|principales)/) ??
       prompt.match(/\btop\s*(\d+)/);
-    if (maximo) limite = Math.max(1, Math.min(LIMITE_NLP_MAXIMO, Number(maximo[1])));
+    if (maximo) top = Math.max(1, Math.min(LIMITE_REPORTE_MAXIMO, Number(maximo[1])));
 
     const esTop = tipo === 'VENTAS' && /mas vendid[oa]s|\btop\b|primer[oa]s/.test(prompt);
     const esCritico = tipo === 'INVENTARIO' && /critico/.test(prompt);
@@ -192,6 +195,6 @@ export class ReporteNlpService {
       }
     }
 
-    return { sucursal, limite, esTop, esCritico };
+    return { sucursal, top, esTop, esCritico };
   }
 }

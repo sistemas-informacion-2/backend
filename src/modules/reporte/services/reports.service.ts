@@ -20,6 +20,7 @@ import { exportarReporte, necesitaResumen, type ArchivoReporte } from '../utils/
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { CuotaGenerativoService } from './cuota-generativo.service.js';
 import { ResumenReporteService } from '../exportacion/resumen-reporte.service.js';
+import { fechaCorta } from '../exportacion/formato.js';
 import { TiendaReporteService } from '../exportacion/tienda-reporte.service.js';
 import { GeminiReporteService } from './gemini-reporte.service.js';
 import { ReportBuilderService } from './report-builder.service.js';
@@ -55,7 +56,33 @@ export class ReportsService {
   async generativo(prompt: string): Promise<ReporteGenerativoResponseDto> {
     const { interpretado, fuente } = await this.interpretarConIA(prompt);
     const result = await this.builder.ejecutar(interpretado.request);
-    return { prompt, interpretacion: interpretado.interpretacion, request: interpretado.request, result, fuente };
+    const aviso = result.total === 0 ? await this.avisoSinDatos(interpretado.request) : null;
+    const interpretacion = aviso ? `${interpretado.interpretacion} ${aviso}` : interpretado.interpretacion;
+    return { prompt, interpretacion, request: interpretado.request, result, fuente };
+  }
+
+  /**
+   * Un reporte vacio con un rango de fechas casi siempre es "no hubo movimientos en esas fechas", no un error: se dice
+   * y se da la ultima fecha con datos (con los mismos filtros), para que el usuario sepa que rango pedir.
+   */
+  private async avisoSinDatos(request: ReportRunRequestDto): Promise<string | null> {
+    const movimientos = request.reportType === 'VENTAS' ? 'ventas' : request.reportType === 'COMPRAS' ? 'compras' : null;
+    if (!movimientos || (!request.dateFrom && !request.dateTo)) return null;
+
+    const ultima = await this.builder.ejecutar({
+      reportType: request.reportType,
+      selectedFields: ['fecha_emision'],
+      filters: request.filters,
+      matchType: request.matchType,
+      sort: { campo: 'fecha_emision', direccion: 'desc' },
+      limit: 1,
+      offset: 0,
+    });
+    const fecha = typeof ultima.rows[0]?.[0] === 'string' ? (ultima.rows[0][0] as string) : null;
+    const rango = [request.dateFrom && `desde el ${fechaCorta(request.dateFrom)}`, request.dateTo && `hasta el ${fechaCorta(request.dateTo)}`].filter(Boolean).join(' ');
+    return fecha
+      ? `No hay ${movimientos} ${rango}. La última registrada${request.filters?.length ? ' con estos filtros' : ''} es del ${fechaCorta(fecha)}.`
+      : `No hay ${movimientos} registradas${request.filters?.length ? ' con estos filtros' : ''}.`;
   }
 
   /**
@@ -146,6 +173,7 @@ export class ReportsService {
       dateTo: hasta,
       limit: definicion.limit ?? 50,
       offset: 0,
+      ...(definicion.top ? { top: definicion.top } : {}),
     };
   }
 

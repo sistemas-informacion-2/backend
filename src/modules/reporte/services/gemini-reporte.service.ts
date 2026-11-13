@@ -9,11 +9,12 @@ import { GeminiBiClient } from '../../bi/agente/gemini.client.js';
 import {
   FUENTES_REPORTE,
   OPERADORES_POR_TIPO,
+  normalizarTexto,
   type CampoReporte,
   type FuenteReporte,
   type OperadorFiltro,
 } from '../catalog/reporte-catalog.constants.js';
-import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
+import { LIMITE_REPORTE_MAXIMO, type ReportFilterDto, type ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
 import type { InterpretacionPrompt } from './reporte-nlp.service.js';
 
 const TIPOS_VALIDOS = ['VENTAS', 'INVENTARIO', 'COMPRAS'] as const;
@@ -37,7 +38,10 @@ const ORDEN_POR_DEFECTO: Record<TipoReporte, { campo: string; direccion: 'asc' |
   INVENTARIO: { campo: 'stock_disponible', direccion: 'asc' },
 };
 
-const LIMITE_MAXIMO = 100;
+/** Columnas que hacen que el reporte liste notas de venta (una fila por nota), no clientes. */
+const CAMPOS_DE_NOTA = ['codigo_nota', 'id_nota'];
+
+/** Filas por pagina del generativo (la tabla pagina; el top, si lo hay, acota el reporte). */
 const LIMITE_DEFECTO = 50;
 const MODELO_DEFECTO = 'gemini-3.5-flash-lite';
 /** Pausa antes del unico reintento ante un 503 "high demand" (el propio Google recomienda reintentar, no es error nuestro ni de la cuenta). */
@@ -72,7 +76,7 @@ const ESQUEMA_RESPUESTA: Schema = {
     },
     dateFrom: { type: Type.STRING },
     dateTo: { type: Type.STRING },
-    limit: { type: Type.INTEGER },
+    top: { type: Type.INTEGER },
     interpretacion: { type: Type.STRING },
   },
   required: ['reportType', 'selectedFields', 'interpretacion'],
@@ -86,7 +90,7 @@ interface RespuestaGeminiBruta {
   sort?: unknown;
   dateFrom?: unknown;
   dateTo?: unknown;
-  limit?: unknown;
+  top?: unknown;
   interpretacion?: unknown;
 }
 
@@ -129,7 +133,7 @@ export class GeminiReporteService {
 
     const sucursales = await this.obtenerSucursalesActivas();
     const bruto = await this.llamarGeminiConReintento(promptUsuario, this.construirInstrucciones(sucursales));
-    return this.normalizar(bruto, sucursales);
+    return this.normalizar(bruto, sucursales, promptUsuario);
   }
 
   /**
@@ -179,7 +183,7 @@ export class GeminiReporteService {
    * Lo que no sirve se descarta (un filtro con un número inválido, una fecha mal escrita) en vez de hacer fallar todo
    * el reporte con un 400.
    */
-  private normalizar(bruto: RespuestaGeminiBruta, sucursales: string[]): InterpretacionPrompt {
+  private normalizar(bruto: RespuestaGeminiBruta, sucursales: string[], promptUsuario: string): InterpretacionPrompt {
     const tipo: TipoReporte = TIPOS_VALIDOS.includes(bruto.reportType as TipoReporte) ? (bruto.reportType as TipoReporte) : 'VENTAS';
     const fuente = FUENTES_REPORTE.find((candidata) => candidata.id === tipo) as FuenteReporte;
     const campoPorNombre = new Map(fuente.campos.map((campo) => [campo.name, campo]));
@@ -202,8 +206,21 @@ export class GeminiReporteService {
     const dateFrom = admiteFechas ? fechaValida(bruto.dateFrom) : undefined;
     const dateTo = admiteFechas ? fechaValida(bruto.dateTo) : undefined;
 
-    const limiteNumerico = typeof bruto.limit === 'number' ? bruto.limit : Number(bruto.limit);
-    const limit = Number.isFinite(limiteNumerico) && limiteNumerico > 0 ? Math.min(LIMITE_MAXIMO, Math.round(limiteNumerico)) : LIMITE_DEFECTO;
+    // "Los 20 clientes...": un tope de filas, no un tamano de pagina. Si Gemini no lo mando, se busca en el pedido.
+    const topNumerico = typeof bruto.top === 'number' ? bruto.top : Number(bruto.top);
+    const top = Number.isFinite(topNumerico) && topNumerico > 0 ? Math.min(LIMITE_REPORTE_MAXIMO, Math.round(topNumerico)) : topDelPedido(promptUsuario);
+
+    // En un ranking de CLIENTES (agrupado por cliente), "Consumidor Final" (las ventas sin cliente identificado) no es
+    // un cliente y saldria primero por lejos. Se excluye, salvo que el pedido ya filtre por ese campo. Si el reporte
+    // lista notas de venta (una fila por nota), no: la venta mas grande puede haber sido a un cliente sin identificar.
+    const listaNotas = selectedFields.some((campo) => CAMPOS_DE_NOTA.includes(campo));
+    const sinConsumidorFinal =
+      tipo === 'VENTAS' &&
+      selectedFields.includes('cliente') &&
+      !listaNotas &&
+      (top !== undefined || sort.direccion === 'desc') &&
+      !filters.some((f) => f.campo === 'cliente_identificado');
+    if (sinConsumidorFinal) filters.push({ campo: 'cliente_identificado', operador: 'eq', valor: true });
 
     const request: ReportRunRequestDto = {
       reportType: tipo,
@@ -212,14 +229,17 @@ export class GeminiReporteService {
       sort,
       // Un rango al reves (desde despues de hasta) no trae nada: se ordena.
       ...(dateFrom && dateTo && dateFrom > dateTo ? { dateFrom: dateTo, dateTo: dateFrom } : { dateFrom, dateTo }),
-      limit,
+      // La pagina es de a 50 (o el top entero si es menor); el top acota el reporte.
+      limit: top ? Math.min(top, LIMITE_DEFECTO) : LIMITE_DEFECTO,
       offset: 0,
+      ...(top ? { top } : {}),
     };
 
-    const interpretacion =
+    const base =
       typeof bruto.interpretacion === 'string' && bruto.interpretacion.trim().length > 0
         ? bruto.interpretacion.trim()
         : `Reporte de ${fuente.nombre} generado con IA.`;
+    const interpretacion = sinConsumidorFinal ? `${base} No incluye las ventas a «Consumidor Final» (clientes sin identificar).` : base;
 
     return { request, interpretacion };
   }
@@ -310,7 +330,8 @@ export class GeminiReporteService {
       '- INVENTARIO no tiene fecha (es una foto del stock actual): nunca devuelvas dateFrom/dateTo para ese tipo, aunque el pedido mencione un período (ignóralo).',
       '- filters: opcional. Solo campos del tipo elegido. "valor" siempre como texto; para campos booleanos usa el texto "true" o "false". Para buscar un producto o una categoría por su nombre usa el operador "contains".',
       '- sort: si el pedido pide un "top N", "las más vendidas/vendidos" o similar, ordena por la medida relevante en "desc". Si ordenas por una DIMENSION, inclúyela en selectedFields.',
-      '- limit: entero entre 1 y 100. Usa el número pedido en un "top N"; si no se especifica, usa 50.',
+      '- top: entero entre 1 y 500, SOLO si el pedido pide una cantidad de filas ("los 20 clientes con más compras", "top 10", "las 5 prendas más vendidas"). Si no pide una cantidad, no lo envíes.',
+      '- Para rankings de clientes, el cliente "Consumidor Final" agrupa las ventas sin cliente identificado: no es un cliente real.',
       '- interpretacion: 1 o 2 frases en español claro, dirigidas al usuario final (sin tecnicismos de SQL/JSON), resumiendo qué reporte armaste y por qué, como si le explicaras lo que entendiste de su pedido.',
     ].join('\n');
   }
@@ -319,6 +340,19 @@ export class GeminiReporteService {
     const campos = fuente.campos.map((campo) => `  - ${campo.name} (${campo.categoria}, ${campo.tipo}): ${campo.label}`).join('\n');
     return `### ${fuente.id} — ${fuente.nombre}\n${fuente.descripcion}\nCampos válidos:\n${campos}`;
   }
+}
+
+/**
+ * El "top N" escrito en el pedido, para cuando Gemini no lo devuelve: "los 20 clientes", "las 5 prendas", "top 10".
+ * undefined si no hay una cantidad clara.
+ */
+export function topDelPedido(prompt: string): number | undefined {
+  const texto = normalizarTexto(prompt);
+  // "los 3 meses" o "los 15 ultimos dias" son un periodo, no un top.
+  const periodo = String.raw`(?!\s*(?:ultim[oa]s\s+)?(?:dias?|semanas?|mes(?:es)?|anos?|horas?)\b)`;
+  const coincidencia = texto.match(new RegExp(String.raw`\btop\s*(\d{1,3})\b`)) ?? texto.match(new RegExp(String.raw`\b(?:l[ao]s|primer[oa]s)\s+(\d{1,3})\b${periodo}`));
+  const numero = coincidencia ? Number(coincidencia[1]) : NaN;
+  return Number.isInteger(numero) && numero > 0 ? Math.min(numero, LIMITE_REPORTE_MAXIMO) : undefined;
 }
 
 /** La fecha si es AAAA-MM-DD y existe en el calendario; undefined si no. */

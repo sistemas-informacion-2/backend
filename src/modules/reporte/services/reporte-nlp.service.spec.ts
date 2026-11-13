@@ -104,11 +104,19 @@ describe('ReporteNlpService', () => {
     });
   });
 
-  it.each(['top 5 de ventas', 'los 5 productos más vendidos', 'los 5 más vendidos'])('"%s" pide 5 filas ordenadas por cantidad', async (pedido) => {
+  it.each(['top 5 de ventas', 'los 5 productos más vendidos', 'los 5 más vendidos'])('"%s" es un top 5 ordenado por cantidad', async (pedido) => {
     const { request } = await crearNlp([]).interpretar(pedido);
 
+    expect(request.top).toBe(5);
     expect(request.limit).toBe(5);
     expect(request.sort).toEqual({ campo: 'cantidad', direccion: 'desc' });
+  });
+
+  it('sin una cantidad pedida no hay top', async () => {
+    const { request } = await crearNlp([]).interpretar('ventas de la semana');
+
+    expect(request.top).toBeUndefined();
+    expect(request.limit).toBe(50);
   });
 
   it('un pedido sin pistas cae en el reporte por defecto de ventas', async () => {
