@@ -1,5 +1,6 @@
 import { FORMATOS_EXPORTACION, type FormatoExportacion, type ReportResultDto } from '../dto/reporte-builder.dto.js';
 import { fechaLocal } from '../../../common/utils/fecha.util.js';
+import { generarExcelReporte } from '../exportacion/excel-reporte.js';
 import { generarPdfReporte, type TiendaReporte } from '../exportacion/pdf-reporte.js';
 import type { ResumenReporte } from '../exportacion/resumen.types.js';
 
@@ -9,7 +10,7 @@ export interface ArchivoReporte {
   nombreArchivo: string;
 }
 
-/** Lo que hace falta para exportar. El PDF necesita ademas el resumen y la tienda (el HTML no). */
+/** Lo que hace falta para exportar. El PDF y el Excel necesitan ademas el resumen y la tienda (el HTML no). */
 export interface DocumentoExportacion {
   /** Nombre del reporte: el del predefinido ("Stock crítico") o el de la fuente ("Ventas"). */
   nombreReporte: string;
@@ -24,31 +25,31 @@ export interface DocumentoExportacion {
 
 /** Formatos que llevan indicadores, graficos y analisis: hay que calcular el resumen antes de exportar. */
 export function necesitaResumen(formato: FormatoExportacion): boolean {
-  return formato === 'pdf';
+  return formato === 'pdf' || formato === 'excel';
 }
 
 const CONTENT_TYPES: Record<FormatoExportacion, string> = {
   pdf: 'application/pdf',
-  excel: 'application/vnd.ms-excel',
+  excel: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   html: 'text/html; charset=utf-8',
 };
 
 const EXTENSIONES: Record<FormatoExportacion, string> = {
   pdf: 'pdf',
-  excel: 'xls',
+  excel: 'xlsx',
   html: 'html',
 };
 
-/** Exporta el resultado del Report Builder: PDF profesional (exportacion/pdf-reporte.ts), Excel y HTML. */
+/** Exporta el resultado del Report Builder: PDF (exportacion/pdf-reporte.ts), Excel (exportacion/excel-reporte.ts) y HTML. */
 export async function exportarReporte(formato: FormatoExportacion, documento: DocumentoExportacion): Promise<ArchivoReporte> {
   if (!FORMATOS_EXPORTACION.includes(formato)) {
     throw new Error(`Formato de exportación no soportado: ${String(formato)}`);
   }
   const { nombreReporte, resultado } = documento;
   let contenido: Buffer;
-  if (formato === 'pdf') {
-    if (!documento.resumen || !documento.tienda) throw new Error('El PDF necesita el resumen y los datos de la tienda');
-    contenido = await generarPdfReporte({
+  if (necesitaResumen(formato)) {
+    if (!documento.resumen || !documento.tienda) throw new Error(`El ${formato === 'pdf' ? 'PDF' : 'Excel'} necesita el resumen y los datos de la tienda`);
+    const completo = {
       nombreReporte,
       subtitulo: documento.subtitulo,
       resultado,
@@ -56,9 +57,10 @@ export async function exportarReporte(formato: FormatoExportacion, documento: Do
       tienda: documento.tienda,
       generadoEn: documento.generadoEn ?? new Date(),
       contexto: documento.contexto,
-    });
+    };
+    contenido = formato === 'pdf' ? await generarPdfReporte(completo) : await generarExcelReporte(completo);
   } else {
-    contenido = formato === 'html' ? generarHtml(nombreReporte, resultado) : generarExcel(nombreReporte, resultado);
+    contenido = generarHtml(nombreReporte, resultado);
   }
 
   return {
