@@ -8,6 +8,7 @@ import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import {
   CreateReportTemplateDto,
   ExportQueryDto,
+  ExportRequestDto,
   PaginaPredefinidoQueryDto,
   ReporteGenerativoRequestDto,
   ReporteGenerativoResponseDto,
@@ -85,12 +86,10 @@ export class ReportsController {
   @Post('export')
   @RequierePlan('reportesAvanzados')
   @ApiOperation({ summary: 'Descarga un reporte del Constructor o del generativo en pdf, excel o html' })
-  async exportar(
-    @Query() query: ExportQueryDto,
-    @Body() request: ReportRunRequestDto,
-    @Res() res: Response,
-  ): Promise<void> {
-    this.enviarArchivo(res, await this.reportsService.exportar(query.format, request));
+  async exportar(@Query() query: ExportQueryDto, @Body() body: ExportRequestDto, @Res() res: Response): Promise<void> {
+    // El contexto (pedido del generativo) va al encabezado del archivo, no a la consulta.
+    const { contexto, ...request } = body;
+    this.enviarArchivo(res, await this.reportsService.exportar(query.format, request, contexto));
   }
 
   /** El resumen que acompaña al PDF y al Excel (indicadores, gráficos y análisis), sobre todos los datos del reporte. */

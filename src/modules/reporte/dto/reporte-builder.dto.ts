@@ -149,6 +149,27 @@ export class ReporteGenerativoResponseDto {
   fuente: 'IA' | 'REGEX';
 }
 
+/** El pedido del generativo y lo que entendio la IA: va en el encabezado del PDF y del Excel. */
+export class ContextoExportacionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(LARGO_MAXIMO_PEDIDO)
+  prompt: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  interpretacion: string;
+}
+
+/** Lo que recibe /reports/export: la configuracion del reporte y, si viene del generativo, su contexto. */
+export class ExportRequestDto extends ReportRunRequestDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ContextoExportacionDto)
+  contexto?: ContextoExportacionDto;
+}
+
 /** Pagina de un reporte predefinido: desde que fila mostrar (de a 50). */
 export class PaginaPredefinidoQueryDto {
   @IsOptional()

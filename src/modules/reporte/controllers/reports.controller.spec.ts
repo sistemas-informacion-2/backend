@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { REQUIERE_PLAN } from '../../../common/decorators/plan.decorator.js';
-import { CreateReportTemplateDto, ReporteGenerativoRequestDto, UpdateReportTemplateDto } from '../dto/reporte-builder.dto.js';
+import { CreateReportTemplateDto, ExportRequestDto, ReporteGenerativoRequestDto, UpdateReportTemplateDto } from '../dto/reporte-builder.dto.js';
 import { ReportsController } from './reports.controller.js';
 
 /** Funcion del plan que exige una ruta (lo que lee TenantGuard), o undefined si esta en todos los planes. */
@@ -22,6 +22,30 @@ describe('ReportsController: planes', () => {
     expect(planDe('predefinidos')).toBeUndefined();
     expect(planDe('ejecutarPredefinido')).toBeUndefined();
     expect(planDe('exportarPredefinido')).toBeUndefined();
+  });
+});
+
+describe('ReportsController: exportar con el contexto del generativo', () => {
+  it('el contexto va al archivo y no a la consulta del reporte', async () => {
+    const reportsService = { exportar: vi.fn().mockResolvedValue({ buffer: Buffer.from('x'), contentType: 'application/pdf', nombreArchivo: 'ventas.pdf' }) };
+    const controller = new ReportsController(reportsService as never, {} as never);
+    const res = { set: vi.fn(), send: vi.fn() };
+    const contexto = { prompt: 'ventas de octubre', interpretacion: 'Ventas de octubre de 2026.' };
+
+    await controller.exportar({ format: 'pdf' }, { reportType: 'VENTAS', selectedFields: ['producto'], contexto }, res as never);
+
+    expect(reportsService.exportar).toHaveBeenCalledWith('pdf', { reportType: 'VENTAS', selectedFields: ['producto'] }, contexto);
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  it('valida el contexto: pedido y explicación obligatorios y con tope de largo', async () => {
+    const base = { reportType: 'VENTAS', selectedFields: ['producto'] };
+    const errores = async (datos: object) => (await validate(plainToInstance(ExportRequestDto, datos))).map((error) => error.property);
+
+    expect(await errores({ ...base })).toEqual([]);
+    expect(await errores({ ...base, contexto: { prompt: 'ventas', interpretacion: 'Ventas.' } })).toEqual([]);
+    expect(await errores({ ...base, contexto: { prompt: '', interpretacion: 'Ventas.' } })).toEqual(['contexto']);
+    expect(await errores({ ...base, contexto: { prompt: 'x'.repeat(1001), interpretacion: 'Ventas.' } })).toEqual(['contexto']);
   });
 });
 
