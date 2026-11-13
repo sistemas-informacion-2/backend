@@ -4,11 +4,13 @@ import {
   IsDefined,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
   ArrayNotEmpty,
   ValidateNested,
@@ -116,8 +118,15 @@ export class ReportResultDto {
   total: number;
 }
 
+/** Largo maximo del pedido al generativo: alcanza para un dictado largo y evita mandarle a Gemini textos enormes. */
+export const LARGO_MAXIMO_PEDIDO = 1000;
+/** Largo de la columna reporte_plantilla.nombre. */
+export const LARGO_MAXIMO_NOMBRE_PLANTILLA = 100;
+
 export class ReporteGenerativoRequestDto {
   @IsString()
+  @IsNotEmpty({ message: 'Escribe o dicta qué reporte necesitas' })
+  @MaxLength(LARGO_MAXIMO_PEDIDO, { message: `El pedido no puede pasar de ${LARGO_MAXIMO_PEDIDO} caracteres` })
   prompt: string;
 }
 
@@ -165,6 +174,8 @@ export class ReportePredefinidoEjecutadoDto {
 
 export class BaseReportTemplateDto {
   @IsString()
+  @IsNotEmpty({ message: 'La plantilla necesita un nombre' })
+  @MaxLength(LARGO_MAXIMO_NOMBRE_PLANTILLA, { message: `El nombre de la plantilla no puede pasar de ${LARGO_MAXIMO_NOMBRE_PLANTILLA} caracteres` })
   nombre: string;
 
   @ValidateNested()
@@ -181,6 +192,8 @@ export class CreateReportTemplateDto extends BaseReportTemplateDto {
 export class UpdateReportTemplateDto {
   @IsOptional()
   @IsString()
+  @IsNotEmpty({ message: 'La plantilla necesita un nombre' })
+  @MaxLength(LARGO_MAXIMO_NOMBRE_PLANTILLA, { message: `El nombre de la plantilla no puede pasar de ${LARGO_MAXIMO_NOMBRE_PLANTILLA} caracteres` })
   nombre?: string;
 
   @IsOptional()

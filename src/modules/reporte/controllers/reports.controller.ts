@@ -19,15 +19,16 @@ import {
   UpdateReportTemplateDto,
 } from '../dto/reporte-builder.dto.js';
 import { ReportsService } from '../services/reports.service.js';
+import type { ArchivoReporte } from '../utils/reporte-exportador.util.js';
 
 /**
  * CU18 Gestionar Reportes Dinámicos y Generativos. El catálogo es la
  * whitelist de campos; `run` ejecuta el builder, `export` descarga en
- * pdf/excel/html/json (respuesta binaria, sin envoltorio envelope) y
+ * pdf/excel/html (respuesta binaria, sin envoltorio envelope) y
  * `generativo` interpreta pedidos por voz o texto en lenguaje natural.
  *
- * Planes: el constructor (catalogo, run, plantillas) y el generativo son "reportes avanzados"; los predefinidos y
- * la exportacion (que tambien usan los predefinidos) estan en todos los planes.
+ * Planes: el constructor (catalogo, run, export, plantillas) y el generativo son "reportes avanzados". Los
+ * predefinidos (ver, ejecutar y exportar) estan en todos los planes: su configuracion la arma el servidor.
  */
 @ApiTags('Reporte')
 @Controller('reports')
@@ -68,14 +69,26 @@ export class ReportsController {
     return this.reportsService.ejecutarPredefinido(codigo);
   }
 
+  @Post('predefinidos/:codigo/exportar')
+  @ApiOperation({ summary: 'Descarga un reporte predefinido en pdf, excel o html (configuracion armada en el servidor)' })
+  async exportarPredefinido(@Param('codigo') codigo: string, @Query() query: ExportQueryDto, @Res() res: Response): Promise<void> {
+    this.enviarArchivo(res, await this.reportsService.exportarPredefinido(query.format, codigo));
+  }
+
+  /** Acepta cualquier configuracion: es el Constructor por otra puerta, asi que exige el mismo plan. */
   @Post('export')
-  @ApiOperation({ summary: 'Descarga el reporte actual en pdf, excel, html o json' })
+  @RequierePlan('reportesAvanzados')
+  @ApiOperation({ summary: 'Descarga un reporte del Constructor o del generativo en pdf, excel o html' })
   async exportar(
     @Query() query: ExportQueryDto,
     @Body() request: ReportRunRequestDto,
     @Res() res: Response,
   ): Promise<void> {
-    const archivo = await this.reportsService.exportar(query.format, request);
+    this.enviarArchivo(res, await this.reportsService.exportar(query.format, request));
+  }
+
+  /** Respuesta binaria, sin el envoltorio { data, timestamp }. */
+  private enviarArchivo(res: Response, archivo: ArchivoReporte): void {
     res.set({
       'Content-Type': archivo.contentType,
       'Content-Disposition': `attachment; filename="${archivo.nombreArchivo}"`,

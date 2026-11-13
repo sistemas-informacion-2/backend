@@ -66,6 +66,11 @@ export interface AppConfig {
     /** API key de Google AI Studio (generativelanguage.googleapis.com). Vacio = reportes generativos caen al interprete por regex (CU18). */
     apiKey: string;
     model: string;
+    /**
+     * Tope de reportes generativos con Gemini por empresa en 24 horas. La API key es una sola para todas las tiendas
+     * del SaaS: sin tope, una tienda podria agotar la cuota de todas. Pasado el tope se usa el interprete por regex.
+     */
+    generativosPorDia: number;
   };
   bi: {
     /**
@@ -143,6 +148,7 @@ export default (): AppConfig => ({
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
     model: process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite',
+    generativosPorDia: Number(process.env.REPORTES_IA_POR_DIA) || 100,
   },
   bi: {
     iaProveedor: proveedorIa(process.env.BI_IA_PROVEEDOR),
