@@ -8,6 +8,7 @@ import type { ActiveUser } from '../../acceso/types/jwt-payload.type.js';
 import {
   CreateReportTemplateDto,
   ExportQueryDto,
+  PaginaPredefinidoQueryDto,
   ReporteGenerativoRequestDto,
   ReporteGenerativoResponseDto,
   ReportePredefinidoDto,
@@ -20,6 +21,8 @@ import {
 } from '../dto/reporte-builder.dto.js';
 import { ReportsService } from '../services/reports.service.js';
 import type { ArchivoReporte } from '../utils/reporte-exportador.util.js';
+import { ResumenReporteService } from '../exportacion/resumen-reporte.service.js';
+import type { ResumenReporte } from '../exportacion/resumen.types.js';
 
 /**
  * CU18 Gestionar Reportes Dinámicos y Generativos. El catálogo es la
@@ -34,7 +37,10 @@ import type { ArchivoReporte } from '../utils/reporte-exportador.util.js';
 @Controller('reports')
 @RequirePermission('analitica:reportes:gestionar')
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly resumenService: ResumenReporteService,
+  ) {}
 
   @Get('catalog')
   @RequierePlan('reportesAvanzados')
@@ -64,9 +70,9 @@ export class ReportsController {
   }
 
   @Post('predefinidos/:codigo/ejecutar')
-  @ApiOperation({ summary: 'Ejecuta un reporte predefinido (resuelve su rango de fechas al momento) y devuelve el resultado' })
-  ejecutarPredefinido(@Param('codigo') codigo: string): Promise<ReportePredefinidoEjecutadoDto> {
-    return this.reportsService.ejecutarPredefinido(codigo);
+  @ApiOperation({ summary: 'Ejecuta un reporte predefinido (resuelve su rango de fechas al momento) y devuelve una pagina del resultado' })
+  ejecutarPredefinido(@Param('codigo') codigo: string, @Query() query: PaginaPredefinidoQueryDto): Promise<ReportePredefinidoEjecutadoDto> {
+    return this.reportsService.ejecutarPredefinido(codigo, query.offset ?? 0);
   }
 
   @Post('predefinidos/:codigo/exportar')
@@ -85,6 +91,14 @@ export class ReportsController {
     @Res() res: Response,
   ): Promise<void> {
     this.enviarArchivo(res, await this.reportsService.exportar(query.format, request));
+  }
+
+  /** El resumen que acompaña al PDF y al Excel (indicadores, gráficos y análisis), sobre todos los datos del reporte. */
+  @Post('resumen')
+  @RequierePlan('reportesAvanzados')
+  @ApiOperation({ summary: 'Indicadores, gráficos y análisis comercial de un reporte (los mismos que van en el PDF y el Excel)' })
+  resumen(@Body() request: ReportRunRequestDto): Promise<ResumenReporte> {
+    return this.resumenService.resumir(request);
   }
 
   /** Respuesta binaria, sin el envoltorio { data, timestamp }. */

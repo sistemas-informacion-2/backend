@@ -37,7 +37,7 @@ export const REPORTES_PREDEFINIDOS: readonly ReportePredefinido[] = [
   {
     codigo: 'VENTAS_HOY',
     nombre: 'Ventas de hoy',
-    descripcion: 'Notas de venta emitidas hoy, con su sucursal, producto y monto.',
+    descripcion: 'Lo vendido hoy por sucursal y producto: unidades y monto.',
     categoria: 'Ventas',
     reportType: 'VENTAS',
     selectedFields: ['fecha_emision', 'sucursal', 'producto', 'cantidad', 'monto_total'],
@@ -71,7 +71,8 @@ export const REPORTES_PREDEFINIDOS: readonly ReportePredefinido[] = [
     descripcion: 'Variantes cuyo stock disponible ya llegó al mínimo configurado para esa prenda.',
     categoria: 'Inventario',
     reportType: 'INVENTARIO',
-    selectedFields: ['sucursal', 'almacen', 'producto', 'talla', 'color', 'stock_disponible', 'stock_minimo'],
+    // El SKU (variante) mantiene una fila por variante: el stock es una medida y se agrupa por las demas columnas.
+    selectedFields: ['sucursal', 'almacen', 'producto', 'variante', 'talla', 'color', 'stock_disponible', 'stock_minimo'],
     filters: [{ campo: 'en_stock_critico', operador: 'eq', valor: true }],
     sort: { campo: 'stock_disponible', direccion: 'asc' },
     rango: { tipo: 'NINGUNO' },

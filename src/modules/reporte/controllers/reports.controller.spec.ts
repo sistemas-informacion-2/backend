@@ -15,6 +15,7 @@ describe('ReportsController: planes', () => {
     expect(planDe('exportar')).toBe('reportesAvanzados');
     expect(planDe('ejecutar')).toBe('reportesAvanzados');
     expect(planDe('generativo')).toBe('reportesAvanzados');
+    expect(planDe('resumen')).toBe('reportesAvanzados');
   });
 
   it('los predefinidos se ven, se ejecutan y se exportan en todos los planes', () => {

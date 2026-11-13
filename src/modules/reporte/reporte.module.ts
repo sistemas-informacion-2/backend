@@ -11,6 +11,7 @@ import { GeminiReporteService } from './services/gemini-reporte.service.js';
 import { ReporteNlpService } from './services/reporte-nlp.service.js';
 import { ReportsService } from './services/reports.service.js';
 import { CuotaGenerativoService } from './services/cuota-generativo.service.js';
+import { ResumenReporteService } from './exportacion/resumen-reporte.service.js';
 import { ReportePlantillaRepository } from './repositories/reporte-plantilla.repository.js';
 
 @Module({
@@ -26,6 +27,7 @@ import { ReportePlantillaRepository } from './repositories/reporte-plantilla.rep
     ReportsService,
     ReportePlantillaRepository,
     CuotaGenerativoService,
+    ResumenReporteService,
   ],
 })
 export class ReporteModule {}

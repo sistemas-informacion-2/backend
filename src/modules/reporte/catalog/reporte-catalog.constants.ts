@@ -56,6 +56,8 @@ export interface CampoReporte {
    * las lineas con el peso de `FuenteReporte.prorrateo`; si no, se repetiria una vez por linea al sumar.
    */
   deCabecera?: boolean;
+  /** Importe en bolivianos: se redondea a centavos y se muestra como "Bs." (tabla, PDF y Excel). */
+  moneda?: boolean;
 }
 
 /**
@@ -105,7 +107,7 @@ const VENTAS: FuenteReporte = {
   id: 'VENTAS',
   nombre: 'Ventas',
   descripcion:
-    'Notas de venta con detalle por producto, categoría, cliente y sucursal. El monto total, el descuento y el impuesto son de la nota; si el reporte incluye datos del detalle, se reparten entre sus líneas en proporción al subtotal de cada una, así que la suma nunca cuenta una nota dos veces.',
+    'Notas de venta con detalle por producto, categoría, cliente y sucursal. El monto total, el descuento y el impuesto son de la nota; si el reporte incluye datos del detalle, se reparten entre sus líneas en proporción al subtotal de cada una, así que la suma nunca cuenta una nota dos veces. El costo y el margen bruto excluyen las líneas vendidas sin costo registrado.',
   tablaBase: 'nota_venta nv',
   campoFechas: 'nv.fecha_emision',
   columnaEmpresa: 'nv.id_empresa',
@@ -124,6 +126,7 @@ const VENTAS: FuenteReporte = {
     { name: 'id_nota', label: 'ID nota', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'nv.id::int', joins: [] },
     { name: 'codigo_nota', label: 'Código', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nv.codigo_nota', joins: [] },
     { name: 'fecha_emision', label: 'Fecha', categoria: 'DIMENSION', tipo: 'DATE', sql: 'nv.fecha_emision', joins: [] },
+    { name: 'mes', label: 'Mes', categoria: 'DIMENSION', tipo: 'STRING', sql: "to_char(nv.fecha_emision, 'YYYY-MM')", joins: [] },
     { name: 'sucursal', label: 'Sucursal', categoria: 'DIMENSION', tipo: 'STRING', sql: 'sc.nombre', joins: ['SUCURSAL'] },
     {
       name: 'cliente',
@@ -149,10 +152,33 @@ const VENTAS: FuenteReporte = {
     { name: 'tipo_venta', label: 'Tipo de venta', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nv.tipo_venta', joins: [] },
     { name: 'estado_pago', label: 'Estado de pago', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nv.estado_pago', joins: [] },
     { name: 'cantidad', label: 'Cantidad', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnv.cantidad', joins: ['DETALLE'] },
-    { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnv.subtotal', joins: ['DETALLE'] },
-    { name: 'descuento', label: 'Descuento', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.descuento', joins: [], deCabecera: true },
-    { name: 'impuesto', label: 'Impuesto', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.impuesto', joins: [], deCabecera: true },
-    { name: 'monto_total', label: 'Monto total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.monto_total', joins: [], deCabecera: true },
+    // Cuenta notas: vale 1 por nota y es de cabecera, asi con el detalle unido se reparte y cada nota sigue sumando 1.
+    { name: 'notas', label: 'Notas de venta', categoria: 'MEASURE', tipo: 'NUMBER', sql: '1', joins: [], deCabecera: true },
+    { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnv.subtotal', joins: ['DETALLE'], moneda: true },
+    { name: 'descuento', label: 'Descuento', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.descuento', joins: [], deCabecera: true, moneda: true },
+    { name: 'impuesto', label: 'Impuesto', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.impuesto', joins: [], deCabecera: true, moneda: true },
+    { name: 'monto_total', label: 'Monto total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nv.monto_total', joins: [], deCabecera: true, moneda: true },
+    // Costo y margen como en el BI (docs/BI-METRICAS.md): costo_unitario es el costo promedio de la variante al
+    // momento de vender, y puede faltar (ventas anteriores al costeo). Esas lineas no suman costo ni margen.
+    {
+      name: 'costo',
+      label: 'Costo',
+      categoria: 'MEASURE',
+      tipo: 'NUMBER',
+      sql: '(dnv.cantidad * dnv.costo_unitario)',
+      joins: ['DETALLE'],
+      moneda: true,
+    },
+    {
+      name: 'margen',
+      label: 'Margen bruto',
+      categoria: 'MEASURE',
+      tipo: 'NUMBER',
+      // La parte de la linea en el total de la nota, menos su costo. El peso es el mismo del prorrateo (DETALLE).
+      sql: '(CASE WHEN dnv.costo_unitario IS NULL THEN NULL ELSE nv.monto_total * COALESCE(dnv.peso, 1) - dnv.cantidad * dnv.costo_unitario END)',
+      joins: ['DETALLE'],
+      moneda: true,
+    },
   ],
 };
 
@@ -160,7 +186,7 @@ const INVENTARIO: FuenteReporte = {
   id: 'INVENTARIO',
   nombre: 'Inventario y Stock',
   descripcion:
-    'Existencias actuales por sucursal, almacén y variante, con alertas de stock crítico. No admite rango de fechas porque es una foto del momento.',
+    'Existencias actuales por sucursal, almacén y variante, con alertas de stock crítico. No admite rango de fechas porque es una foto del momento. El stock y su valor se suman al agrupar (por sucursal, categoría, producto...). El valor a costo usa el costo promedio de cada variante; las que nunca se compraron no tienen costo y no suman.',
   tablaBase: 'inventario inv',
   campoFechas: null,
   // El inventario no tiene empresa propia: es la de su almacen (ALMACEN esta en joinsSiempre).
@@ -182,13 +208,41 @@ const INVENTARIO: FuenteReporte = {
     { name: 'variante', label: 'Variante (SKU)', categoria: 'DIMENSION', tipo: 'STRING', sql: 'vp.sku', joins: ['VARIANTE'] },
     { name: 'talla', label: 'Talla', categoria: 'DIMENSION', tipo: 'STRING', sql: 'vp.talla', joins: ['VARIANTE'] },
     { name: 'color', label: 'Color', categoria: 'DIMENSION', tipo: 'STRING', sql: 'vp.color', joins: ['VARIANTE'] },
-    { name: 'precio', label: 'Precio', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'pr.precio', joins: ['VARIANTE', 'PRODUCTO'] },
-    { name: 'stock_disponible', label: 'Stock disponible', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'inv.stock_disponible', joins: [] },
-    { name: 'stock_reservado', label: 'Stock reservado', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'inv.stock_reservado', joins: [] },
+    { name: 'precio', label: 'Precio', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'pr.precio', joins: ['VARIANTE', 'PRODUCTO'], moneda: true },
+    // Medidas: se suman al agrupar, asi "stock por sucursal" o "por categoria" da el total de cada una.
+    { name: 'stock_disponible', label: 'Stock disponible', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'inv.stock_disponible', joins: [] },
+    { name: 'stock_reservado', label: 'Stock reservado', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'inv.stock_reservado', joins: [] },
     { name: 'stock_minimo', label: 'Stock mínimo', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'inv.stock_minimo', joins: [] },
     { name: 'stock_maximo', label: 'Stock máximo', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'inv.stock_maximo', joins: [] },
     { name: 'en_stock_critico', label: '¿Stock crítico?', categoria: 'PLAIN', tipo: 'BOOLEAN', sql: '(inv.stock_disponible <= inv.stock_minimo)', joins: [] },
-    { name: 'valor_inventario', label: 'Valor de inventario', categoria: 'PLAIN', tipo: 'NUMBER', sql: '(inv.stock_disponible * pr.precio)', joins: ['VARIANTE', 'PRODUCTO'] },
+    // Cada fila es una variante en un almacen: sumar 1 por cada una en stock critico las cuenta.
+    {
+      name: 'variantes_criticas',
+      label: 'Variantes en stock crítico',
+      categoria: 'MEASURE',
+      tipo: 'NUMBER',
+      sql: '(CASE WHEN inv.stock_disponible <= inv.stock_minimo THEN 1 ELSE 0 END)',
+      joins: [],
+    },
+    // Como el BI (docs/BI-METRICAS.md): el valor del inventario es a costo; a precio de venta se informa aparte.
+    {
+      name: 'valor_inventario',
+      label: 'Valor a costo',
+      categoria: 'MEASURE',
+      tipo: 'NUMBER',
+      sql: '(inv.stock_disponible * vp.costo_promedio)',
+      joins: ['VARIANTE'],
+      moneda: true,
+    },
+    {
+      name: 'valor_precio_venta',
+      label: 'Valor a precio de venta',
+      categoria: 'MEASURE',
+      tipo: 'NUMBER',
+      sql: '(inv.stock_disponible * pr.precio)',
+      joins: ['VARIANTE', 'PRODUCTO'],
+      moneda: true,
+    },
   ],
 };
 
@@ -213,12 +267,15 @@ const COMPRAS: FuenteReporte = {
     { name: 'id_compra', label: 'ID compra', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'nc.id::int', joins: [] },
     { name: 'nro_factura', label: 'Nº factura', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nc.nro_factura', joins: [] },
     { name: 'fecha_emision', label: 'Fecha', categoria: 'DIMENSION', tipo: 'DATE', sql: 'nc.fecha_emision::date', joins: [] },
+    { name: 'mes', label: 'Mes', categoria: 'DIMENSION', tipo: 'STRING', sql: "to_char(nc.fecha_emision, 'YYYY-MM')", joins: [] },
     { name: 'sucursal', label: 'Sucursal', categoria: 'DIMENSION', tipo: 'STRING', sql: 'sc.nombre', joins: ['SUCURSAL'] },
     { name: 'proveedor', label: 'Proveedor', categoria: 'DIMENSION', tipo: 'STRING', sql: 'pv.empresa', joins: ['PROVEEDOR'] },
     { name: 'estado', label: 'Estado', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nc.estado', joins: [] },
-    { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.subtotal', joins: [], deCabecera: true },
-    { name: 'total', label: 'Total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.total', joins: [], deCabecera: true },
+    { name: 'subtotal', label: 'Subtotal', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.subtotal', joins: [], deCabecera: true, moneda: true },
+    { name: 'total', label: 'Total', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'nc.total', joins: [], deCabecera: true, moneda: true },
     { name: 'cantidad', label: 'Cantidad', categoria: 'MEASURE', tipo: 'NUMBER', sql: 'dnc.cantidad', joins: ['DETALLE'] },
+    // Igual que "notas" en ventas: 1 por orden, repartido entre sus lineas si se une el detalle.
+    { name: 'ordenes', label: 'Órdenes de compra', categoria: 'MEASURE', tipo: 'NUMBER', sql: '1', joins: [], deCabecera: true },
   ],
 };
 

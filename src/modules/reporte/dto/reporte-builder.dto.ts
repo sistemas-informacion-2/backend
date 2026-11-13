@@ -27,8 +27,13 @@ export class FieldDefinitionDto {
   tipo: TipoCampo;
   permiteFiltro: boolean;
   permiteOrden: boolean;
+  /** Importe en bolivianos: se muestra como "Bs.". */
+  moneda: boolean;
   operadores: OperadorFiltro[];
 }
+
+/** Como se muestra una columna del resultado. */
+export type FormatoColumna = 'TEXTO' | 'NUMERO' | 'MONEDA' | 'FECHA' | 'BOOLEANO';
 
 export class ReportTypeDefinitionDto {
   id: string;
@@ -114,6 +119,8 @@ export class ReportResultDto {
   columns: string[];
   /** Etiquetas legibles de las columnas. */
   columnLabels: string[];
+  /** Formato de cada columna (en el mismo orden): dinero, número, fecha, texto o verdadero/falso. */
+  columnFormats: FormatoColumna[];
   rows: Array<Array<string | number | boolean>>;
   total: number;
 }
@@ -140,6 +147,15 @@ export class ReporteGenerativoResponseDto {
   result: ReportResultDto;
   /** Qué interprete respondió esta vez: IA (Gemini) o REGEX (el traductor por palabras clave, usado si Gemini no está configurado o falló). */
   fuente: 'IA' | 'REGEX';
+}
+
+/** Pagina de un reporte predefinido: desde que fila mostrar (de a 50). */
+export class PaginaPredefinidoQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
 
 export class ExportQueryDto {

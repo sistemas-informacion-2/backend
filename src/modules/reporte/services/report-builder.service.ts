@@ -14,6 +14,7 @@ import {
 import { FUENTES_REPORTE } from '../catalog/reporte-catalog.constants.js';
 import {
   LIMITE_REPORTE_MAXIMO,
+  type FormatoColumna,
   type ReportResultDto,
   type ReportRunRequestDto,
   type ReportTypeDefinitionDto,
@@ -23,6 +24,12 @@ const LIMITE_POR_DEFECTO = 25;
 const OPERADORES_DIRECTOS: ReadonlySet<OperadorFiltro> = new Set(['eq', 'ne', 'gt', 'gte', 'lt', 'lte']);
 /** Numero escrito como texto: entero o decimal con punto o coma, con signo opcional. */
 const NUMERO_EN_TEXTO = /^-?\d+([.,]\d+)?$/;
+
+/** Como mostrar cada columna: alinear numeros a la derecha y poner "Bs." al dinero (tabla, PDF y Excel). */
+function formatoDe(campo: CampoReporte): FormatoColumna {
+  if (campo.moneda) return 'MONEDA';
+  return ({ NUMBER: 'NUMERO', DATE: 'FECHA', BOOLEAN: 'BOOLEANO', STRING: 'TEXTO' } as const)[campo.tipo];
+}
 
 /**
  * Ejecuta las consultas del Report Builder (CU18) usando el catálogo de
@@ -49,6 +56,7 @@ export class ReportBuilderService {
         tipo: campo.tipo,
         permiteFiltro: true,
         permiteOrden: campo.tipo !== 'BOOLEAN',
+        moneda: campo.moneda === true,
         operadores: [...OPERADORES_POR_TIPO[campo.tipo]],
       })),
     }));
@@ -78,6 +86,7 @@ export class ReportBuilderService {
     return {
       columns: request.selectedFields,
       columnLabels: consulta.campos.map((campo) => campo.label),
+      columnFormats: consulta.campos.map(formatoDe),
       rows: filas.map((fila) => request.selectedFields.map((name) => this.serializar(fila[name]))),
       total,
     };
@@ -201,9 +210,9 @@ export class ReportBuilderService {
     return fila?.total ?? 0;
   }
 
-  /** `expr` es la expresion del campo ya prorrateada si corresponde; lo repartido se redondea a centavos. */
+  /** `expr` es la expresion del campo ya prorrateada si corresponde; el dinero y lo repartido se redondean a centavos. */
   private expresionSelect(expr: string, campo: CampoReporte, agregar: boolean, prorrateado: boolean): string {
-    const redondear = prorrateado && campo.deCabecera === true;
+    const redondear = campo.moneda === true || (prorrateado && campo.deCabecera === true);
     if (agregar && campo.categoria === 'MEASURE') return redondear ? `ROUND(SUM(${expr}), 2)::float8` : `SUM(${expr})::float8`;
     if (campo.tipo === 'NUMBER') return redondear ? `ROUND(${expr}, 2)::float8` : `(${expr})::float8`;
     return expr;
@@ -211,7 +220,8 @@ export class ReportBuilderService {
 
   private expresionOrden(expr: string, campo: CampoReporte, agregar: boolean, direccion: 'asc' | 'desc'): string {
     const valor = agregar && campo.categoria === 'MEASURE' ? `SUM(${expr})` : expr;
-    return `${valor} ${direccion === 'desc' ? 'DESC' : 'ASC'}`;
+    // En Postgres DESC pone los NULL primero: "mayor margen" no debe empezar por los productos sin costo.
+    return `${valor} ${direccion === 'desc' ? 'DESC NULLS LAST' : 'ASC'}`;
   }
 
   private coercionDeValor(campo: CampoReporte, valor: string | number | boolean): string | number | boolean {

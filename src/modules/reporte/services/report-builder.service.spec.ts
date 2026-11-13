@@ -61,8 +61,8 @@ describe('ReportBuilderService', () => {
     const { service, query } = crearBuilder([[{ total: 1 }], []]);
     await service.ejecutar({ reportType: 'VENTAS', selectedFields: ['sucursal', 'monto_total', 'descuento'] });
     const sql = query.mock.calls[1][0] as string;
-    expect(sql).toContain('SUM(nv.monto_total)::float8 AS "monto_total"');
-    expect(sql).toContain('SUM(nv.descuento)::float8 AS "descuento"');
+    expect(sql).toContain('ROUND(SUM(nv.monto_total), 2)::float8 AS "monto_total"');
+    expect(sql).toContain('ROUND(SUM(nv.descuento), 2)::float8 AS "descuento"');
     expect(sql).not.toContain('detalle_nota_venta');
     expect(sql).not.toContain('peso');
   });
@@ -347,6 +347,43 @@ describe('ReportBuilderService', () => {
     expect(sql).toContain('nc.fecha_emision::date <= $3');
     expect(sql).toContain('GROUP BY nc.fecha_emision::date');
     expect(resultado.rows[0][0]).toBe('2025-05-19');
+  });
+
+  it('INVENTARIO suma el stock y su valor por sucursal; el valor es a costo', async () => {
+    const { service, query } = crearBuilder([[{ total: 2 }], [{ sucursal: 'La Paz', stock_disponible: 120, valor_inventario: 4500.5, valor_precio_venta: 9800 }]]);
+
+    const resultado = await service.ejecutar({
+      reportType: 'INVENTARIO',
+      selectedFields: ['sucursal', 'stock_disponible', 'valor_inventario', 'valor_precio_venta'],
+    });
+
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('SUM(inv.stock_disponible)::float8 AS "stock_disponible"');
+    expect(sql).toContain('ROUND(SUM((inv.stock_disponible * vp.costo_promedio)), 2)::float8 AS "valor_inventario"');
+    expect(sql).toContain('ROUND(SUM((inv.stock_disponible * pr.precio)), 2)::float8 AS "valor_precio_venta"');
+    expect(sql).toContain('GROUP BY sc.nombre');
+    expect(resultado.columnLabels).toEqual(['Sucursal', 'Stock disponible', 'Valor a costo', 'Valor a precio de venta']);
+    expect(resultado.columnFormats).toEqual(['TEXTO', 'NUMERO', 'MONEDA', 'MONEDA']);
+  });
+
+  it('VENTAS calcula costo y margen por línea, como el BI (las líneas sin costo no suman)', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], [{ producto: 'Polo', costo: 40, margen: 60 }]]);
+
+    await service.ejecutar({ reportType: 'VENTAS', selectedFields: ['producto', 'costo', 'margen'], sort: { campo: 'margen', direccion: 'desc' } });
+
+    const sql = query.mock.calls[1][0] as string;
+    expect(sql).toContain('ROUND(SUM((dnv.cantidad * dnv.costo_unitario)), 2)::float8 AS "costo"');
+    expect(sql).toContain('CASE WHEN dnv.costo_unitario IS NULL THEN NULL ELSE nv.monto_total * COALESCE(dnv.peso, 1) - dnv.cantidad * dnv.costo_unitario END');
+    // De mayor a menor margen, sin empezar por los productos sin costo.
+    expect(sql).toContain('DESC NULLS LAST');
+  });
+
+  it('el catálogo marca los campos de dinero', () => {
+    const { service } = crearBuilder([]);
+    const ventas = service.catalogo().find((tipo) => tipo.id === 'VENTAS')!;
+
+    expect(ventas.campos.find((campo) => campo.name === 'monto_total')?.moneda).toBe(true);
+    expect(ventas.campos.find((campo) => campo.name === 'cantidad')?.moneda).toBe(false);
   });
 
   it('INVENTARIO ignora el rango de fechas (campoFechas null)', async () => {

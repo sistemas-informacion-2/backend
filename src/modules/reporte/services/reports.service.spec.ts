@@ -207,6 +207,15 @@ describe('ReportsService', () => {
     expect(cuota.consumir).not.toHaveBeenCalled();
   });
 
+  it('ejecutarPredefinido pide la página indicada (offset)', async () => {
+    const { service, builder } = crearService();
+
+    const respuesta = await service.ejecutarPredefinido('VENTAS_HOY', 50);
+
+    expect(builder.ejecutar).toHaveBeenCalledWith(expect.objectContaining({ reportType: 'VENTAS', limit: 50, offset: 50 }));
+    expect(respuesta.request.offset).toBe(50);
+  });
+
   it('exportarPredefinido arma la configuración en el servidor y exporta todo', async () => {
     const { service, builder } = crearService({
       builder: { ejecutar: vi.fn().mockResolvedValue({ columns: ['sucursal'], columnLabels: ['Sucursal'], rows: [['La Paz']], total: 1 }) },

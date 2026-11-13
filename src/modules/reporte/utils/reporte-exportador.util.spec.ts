@@ -5,6 +5,7 @@ import type { ReportResultDto } from '../dto/reporte-builder.dto.js';
 const resultado: ReportResultDto = {
   columns: ['sucursal', 'monto_total'],
   columnLabels: ['Sucursal', 'Monto total'],
+  columnFormats: ['TEXTO', 'MONEDA'],
   rows: [
     ['La Paz', 300],
     ['Santa Cruz', 450.5],

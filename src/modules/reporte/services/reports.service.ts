@@ -89,9 +89,9 @@ export class ReportsService {
     return REPORTES_PREDEFINIDOS.map(({ codigo, nombre, descripcion, categoria }) => ({ codigo, nombre, descripcion, categoria }));
   }
 
-  async ejecutarPredefinido(codigo: string): Promise<ReportePredefinidoEjecutadoDto> {
+  async ejecutarPredefinido(codigo: string, offset = 0): Promise<ReportePredefinidoEjecutadoDto> {
     const definicion = this.predefinido(codigo);
-    const request = this.resolverRequestPredefinido(definicion);
+    const request = { ...this.resolverRequestPredefinido(definicion), offset };
     const result = await this.builder.ejecutar(request);
     return { codigo: definicion.codigo, nombre: definicion.nombre, request, result };
   }
