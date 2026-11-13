@@ -143,7 +143,7 @@ export class ResumenReporteService {
     const indicadores: Indicador[] = [
       { etiqueta: 'Unidades en stock', valor: unidades, formato: 'NUMERO' },
       { etiqueta: 'Variantes en stock crítico', valor: variantesCriticas, formato: 'NUMERO', detalle: 'stock igual o menor al mínimo' },
-      { etiqueta: 'Valor del inventario a costo', valor: valorCosto, formato: 'MONEDA' },
+      { etiqueta: 'Inventario a costo', valor: valorCosto, formato: 'MONEDA' },
       {
         etiqueta: 'Sucursal con más stock',
         valor: filasSucursal[0]?.nombre ?? null,

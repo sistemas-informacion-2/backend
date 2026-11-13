@@ -1,10 +1,30 @@
 import { FORMATOS_EXPORTACION, type FormatoExportacion, type ReportResultDto } from '../dto/reporte-builder.dto.js';
 import { fechaLocal } from '../../../common/utils/fecha.util.js';
+import { generarPdfReporte, type TiendaReporte } from '../exportacion/pdf-reporte.js';
+import type { ResumenReporte } from '../exportacion/resumen.types.js';
 
 export interface ArchivoReporte {
   buffer: Buffer;
   contentType: string;
   nombreArchivo: string;
+}
+
+/** Lo que hace falta para exportar. El PDF necesita ademas el resumen y la tienda (el HTML no). */
+export interface DocumentoExportacion {
+  /** Nombre del reporte: el del predefinido ("Stock crítico") o el de la fuente ("Ventas"). */
+  nombreReporte: string;
+  /** Linea bajo el nombre de la tienda en el PDF (el nombre del predefinido). */
+  subtitulo?: string;
+  resultado: ReportResultDto;
+  resumen?: ResumenReporte;
+  tienda?: TiendaReporte;
+  generadoEn?: Date;
+  contexto?: { prompt: string; interpretacion: string };
+}
+
+/** Formatos que llevan indicadores, graficos y analisis: hay que calcular el resumen antes de exportar. */
+export function necesitaResumen(formato: FormatoExportacion): boolean {
+  return formato === 'pdf';
 }
 
 const CONTENT_TYPES: Record<FormatoExportacion, string> = {
@@ -19,23 +39,32 @@ const EXTENSIONES: Record<FormatoExportacion, string> = {
   html: 'html',
 };
 
-/** Exporta el resultado del Report Builder sin dependencias externas. */
-export function exportarReporte(formato: FormatoExportacion, nombreReporte: string, resultado: ReportResultDto): ArchivoReporte {
+/** Exporta el resultado del Report Builder: PDF profesional (exportacion/pdf-reporte.ts), Excel y HTML. */
+export async function exportarReporte(formato: FormatoExportacion, documento: DocumentoExportacion): Promise<ArchivoReporte> {
   if (!FORMATOS_EXPORTACION.includes(formato)) {
     throw new Error(`Formato de exportación no soportado: ${String(formato)}`);
   }
-  const base = slugificar(nombreReporte);
-  const contenido =
-    formato === 'html'
-      ? generarHtml(nombreReporte, resultado)
-      : formato === 'excel'
-        ? generarExcel(nombreReporte, resultado)
-        : generarPdf(nombreReporte, resumenFilas(resultado), resultado.columnLabels, resultado.rows);
+  const { nombreReporte, resultado } = documento;
+  let contenido: Buffer;
+  if (formato === 'pdf') {
+    if (!documento.resumen || !documento.tienda) throw new Error('El PDF necesita el resumen y los datos de la tienda');
+    contenido = await generarPdfReporte({
+      nombreReporte,
+      subtitulo: documento.subtitulo,
+      resultado,
+      resumen: documento.resumen,
+      tienda: documento.tienda,
+      generadoEn: documento.generadoEn ?? new Date(),
+      contexto: documento.contexto,
+    });
+  } else {
+    contenido = formato === 'html' ? generarHtml(nombreReporte, resultado) : generarExcel(nombreReporte, resultado);
+  }
 
   return {
     buffer: contenido,
     contentType: CONTENT_TYPES[formato],
-    nombreArchivo: `${base}.${EXTENSIONES[formato]}`,
+    nombreArchivo: `${slugificar(nombreReporte)}.${EXTENSIONES[formato]}`,
   };
 }
 
@@ -100,94 +129,6 @@ ${filas}${aviso}
   return Buffer.from(xml, 'utf8');
 }
 
-/**
- * PDF A4 sin dependencias: título, encabezados en negrita y filas en texto.
- * Solo representable en Latin-1 (los caracteres fuera de ese rango se omiten).
- */
-function generarPdf(titulo: string, subtitulo: string, encabezados: string[], filas: Array<Array<string | number | boolean>>): Buffer {
-  const ANCHO_PAGINA = 595.28;
-  const ALTO_PAGINA = 841.89;
-  const MARGEN = 36;
-  const ALTO_FILA = 12;
-  const cantidadColumnas = encabezados.length;
-  const anchoColumna = cantidadColumnas > 0 ? Math.max(38, (ANCHO_PAGINA - 2 * MARGEN) / cantidadColumnas) : 0;
-
-  const paginas: string[][] = [];
-  let actual: string[] = [];
-  let y = ALTO_PAGINA - MARGEN;
-
-  const dibujarCelda = (texto: string, fuente: 'F1' | 'F2', tam: number, x: number) => {
-    actual.push(`BT /${fuente} ${tam} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escaparPdf(texto)}) Tj ET`);
-  };
-  const nuevaPagina = () => {
-    paginas.push(actual);
-    actual = [];
-    y = ALTO_PAGINA - MARGEN;
-  };
-
-  dibujarCelda(recortar(titulo, 110), 'F2', 14, MARGEN);
-  y -= 16;
-  dibujarCelda(recortar(subtitulo, 140), 'F1', 9, MARGEN);
-  y -= 18;
-  for (let i = 0; i < cantidadColumnas; i++) {
-    dibujarCelda(recortar(encabezados[i], caracteresQueCaben(anchoColumna, 9)), 'F2', 9, MARGEN + i * anchoColumna);
-  }
-  y -= 17;
-
-  for (const fila of filas) {
-    if (y < MARGEN) nuevaPagina();
-    for (let i = 0; i < cantidadColumnas; i++) {
-      dibujarCelda(
-        recortar(celdaTexto(fila[i]), caracteresQueCaben(anchoColumna, 8)),
-        'F1',
-        8,
-        MARGEN + i * anchoColumna,
-      );
-    }
-    y -= ALTO_FILA;
-  }
-  paginas.push(actual);
-
-  const objetos: Array<string | undefined> = [];
-  objetos[1] = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n';
-  objetos[2] = `2 0 obj\n<< /Type /Pages /Kids [${paginas.map((_, indice) => `${5 + indice * 2} 0 R`).join(' ')}] /Count ${paginas.length} >>\nendobj\n`;
-  objetos[3] = '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n';
-  objetos[4] = '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n';
-
-  const contenidoPorPagina: string[] = [];
-  paginas.forEach((lineas, indice) => {
-    const numPagina = 5 + indice * 2;
-    const numContenido = 6 + indice * 2;
-    const contenido = `${lineas.join('\n')}\n`;
-    contenidoPorPagina[indice] = contenido;
-    objetos[numPagina] =
-      `${numPagina} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${ANCHO_PAGINA} ${ALTO_PAGINA}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${numContenido} 0 R >>\nendobj\n`;
-    objetos[numContenido] =
-      `${numContenido} 0 obj\n<< /Length ${Buffer.byteLength(contenido, 'latin1')} >>\nstream\n${contenido}endstream\nendobj\n`;
-  });
-
-  const maximoObjeto = 5 + paginas.length * 2 - 1;
-  const finObjetos = maximoObjeto + 1;
-
-  const piezas: Buffer[] = [Buffer.from('%PDF-1.4\n', 'latin1')];
-  const offsets: number[] = [];
-  let posicion = piezas[0].length;
-  for (let i = 1; i < finObjetos; i++) {
-    offsets[i] = posicion;
-    const cuerpo = Buffer.from(objetos[i] ?? '', 'latin1');
-    piezas.push(cuerpo);
-    posicion += cuerpo.length;
-  }
-
-  let tablaXref = `xref\n0 ${finObjetos}\n0000000000 65535 f \n`;
-  for (let i = 1; i < finObjetos; i++) {
-    tablaXref += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
-  }
-  const cierre = `trailer\n<< /Size ${finObjetos} /Root 1 0 R >>\nstartxref\n${posicion}\n%%EOF\n`;
-
-  return Buffer.concat([...piezas, Buffer.from(tablaXref, 'latin1'), Buffer.from(cierre, 'latin1')]);
-}
-
 /** true si el archivo trae menos filas que el reporte (se exporta hasta LIMITE_REPORTE_MAXIMO). */
 function estaRecortado(resultado: ReportResultDto): boolean {
   return resultado.rows.length < resultado.total;
@@ -200,27 +141,8 @@ function resumenFilas(resultado: ReportResultDto): string {
   return `Se muestran las primeras ${resultado.rows.length.toLocaleString('es-BO')} de ${total} filas`;
 }
 
-function recortar(texto: string, maxCaracteres: number): string {
-  if (texto.length <= maxCaracteres) return texto;
-  return `${texto.slice(0, Math.max(maxCaracteres - 3, 0))}...`;
-}
-
-function caracteresQueCaben(ancho: number, tam: number): number {
-  return Math.max(4, Math.floor(ancho / (tam * 0.52)));
-}
-
 function celdaTexto(valor: string | number | boolean): string {
   return valor === '' ? ' ' : String(valor);
-}
-
-function escaparPdf(texto: string): string {
-  return texto
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .split('')
-    .filter((caracter) => caracter.charCodeAt(0) <= 255)
-    .join('');
 }
 
 function escaparHtml(valor: string): string {

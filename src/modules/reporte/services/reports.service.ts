@@ -16,9 +16,11 @@ import {
 import { buscarReportePredefinido, REPORTES_PREDEFINIDOS, type RangoPredefinido, type ReportePredefinido } from '../catalog/reportes-predefinidos.constants.js';
 import { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
-import { exportarReporte, type ArchivoReporte } from '../utils/reporte-exportador.util.js';
+import { exportarReporte, necesitaResumen, type ArchivoReporte } from '../utils/reporte-exportador.util.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { CuotaGenerativoService } from './cuota-generativo.service.js';
+import { ResumenReporteService } from '../exportacion/resumen-reporte.service.js';
+import { TiendaReporteService } from '../exportacion/tienda-reporte.service.js';
 import { GeminiReporteService } from './gemini-reporte.service.js';
 import { ReportBuilderService } from './report-builder.service.js';
 import { ReporteNlpService, type InterpretacionPrompt } from './reporte-nlp.service.js';
@@ -38,6 +40,8 @@ export class ReportsService {
     private readonly plantillaRepo: ReportePlantillaRepository,
     private readonly cuota: CuotaGenerativoService,
     private readonly tenant: TenantContext,
+    private readonly resumen: ResumenReporteService,
+    private readonly tienda: TiendaReporteService,
   ) {}
 
   catalogo(): ReportTypeDefinitionDto[] {
@@ -102,8 +106,26 @@ export class ReportsService {
    */
   async exportarPredefinido(formato: FormatoExportacion, codigo: string): Promise<ArchivoReporte> {
     const definicion = this.predefinido(codigo);
-    const resultado = await this.builder.ejecutar({ ...this.resolverRequestPredefinido(definicion), limit: LIMITE_REPORTE_MAXIMO, offset: 0 });
-    return exportarReporte(formato, definicion.nombre, resultado);
+    return this.armarArchivo(formato, this.resolverRequestPredefinido(definicion), definicion.nombre, { subtitulo: definicion.nombre });
+  }
+
+  /**
+   * El reporte completo (hasta LIMITE_REPORTE_MAXIMO filas) y, si el formato lo lleva (PDF), su resumen y los datos de
+   * la tienda. El resumen se calcula sobre todos los datos, aunque la tabla se recorte.
+   */
+  private async armarArchivo(
+    formato: FormatoExportacion,
+    request: ReportRunRequestDto,
+    nombreReporte: string,
+    extra: { subtitulo?: string; contexto?: { prompt: string; interpretacion: string } } = {},
+  ): Promise<ArchivoReporte> {
+    const completo = { ...request, limit: LIMITE_REPORTE_MAXIMO, offset: 0 };
+    const [resultado, resumen, tienda] = await Promise.all([
+      this.builder.ejecutar(completo),
+      necesitaResumen(formato) ? this.resumen.resumir(completo) : undefined,
+      necesitaResumen(formato) ? this.tienda.actual() : undefined,
+    ]);
+    return exportarReporte(formato, { nombreReporte, resultado, resumen, tienda, generadoEn: new Date(), ...extra });
   }
 
   private predefinido(codigo: string): ReportePredefinido {
@@ -147,9 +169,8 @@ export class ReportsService {
    * Exporta el reporte completo, no la pagina que se esta viendo: se ignoran el limit y el offset de la pantalla y se
    * piden hasta LIMITE_REPORTE_MAXIMO filas. Si el reporte tiene mas, el archivo lo avisa (ver reporte-exportador).
    */
-  async exportar(formato: FormatoExportacion, request: ReportRunRequestDto): Promise<ArchivoReporte> {
-    const resultado = await this.builder.ejecutar({ ...request, limit: LIMITE_REPORTE_MAXIMO, offset: 0 });
-    return exportarReporte(formato, this.builder.nombreTipo(request.reportType), resultado);
+  async exportar(formato: FormatoExportacion, request: ReportRunRequestDto, contexto?: { prompt: string; interpretacion: string }): Promise<ArchivoReporte> {
+    return this.armarArchivo(formato, request, this.builder.nombreTipo(request.reportType), { contexto });
   }
 
   async listarPlantillas(idUsuario: number): Promise<ReportTemplateDto[]> {

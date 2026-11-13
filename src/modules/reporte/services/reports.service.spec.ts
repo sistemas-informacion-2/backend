@@ -8,6 +8,8 @@ import type { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
 import type { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { CuotaGenerativoService } from './cuota-generativo.service.js';
+import type { ResumenReporteService } from '../exportacion/resumen-reporte.service.js';
+import type { TiendaReporteService } from '../exportacion/tienda-reporte.service.js';
 
 function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: unknown; plantillaRepo?: unknown; cuota?: unknown } = {}) {
   const builder = {
@@ -41,8 +43,30 @@ function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: un
     ...(overrides.cuota as Record<string, never> | undefined),
   } as unknown as CuotaGenerativoService;
   const tenant = { empresaId: () => 7 } as unknown as TenantContext;
+  const resumen = {
+    resumir: vi.fn().mockResolvedValue({
+      tipo: 'VENTAS',
+      titulo: 'REPORTE DE VENTAS',
+      periodo: null,
+      sucursal: null,
+      indicadores: [],
+      graficos: [],
+      analisis: [],
+      oportunidades: [],
+      notas: [],
+    }),
+  } as unknown as ResumenReporteService;
+  const tienda = { actual: vi.fn().mockResolvedValue({ nombre: 'Moda Andina', logo: null, color: null }) } as unknown as TiendaReporteService;
 
-  return { service: new ReportsService(builder, nlp, gemini, plantillaRepo, cuota, tenant), builder, nlp, gemini, plantillaRepo, cuota };
+  return {
+    service: new ReportsService(builder, nlp, gemini, plantillaRepo, cuota, tenant, resumen, tienda),
+    builder,
+    nlp,
+    gemini,
+    plantillaRepo,
+    cuota,
+    resumen,
+  };
 }
 
 function plantilla(datos: Partial<ReportePlantilla>): ReportePlantilla {
@@ -233,6 +257,16 @@ describe('ReportsService', () => {
   it('exportarPredefinido rechaza un código que no existe', async () => {
     const { service } = crearService();
     await expect(service.exportarPredefinido('html', 'NO_EXISTE')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('el PDF calcula el resumen sobre todos los datos; el HTML no lo necesita', async () => {
+    const { service, resumen } = crearService();
+
+    await service.exportar('html', { reportType: 'VENTAS', selectedFields: ['sucursal'] });
+    expect(resumen.resumir).not.toHaveBeenCalled();
+
+    await service.exportar('pdf', { reportType: 'VENTAS', selectedFields: ['sucursal'], limit: 10, offset: 20 });
+    expect(resumen.resumir).toHaveBeenCalledWith({ reportType: 'VENTAS', selectedFields: ['sucursal'], limit: 500, offset: 0 });
   });
 
   it('exportar descarga el reporte completo, no la página que se está viendo', async () => {
