@@ -5,8 +5,11 @@ import { ReporteNlpService } from './reporte-nlp.service.js';
 import { ReportsService } from './reports.service.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
 import type { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
+import type { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { NotFoundException } from '@nestjs/common';
+import type { CuotaGenerativoService } from './cuota-generativo.service.js';
 
-function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: unknown; plantillaRepo?: unknown } = {}) {
+function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: unknown; plantillaRepo?: unknown; cuota?: unknown } = {}) {
   const builder = {
     catalogo: vi.fn().mockReturnValue([]),
     ejecutar: vi.fn().mockResolvedValue({ columns: [], columnLabels: [], rows: [], total: 0 }),
@@ -31,8 +34,14 @@ function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: un
     eliminar: vi.fn(),
     ...(overrides.plantillaRepo as Record<string, never> | undefined),
   } as unknown as ReportePlantillaRepository;
+  // Por defecto siempre hay cupo: los tests de Gemini no dependen del tope diario.
+  const cuota = {
+    consumir: vi.fn().mockReturnValue(true),
+    ...(overrides.cuota as Record<string, never> | undefined),
+  } as unknown as CuotaGenerativoService;
+  const tenant = { empresaId: () => 7 } as unknown as TenantContext;
 
-  return { service: new ReportsService(builder, nlp, gemini, plantillaRepo), builder, nlp, gemini, plantillaRepo };
+  return { service: new ReportsService(builder, nlp, gemini, plantillaRepo, cuota, tenant), builder, nlp, gemini, plantillaRepo, cuota };
 }
 
 function plantilla(datos: Partial<ReportePlantilla>): ReportePlantilla {
@@ -153,6 +162,57 @@ describe('ReportsService', () => {
 
     expect(archivo.contentType).toContain('text/html');
     expect(archivo.nombreArchivo).toBe('ventas.html');
+  });
+
+  it('generativo sin cupo diario no llama a Gemini, usa el traductor y lo avisa', async () => {
+    const { service, nlp, gemini, cuota } = crearService({
+      gemini: { disponible: true, interpretar: vi.fn() },
+      cuota: { consumir: vi.fn().mockReturnValue(false) },
+      nlp: { interpretar: vi.fn().mockResolvedValue({ request: { reportType: 'VENTAS', selectedFields: ['sucursal'] }, interpretacion: 'Reporte de Ventas' }) },
+    });
+
+    const respuesta = await service.generativo('ventas de hoy');
+
+    expect(cuota.consumir).toHaveBeenCalledWith(7);
+    expect(gemini.interpretar).not.toHaveBeenCalled();
+    expect(nlp.interpretar).toHaveBeenCalledWith('ventas de hoy');
+    expect(respuesta.fuente).toBe('REGEX');
+    expect(respuesta.interpretacion).toContain('límite diario de reportes con IA');
+  });
+
+  it('generativo sin Gemini configurado no gasta cupo', async () => {
+    const { service, cuota } = crearService();
+
+    await service.generativo('ventas de hoy');
+
+    expect(cuota.consumir).not.toHaveBeenCalled();
+  });
+
+  it('exportarPredefinido arma la configuración en el servidor y exporta todo', async () => {
+    const { service, builder } = crearService({
+      builder: { ejecutar: vi.fn().mockResolvedValue({ columns: ['sucursal'], columnLabels: ['Sucursal'], rows: [['La Paz']], total: 1 }) },
+    });
+
+    const archivo = await service.exportarPredefinido('pdf', 'STOCK_CRITICO');
+
+    expect(builder.ejecutar).toHaveBeenCalledWith(
+      expect.objectContaining({ reportType: 'INVENTARIO', filters: [{ campo: 'en_stock_critico', operador: 'eq', valor: true }], limit: 500, offset: 0 }),
+    );
+    // El archivo lleva el nombre del predefinido, no el del tipo de reporte.
+    expect(archivo.nombreArchivo).toBe('stock-critico.pdf');
+  });
+
+  it('exportarPredefinido rechaza un código que no existe', async () => {
+    const { service } = crearService();
+    await expect(service.exportarPredefinido('html', 'NO_EXISTE')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('exportar descarga el reporte completo, no la página que se está viendo', async () => {
+    const { service, builder } = crearService();
+
+    await service.exportar('excel', { reportType: 'VENTAS', selectedFields: ['sucursal'], limit: 50, offset: 100 });
+
+    expect(builder.ejecutar).toHaveBeenCalledWith({ reportType: 'VENTAS', selectedFields: ['sucursal'], limit: 500, offset: 0 });
   });
 
   it('crea una plantilla asignada al usuario actual', async () => {

@@ -1,21 +1,24 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { fechaLocal, inicioDeMes, sumarDias } from '../../../common/utils/fecha.util.js';
-import type {
-  CreateReportTemplateDto,
-  FormatoExportacion,
-  ReporteGenerativoResponseDto,
-  ReportePredefinidoDto,
-  ReportePredefinidoEjecutadoDto,
-  ReportResultDto,
-  ReportRunRequestDto,
-  ReportTemplateDto,
-  ReportTypeDefinitionDto,
-  UpdateReportTemplateDto,
+import {
+  LIMITE_REPORTE_MAXIMO,
+  type CreateReportTemplateDto,
+  type FormatoExportacion,
+  type ReporteGenerativoResponseDto,
+  type ReportePredefinidoDto,
+  type ReportePredefinidoEjecutadoDto,
+  type ReportResultDto,
+  type ReportRunRequestDto,
+  type ReportTemplateDto,
+  type ReportTypeDefinitionDto,
+  type UpdateReportTemplateDto,
 } from '../dto/reporte-builder.dto.js';
 import { buscarReportePredefinido, REPORTES_PREDEFINIDOS, type RangoPredefinido, type ReportePredefinido } from '../catalog/reportes-predefinidos.constants.js';
 import { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
 import { exportarReporte, type ArchivoReporte } from '../utils/reporte-exportador.util.js';
+import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
+import { CuotaGenerativoService } from './cuota-generativo.service.js';
 import { GeminiReporteService } from './gemini-reporte.service.js';
 import { ReportBuilderService } from './report-builder.service.js';
 import { ReporteNlpService, type InterpretacionPrompt } from './reporte-nlp.service.js';
@@ -33,6 +36,8 @@ export class ReportsService {
     private readonly nlp: ReporteNlpService,
     private readonly gemini: GeminiReporteService,
     private readonly plantillaRepo: ReportePlantillaRepository,
+    private readonly cuota: CuotaGenerativoService,
+    private readonly tenant: TenantContext,
   ) {}
 
   catalogo(): ReportTypeDefinitionDto[] {
@@ -57,14 +62,23 @@ export class ReportsService {
    * sigue funcionando, solo que con una interpretación más literal.
    */
   private async interpretarConIA(prompt: string): Promise<{ interpretado: InterpretacionPrompt; fuente: 'IA' | 'REGEX' }> {
+    let sinCuota = false;
     if (this.gemini.disponible) {
-      try {
-        return { interpretado: await this.gemini.interpretar(prompt), fuente: 'IA' };
-      } catch (error) {
-        this.logger.warn(`Gemini fallo interpretando el reporte generativo, se usa el traductor por palabras clave: ${error instanceof Error ? error.message : String(error)}`);
+      // La cuota se descuenta solo cuando de verdad se llama a Gemini.
+      sinCuota = !this.cuota.consumir(this.tenant.empresaId());
+      if (!sinCuota) {
+        try {
+          return { interpretado: await this.gemini.interpretar(prompt), fuente: 'IA' };
+        } catch (error) {
+          this.logger.warn(`Gemini fallo interpretando el reporte generativo, se usa el traductor por palabras clave: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     }
-    return { interpretado: await this.nlp.interpretar(prompt), fuente: 'REGEX' };
+    const interpretado = await this.nlp.interpretar(prompt);
+    if (sinCuota) {
+      interpretado.interpretacion = `${interpretado.interpretacion} · Tu tienda alcanzó el límite diario de reportes con IA: este se armó con el traductor por palabras clave. Mañana vuelve a usarse la IA.`;
+    }
+    return { interpretado, fuente: 'REGEX' };
   }
 
   /** Catálogo de reportes predefinidos (CU18): solo metadatos, sin ejecutar nada. */
@@ -73,12 +87,26 @@ export class ReportsService {
   }
 
   async ejecutarPredefinido(codigo: string): Promise<ReportePredefinidoEjecutadoDto> {
-    const definicion = buscarReportePredefinido(codigo);
-    if (!definicion) throw new NotFoundException(`No existe el reporte predefinido "${codigo}"`);
-
+    const definicion = this.predefinido(codigo);
     const request = this.resolverRequestPredefinido(definicion);
     const result = await this.builder.ejecutar(request);
     return { codigo: definicion.codigo, nombre: definicion.nombre, request, result };
+  }
+
+  /**
+   * Exporta un predefinido con la configuracion que arma el servidor, no con una que mande el cliente. Por eso esta en
+   * todos los planes, mientras que /reports/export (cualquier configuracion) exige reportes avanzados.
+   */
+  async exportarPredefinido(formato: FormatoExportacion, codigo: string): Promise<ArchivoReporte> {
+    const definicion = this.predefinido(codigo);
+    const resultado = await this.builder.ejecutar({ ...this.resolverRequestPredefinido(definicion), limit: LIMITE_REPORTE_MAXIMO, offset: 0 });
+    return exportarReporte(formato, definicion.nombre, resultado);
+  }
+
+  private predefinido(codigo: string): ReportePredefinido {
+    const definicion = buscarReportePredefinido(codigo);
+    if (!definicion) throw new NotFoundException(`No existe el reporte predefinido "${codigo}"`);
+    return definicion;
   }
 
   /** Arma el ReportRunRequestDto real a partir de la definicion estatica, resolviendo el rango de fechas al momento de ejecutar (nunca se guarda una fecha fija en el catalogo). */
@@ -112,8 +140,12 @@ export class ReportsService {
     }
   }
 
+  /**
+   * Exporta el reporte completo, no la pagina que se esta viendo: se ignoran el limit y el offset de la pantalla y se
+   * piden hasta LIMITE_REPORTE_MAXIMO filas. Si el reporte tiene mas, el archivo lo avisa (ver reporte-exportador).
+   */
   async exportar(formato: FormatoExportacion, request: ReportRunRequestDto): Promise<ArchivoReporte> {
-    const resultado = await this.builder.ejecutar(request);
+    const resultado = await this.builder.ejecutar({ ...request, limit: LIMITE_REPORTE_MAXIMO, offset: 0 });
     return exportarReporte(formato, this.builder.nombreTipo(request.reportType), resultado);
   }
 

@@ -21,6 +21,8 @@ import {
 
 const LIMITE_POR_DEFECTO = 25;
 const OPERADORES_DIRECTOS: ReadonlySet<OperadorFiltro> = new Set(['eq', 'ne', 'gt', 'gte', 'lt', 'lte']);
+/** Numero escrito como texto: entero o decimal con punto o coma, con signo opcional. */
+const NUMERO_EN_TEXTO = /^-?\d+([.,]\d+)?$/;
 
 /**
  * Ejecuta las consultas del Report Builder (CU18) usando el catálogo de
@@ -200,10 +202,13 @@ export class ReportBuilderService {
       return valor;
     }
     if (campo.tipo === 'NUMBER') {
-      if (typeof valor !== 'number' || Number.isNaN(valor)) {
+      // Un <input type="number"> entrega texto ("100"): se acepta un numero escrito como texto, con punto o coma
+      // decimal ("99.5" o "99,5"), y se rechaza todo lo demas ("", "abc", "1e9").
+      const numero = typeof valor === 'string' && NUMERO_EN_TEXTO.test(valor.trim()) ? Number(valor.trim().replace(',', '.')) : valor;
+      if (typeof numero !== 'number' || !Number.isFinite(numero)) {
         throw new BadRequestException(`El campo "${campo.label}" espera un valor numérico`);
       }
-      return valor;
+      return numero;
     }
     if (campo.tipo === 'DATE') {
       if (typeof valor !== 'string') {

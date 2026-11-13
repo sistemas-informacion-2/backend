@@ -30,7 +30,7 @@ export function exportarReporte(formato: FormatoExportacion, nombreReporte: stri
       ? generarHtml(nombreReporte, resultado)
       : formato === 'excel'
         ? generarExcel(nombreReporte, resultado)
-        : generarPdf(nombreReporte, resultado.columnLabels, resultado.rows);
+        : generarPdf(nombreReporte, resumenFilas(resultado), resultado.columnLabels, resultado.rows);
 
   return {
     buffer: contenido,
@@ -63,7 +63,7 @@ function generarHtml(nombreReporte: string, resultado: ReportResultDto): Buffer 
 </head>
 <body>
   <h1>${escaparHtml(nombreReporte)}</h1>
-  <p>${resultado.total} filas en total · Generado ${fechaLocal()}</p>
+  <p>${escaparHtml(resumenFilas(resultado))} · Generado ${fechaLocal()}</p>
   <table>
     <thead><tr>${resultado.columnLabels.map((label) => `<th>${escaparHtml(label)}</th>`).join('')}</tr></thead>
     <tbody>${filasHtml}</tbody>
@@ -81,6 +81,8 @@ function generarExcel(nombreReporte: string, resultado: ReportResultDto): Buffer
     return `<Cell><Data ss:Type="String">${escaparXml(celdaTexto(valor))}</Data></Cell>`;
   };
   const filas = resultado.rows.map((fila) => `<Row>${fila.map(celda).join('')}</Row>`).join('\n');
+  // Si el reporte se recorto, el aviso va al final: la primera fila sigue siendo el encabezado de la tabla.
+  const aviso = estaRecortado(resultado) ? `\n<Row></Row>\n<Row>${celda(resumenFilas(resultado))}</Row>` : '';
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
@@ -90,7 +92,7 @@ function generarExcel(nombreReporte: string, resultado: ReportResultDto): Buffer
   <Worksheet ss:Name="${escaparXml(slugificar(nombreReporte))}">
     <Table>
       <Row>${resultado.columnLabels.map((label) => `<Cell ss:StyleID="Encabezado"><Data ss:Type="String">${escaparXml(label)}</Data></Cell>`).join('')}</Row>
-${filas}
+${filas}${aviso}
     </Table>
   </Worksheet>
 </Workbook>
@@ -102,7 +104,7 @@ ${filas}
  * PDF A4 sin dependencias: título, encabezados en negrita y filas en texto.
  * Solo representable en Latin-1 (los caracteres fuera de ese rango se omiten).
  */
-function generarPdf(titulo: string, encabezados: string[], filas: Array<Array<string | number | boolean>>): Buffer {
+function generarPdf(titulo: string, subtitulo: string, encabezados: string[], filas: Array<Array<string | number | boolean>>): Buffer {
   const ANCHO_PAGINA = 595.28;
   const ALTO_PAGINA = 841.89;
   const MARGEN = 36;
@@ -124,7 +126,9 @@ function generarPdf(titulo: string, encabezados: string[], filas: Array<Array<st
   };
 
   dibujarCelda(recortar(titulo, 110), 'F2', 14, MARGEN);
-  y -= 22;
+  y -= 16;
+  dibujarCelda(recortar(subtitulo, 140), 'F1', 9, MARGEN);
+  y -= 18;
   for (let i = 0; i < cantidadColumnas; i++) {
     dibujarCelda(recortar(encabezados[i], caracteresQueCaben(anchoColumna, 9)), 'F2', 9, MARGEN + i * anchoColumna);
   }
@@ -182,6 +186,18 @@ function generarPdf(titulo: string, encabezados: string[], filas: Array<Array<st
   const cierre = `trailer\n<< /Size ${finObjetos} /Root 1 0 R >>\nstartxref\n${posicion}\n%%EOF\n`;
 
   return Buffer.concat([...piezas, Buffer.from(tablaXref, 'latin1'), Buffer.from(cierre, 'latin1')]);
+}
+
+/** true si el archivo trae menos filas que el reporte (se exporta hasta LIMITE_REPORTE_MAXIMO). */
+function estaRecortado(resultado: ReportResultDto): boolean {
+  return resultado.rows.length < resultado.total;
+}
+
+/** "120 filas" o, si se recorto, "Se muestran las primeras 500 de 1.234 filas". */
+function resumenFilas(resultado: ReportResultDto): string {
+  const total = resultado.total.toLocaleString('es-BO');
+  if (!estaRecortado(resultado)) return `${total} ${resultado.total === 1 ? 'fila' : 'filas'}`;
+  return `Se muestran las primeras ${resultado.rows.length.toLocaleString('es-BO')} de ${total} filas`;
 }
 
 function recortar(texto: string, maxCaracteres: number): string {

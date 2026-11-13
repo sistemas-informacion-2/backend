@@ -198,7 +198,9 @@ const COMPRAS: FuenteReporte = {
   descripcion:
     'Órdenes de compra a proveedores por sucursal y estado. El subtotal y el total son de la nota; si el reporte incluye la cantidad, se reparten entre sus líneas en proporción al subtotal de cada una.',
   tablaBase: 'nota_compra nc',
-  campoFechas: 'nc.fecha_emision',
+  // fecha_emision de la compra es timestamp (con hora): sin ::date, "hasta el 19/05" compara contra la medianoche
+  // y deja fuera las compras de ese dia, y la columna Fecha separaria un mismo dia por hora.
+  campoFechas: 'nc.fecha_emision::date',
   columnaEmpresa: 'nc.id_empresa',
   joins: {
     SUCURSAL: 'LEFT JOIN sucursal sc ON sc.id = nc.id_sucursal',
@@ -210,7 +212,7 @@ const COMPRAS: FuenteReporte = {
   campos: [
     { name: 'id_compra', label: 'ID compra', categoria: 'PLAIN', tipo: 'NUMBER', sql: 'nc.id::int', joins: [] },
     { name: 'nro_factura', label: 'Nº factura', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nc.nro_factura', joins: [] },
-    { name: 'fecha_emision', label: 'Fecha', categoria: 'DIMENSION', tipo: 'DATE', sql: 'nc.fecha_emision', joins: [] },
+    { name: 'fecha_emision', label: 'Fecha', categoria: 'DIMENSION', tipo: 'DATE', sql: 'nc.fecha_emision::date', joins: [] },
     { name: 'sucursal', label: 'Sucursal', categoria: 'DIMENSION', tipo: 'STRING', sql: 'sc.nombre', joins: ['SUCURSAL'] },
     { name: 'proveedor', label: 'Proveedor', categoria: 'DIMENSION', tipo: 'STRING', sql: 'pv.empresa', joins: ['PROVEEDOR'] },
     { name: 'estado', label: 'Estado', categoria: 'DIMENSION', tipo: 'STRING', sql: 'nc.estado', joins: [] },

@@ -39,6 +39,25 @@ describe('exportarReporte', () => {
     expect(texto).toContain('%%EOF');
   });
 
+  describe('cuando el reporte tiene más filas que las exportadas', () => {
+    const recortado: ReportResultDto = { ...resultado, total: 1234 };
+
+    it.each([
+      ['html', 'utf8'],
+      ['excel', 'utf8'],
+      ['pdf', 'latin1'],
+    ] as const)('el %s lo avisa', (formato, codificacion) => {
+      const texto = exportarReporte(formato, 'Ventas', recortado).buffer.toString(codificacion);
+      expect(texto).toContain('Se muestran las primeras 2 de 1.234 filas');
+    });
+
+    it('sin recorte no muestra el aviso', () => {
+      const texto = exportarReporte('html', 'Ventas', resultado).buffer.toString('utf8');
+      expect(texto).toContain('2 filas');
+      expect(texto).not.toContain('Se muestran');
+    });
+  });
+
   it('sanea el nombre de archivo según el formato', () => {
     expect(exportarReporte('excel', 'Ventas 2026', resultado).nombreArchivo).toBe('ventas-2026.xls');
   });

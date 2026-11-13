@@ -276,6 +276,54 @@ describe('ReportBuilderService', () => {
     expect(cantidad.total).toBe(2);
   });
 
+  it('acepta un número escrito como texto en un filtro numérico (lo que manda un input type="number")', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], [{ sucursal: 'La Paz', monto_total: 150 }]]);
+
+    await service.ejecutar({
+      reportType: 'VENTAS',
+      selectedFields: ['sucursal', 'monto_total'],
+      filters: [
+        { campo: 'monto_total', operador: 'gt', valor: '100' },
+        { campo: 'monto_total', operador: 'lte', valor: ' 99,5 ' },
+      ],
+    });
+
+    const params = query.mock.calls[1][1] as unknown[];
+    expect(params.slice(0, 2)).toEqual([100, 99.5]);
+  });
+
+  it.each(['', 'abc', '1e9', '10.5.2'])('rechaza el texto "%s" en un filtro numérico con 400', async (valor) => {
+    const { service } = crearBuilder([]);
+    await expect(
+      service.ejecutar({
+        reportType: 'VENTAS',
+        selectedFields: ['sucursal'],
+        filters: [{ campo: 'monto_total', operador: 'gt', valor }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('COMPRAS compara y agrupa por el día de la compra, sin la hora', async () => {
+    const { service, query } = crearBuilder([[{ total: 1 }], [{ fecha_emision: new Date(2025, 4, 19), total: 300 }]]);
+
+    const resultado = await service.ejecutar({
+      reportType: 'COMPRAS',
+      selectedFields: ['fecha_emision', 'total'],
+      filters: [{ campo: 'fecha_emision', operador: 'eq', valor: '2025-05-19' }],
+      dateFrom: '2025-05-19',
+      dateTo: '2025-05-19',
+    });
+
+    const sql = query.mock.calls[1][0] as string;
+    // Con la columna timestamp tal cual, "hasta el 19/05" dejaba fuera las compras de ese día (>= 00:00).
+    // Los filtros se numeran antes que el rango de fechas.
+    expect(sql).toContain('nc.fecha_emision::date = $1');
+    expect(sql).toContain('nc.fecha_emision::date >= $2');
+    expect(sql).toContain('nc.fecha_emision::date <= $3');
+    expect(sql).toContain('GROUP BY nc.fecha_emision::date');
+    expect(resultado.rows[0][0]).toBe('2025-05-19');
+  });
+
   it('INVENTARIO ignora el rango de fechas (campoFechas null)', async () => {
     const { service, query } = crearBuilder([
       [{ total: 1 }],
