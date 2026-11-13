@@ -68,7 +68,10 @@ export class ReportsService {
       sinCuota = !this.cuota.consumir(this.tenant.empresaId());
       if (!sinCuota) {
         try {
-          return { interpretado: await this.gemini.interpretar(prompt), fuente: 'IA' };
+          const interpretado = await this.gemini.interpretar(prompt);
+          // Red de seguridad: una configuracion que el constructor rechazaria (400) cae al traductor, no al usuario.
+          this.builder.validar(interpretado.request);
+          return { interpretado, fuente: 'IA' };
         } catch (error) {
           this.logger.warn(`Gemini fallo interpretando el reporte generativo, se usa el traductor por palabras clave: ${error instanceof Error ? error.message : String(error)}`);
         }

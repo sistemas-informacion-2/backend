@@ -1,10 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { ConfigService } from '@nestjs/config';
+import { Type, type Schema } from '@google/genai';
 import { DataSource } from 'typeorm';
+import { fechaLocal } from '../../../common/utils/fecha.util.js';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import type { AppConfig } from '../../../config/configuration.js';
-import { FUENTES_REPORTE, type FuenteReporte } from '../catalog/reporte-catalog.constants.js';
+import { GeminiBiClient } from '../../bi/agente/gemini.client.js';
+import {
+  FUENTES_REPORTE,
+  OPERADORES_POR_TIPO,
+  type CampoReporte,
+  type FuenteReporte,
+  type OperadorFiltro,
+} from '../catalog/reporte-catalog.constants.js';
 import type { ReportFilterDto, ReportRunRequestDto } from '../dto/reporte-builder.dto.js';
 import type { InterpretacionPrompt } from './reporte-nlp.service.js';
 
@@ -32,55 +40,43 @@ const ORDEN_POR_DEFECTO: Record<TipoReporte, { campo: string; direccion: 'asc' |
 const LIMITE_MAXIMO = 100;
 const LIMITE_DEFECTO = 50;
 const MODELO_DEFECTO = 'gemini-3.5-flash-lite';
-const TIMEOUT_MS = 25_000;
 /** Pausa antes del unico reintento ante un 503 "high demand" (el propio Google recomienda reintentar, no es error nuestro ni de la cuenta). */
 const REINTENTO_ESPERA_MS = 1_500;
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Error HTTP de Gemini con el status real, para poder decidir si vale la pena reintentar (503) o no (403/404/...). */
-class GeminiHttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'GeminiHttpError';
-  }
-}
-
-// Subconjunto de OpenAPI que acepta `responseSchema` de Gemini (generationConfig
-// con responseMimeType "application/json"): obliga al modelo a devolver
-// exactamente esta forma, sin que el cliente tenga que parsear texto libre.
-const ESQUEMA_RESPUESTA = {
-  type: 'object',
+// Esquema de la respuesta (responseSchema): obliga al modelo a devolver exactamente esta forma, sin que haya que
+// parsear texto libre. Usa los tipos del SDK, que entienden tanto Vertex AI como AI Studio.
+const ESQUEMA_RESPUESTA: Schema = {
+  type: Type.OBJECT,
   properties: {
-    reportType: { type: 'string', enum: [...TIPOS_VALIDOS] },
-    selectedFields: { type: 'array', items: { type: 'string' } },
+    reportType: { type: Type.STRING, enum: [...TIPOS_VALIDOS] },
+    selectedFields: { type: Type.ARRAY, items: { type: Type.STRING } },
     filters: {
-      type: 'array',
+      type: Type.ARRAY,
       items: {
-        type: 'object',
+        type: Type.OBJECT,
         properties: {
-          campo: { type: 'string' },
-          operador: { type: 'string', enum: [...OPERADORES_VALIDOS] },
-          valor: { type: 'string' },
+          campo: { type: Type.STRING },
+          operador: { type: Type.STRING, enum: [...OPERADORES_VALIDOS] },
+          valor: { type: Type.STRING },
         },
         required: ['campo', 'operador', 'valor'],
       },
     },
     sort: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
-        campo: { type: 'string' },
-        direccion: { type: 'string', enum: ['asc', 'desc'] },
+        campo: { type: Type.STRING },
+        direccion: { type: Type.STRING, enum: ['asc', 'desc'] },
       },
     },
-    dateFrom: { type: 'string' },
-    dateTo: { type: 'string' },
-    limit: { type: 'integer' },
-    interpretacion: { type: 'string' },
+    dateFrom: { type: Type.STRING },
+    dateTo: { type: Type.STRING },
+    limit: { type: Type.INTEGER },
+    interpretacion: { type: Type.STRING },
   },
   required: ['reportType', 'selectedFields', 'interpretacion'],
-} as const;
+};
 
 /** Lo que Gemini devuelve antes de validar contra el catalogo (nunca se confia tal cual). */
 interface RespuestaGeminiBruta {
@@ -95,119 +91,82 @@ interface RespuestaGeminiBruta {
 }
 
 /**
- * Interprete de reportes generativos (CU18) basado en la API de Gemini
- * (generativelanguage.googleapis.com), gratuita dentro de su cuota. A
- * diferencia de ReporteNlpService (palabras clave con regex), esto entiende
- * de verdad el lenguaje natural: sinonimos, modismos, pedidos compuestos
- * ("ventas de poleras en Beni el mes pasado, las que mas se vendieron").
+ * Interprete de reportes generativos (CU18) con Gemini. Entiende de verdad el lenguaje natural: sinonimos, modismos,
+ * pedidos compuestos ("ventas de poleras en Beni el mes pasado, las que mas se vendieron").
  *
- * El modelo nunca ve ni genera SQL: se le entrega el catalogo de campos
- * valido por tipo de reporte (la misma whitelist que usa el Report Builder) y
- * se le pide JSON estructurado con `responseSchema`. Lo que responde se
- * vuelve a validar contra esa whitelist antes de ejecutarse (defensa en
- * profundidad: un modelo que alucina un campo no debe poder filtrar/ordenar
- * por una columna que no existe).
+ * Usa el mismo cliente que el asistente del BI (GeminiBiClient): Vertex AI si hay proyecto de Google Cloud (en la VM,
+ * con la identidad de la maquina y sin llaves), o Google AI Studio con GEMINI_API_KEY si no. Lo decide
+ * BI_IA_PROVEEDOR. El modelo es el de los reportes (GEMINI_MODEL), no el del BI.
  *
- * Si no hay API key configurada, o la llamada falla, o la respuesta no trae
- * nada usable, se lanza una excepcion: el llamador (ReportsService) es quien
- * decide caer al interprete regex.
+ * El modelo nunca ve ni genera SQL: se le entrega el catalogo de campos valido por tipo de reporte (la misma whitelist
+ * que usa el Report Builder) y se le pide JSON con `responseSchema`. Lo que responde se corrige contra esa whitelist
+ * antes de ejecutarse: campos, operadores, valores, fechas y orden. Si la llamada falla o no trae nada usable, se lanza
+ * una excepcion y ReportsService usa el interprete por palabras clave.
  */
 @Injectable()
 export class GeminiReporteService {
   private readonly logger = new Logger(GeminiReporteService.name);
-  private readonly apiKey: string;
   private readonly modelo: string;
 
   constructor(
-    private readonly config: ConfigService<AppConfig, true>,
+    config: ConfigService<AppConfig, true>,
     private readonly dataSource: DataSource,
     private readonly tenant: TenantContext,
+    private readonly ia: GeminiBiClient,
   ) {
-    this.apiKey = this.config.get('gemini.apiKey', { infer: true });
-    this.modelo = this.config.get('gemini.model', { infer: true }) || MODELO_DEFECTO;
+    this.modelo = config.get('gemini.model', { infer: true }) || MODELO_DEFECTO;
   }
 
-  /** false sin API key: ReportsService ni siquiera intenta llamar a Gemini. */
+  /** false si no hay ni Vertex ni API key: ReportsService ni siquiera intenta llamar a Gemini. */
   get disponible(): boolean {
-    return this.apiKey.length > 0;
+    return this.ia.modo() !== 'SIN_CONFIGURAR';
   }
 
   async interpretar(promptUsuario: string): Promise<InterpretacionPrompt> {
     if (!this.disponible) {
-      throw new Error('GEMINI_API_KEY no esta configurada');
+      throw new Error('Gemini no esta configurado (ni Vertex AI ni GEMINI_API_KEY)');
     }
 
     const sucursales = await this.obtenerSucursalesActivas();
-    const cuerpo = {
-      system_instruction: { parts: [{ text: this.construirInstrucciones(sucursales) }] },
-      contents: [{ role: 'user', parts: [{ text: promptUsuario }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: ESQUEMA_RESPUESTA,
-        temperature: 0.2,
-      },
-    };
-
-    const bruto = await this.llamarGeminiConReintento(cuerpo);
+    const bruto = await this.llamarGeminiConReintento(promptUsuario, this.construirInstrucciones(sucursales));
     return this.normalizar(bruto, sucursales);
   }
 
   /**
-   * Un 503 "high demand" es la única falla que el propio Google recomienda
-   * reintentar tal cual (no es un error de la cuenta ni de la key): se da una
-   * sola segunda oportunidad, con una pausa corta, antes de rendirse. Para
-   * cualquier otro error (403, 404, timeout, JSON inválido...) reintentar de
-   * inmediato no cambia nada, así que se propaga directo.
+   * Un 503 "high demand" es la única falla que el propio Google recomienda reintentar tal cual (no es un error de la
+   * cuenta ni de la configuracion): se da una sola segunda oportunidad, con una pausa corta, antes de rendirse. Para
+   * cualquier otro error (403, 404, timeout, JSON inválido...) reintentar de inmediato no cambia nada.
    */
-  private async llamarGeminiConReintento(cuerpo: unknown): Promise<RespuestaGeminiBruta> {
+  private async llamarGeminiConReintento(prompt: string, instrucciones: string): Promise<RespuestaGeminiBruta> {
     try {
-      return await this.llamarGemini(cuerpo);
+      return await this.llamarGemini(prompt, instrucciones);
     } catch (error) {
-      if (!(error instanceof GeminiHttpError) || error.status !== 503) throw error;
+      if ((error as { status?: unknown }).status !== 503) throw error;
       this.logger.warn('Gemini respondio 503 (alta demanda); reintentando una vez...');
       await new Promise((resolve) => setTimeout(resolve, REINTENTO_ESPERA_MS));
-      return this.llamarGemini(cuerpo);
+      return this.llamarGemini(prompt, instrucciones);
     }
   }
 
-  private async llamarGemini(cuerpo: unknown): Promise<RespuestaGeminiBruta> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelo}:generateContent?key=${this.apiKey}`;
-    const controlador = new AbortController();
-    const temporizador = setTimeout(() => controlador.abort(), TIMEOUT_MS);
+  private async llamarGemini(prompt: string, instrucciones: string): Promise<RespuestaGeminiBruta> {
+    const respuesta = await this.ia.generar({
+      model: this.modelo,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: instrucciones,
+        responseMimeType: 'application/json',
+        responseSchema: ESQUEMA_RESPUESTA,
+        temperature: 0.2,
+      },
+    });
 
-    let respuesta: Response;
-    try {
-      respuesta = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cuerpo),
-        signal: controlador.signal,
-      });
-    } catch (error) {
-      throw new Error(`No se pudo contactar a Gemini: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      clearTimeout(temporizador);
+    if (respuesta.promptFeedback?.blockReason) {
+      throw new Error(`Gemini bloqueo el pedido: ${respuesta.promptFeedback.blockReason}`);
     }
-
-    if (!respuesta.ok) {
-      const detalle = await respuesta.text().catch(() => '');
-      throw new GeminiHttpError(respuesta.status, `Gemini respondio ${respuesta.status} ${respuesta.statusText}: ${detalle.slice(0, 300)}`);
-    }
-
-    const datos = (await respuesta.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
-      promptFeedback?: { blockReason?: string };
-    };
-
-    if (datos.promptFeedback?.blockReason) {
-      throw new Error(`Gemini bloqueo el pedido: ${datos.promptFeedback.blockReason}`);
-    }
-
-    const texto = datos.candidates?.[0]?.content?.parts?.[0]?.text;
+    const texto = respuesta.text;
     if (!texto) {
       throw new Error('Gemini no devolvio contenido utilizable');
     }
-
     try {
       return JSON.parse(texto) as RespuestaGeminiBruta;
     } catch {
@@ -215,59 +174,44 @@ export class GeminiReporteService {
     }
   }
 
-  /** Valida y completa lo que mandó Gemini contra el catálogo real: nunca se confía un campo/tipo a ciegas. */
+  /**
+   * Corrige lo que mandó Gemini contra el catálogo real: nunca se confía un campo, tipo, operador o valor a ciegas.
+   * Lo que no sirve se descarta (un filtro con un número inválido, una fecha mal escrita) en vez de hacer fallar todo
+   * el reporte con un 400.
+   */
   private normalizar(bruto: RespuestaGeminiBruta, sucursales: string[]): InterpretacionPrompt {
     const tipo: TipoReporte = TIPOS_VALIDOS.includes(bruto.reportType as TipoReporte) ? (bruto.reportType as TipoReporte) : 'VENTAS';
     const fuente = FUENTES_REPORTE.find((candidata) => candidata.id === tipo) as FuenteReporte;
-    const nombresCampo = new Set(fuente.campos.map((campo) => campo.name));
+    const campoPorNombre = new Map(fuente.campos.map((campo) => [campo.name, campo]));
 
     let selectedFields = Array.isArray(bruto.selectedFields)
-      ? bruto.selectedFields.filter((campo): campo is string => typeof campo === 'string' && nombresCampo.has(campo))
+      ? [...new Set(bruto.selectedFields.filter((campo): campo is string => typeof campo === 'string' && campoPorNombre.has(campo)))]
       : [];
     if (selectedFields.length === 0) selectedFields = [...CAMPOS_POR_DEFECTO[tipo]];
 
-    const filtrosBrutos = Array.isArray(bruto.filters) ? bruto.filters : [];
-    const filters: ReportFilterDto[] = filtrosBrutos
-      .filter(
-        (filtro): filtro is { campo: string; operador: string; valor: string } =>
-          !!filtro &&
-          typeof filtro === 'object' &&
-          typeof (filtro as Record<string, unknown>).campo === 'string' &&
-          nombresCampo.has((filtro as Record<string, unknown>).campo as string) &&
-          OPERADORES_VALIDOS.includes((filtro as Record<string, unknown>).operador as (typeof OPERADORES_VALIDOS)[number]),
-      )
-      .map((filtro) => {
-        const campo = fuente.campos.find((candidato) => candidato.name === filtro.campo)!;
-        const valor: string | number | boolean =
-          campo.tipo === 'BOOLEAN' ? filtro.valor === 'true' : campo.tipo === 'NUMBER' ? Number(filtro.valor) : filtro.valor;
-        return { campo: filtro.campo, operador: filtro.operador as ReportFilterDto['operador'], valor };
-      });
+    const filters = (Array.isArray(bruto.filters) ? bruto.filters : [])
+      .map((filtro) => this.filtroValido(filtro, campoPorNombre))
+      .filter((filtro): filtro is ReportFilterDto => filtro !== null)
+      // Si Gemini no mando una sucursal exacta de la lista real, se descarta ese filtro: no debe inventar sedes.
+      .filter((filtro) => filtro.campo !== 'sucursal' || sucursales.includes(String(filtro.valor)));
 
-    const sortBruto = bruto.sort as { campo?: unknown; direccion?: unknown } | undefined;
-    const sort =
-      sortBruto && typeof sortBruto.campo === 'string' && nombresCampo.has(sortBruto.campo)
-        ? { campo: sortBruto.campo, direccion: sortBruto.direccion === 'asc' ? ('asc' as const) : ('desc' as const) }
-        : ORDEN_POR_DEFECTO[tipo];
+    const sort = this.ordenValido(bruto.sort, tipo, selectedFields, campoPorNombre);
 
     // INVENTARIO es una foto del stock actual (sin fecha_emision): un rango de fechas ahi no tiene campo al que aplicarse.
     const admiteFechas = fuente.campoFechas !== null;
-    const dateFrom = admiteFechas && typeof bruto.dateFrom === 'string' ? bruto.dateFrom : undefined;
-    const dateTo = admiteFechas && typeof bruto.dateTo === 'string' ? bruto.dateTo : undefined;
+    const dateFrom = admiteFechas ? fechaValida(bruto.dateFrom) : undefined;
+    const dateTo = admiteFechas ? fechaValida(bruto.dateTo) : undefined;
 
     const limiteNumerico = typeof bruto.limit === 'number' ? bruto.limit : Number(bruto.limit);
     const limit = Number.isFinite(limiteNumerico) && limiteNumerico > 0 ? Math.min(LIMITE_MAXIMO, Math.round(limiteNumerico)) : LIMITE_DEFECTO;
 
-    // Si Gemini no mando una sucursal exacta de la lista real, se descarta ese filtro aparte
-    // (nombresCampo mas arriba solo valida el CAMPO, no el VALOR) para no inventar sedes.
-    const filtrosFinales = filters.filter((filtro) => filtro.campo !== 'sucursal' || sucursales.includes(String(filtro.valor)));
-
     const request: ReportRunRequestDto = {
       reportType: tipo,
       selectedFields,
-      filters: filtrosFinales,
+      filters,
       sort,
-      dateFrom,
-      dateTo,
+      // Un rango al reves (desde despues de hasta) no trae nada: se ordena.
+      ...(dateFrom && dateTo && dateFrom > dateTo ? { dateFrom: dateTo, dateTo: dateFrom } : { dateFrom, dateTo }),
       limit,
       offset: 0,
     };
@@ -278,6 +222,58 @@ export class GeminiReporteService {
         : `Reporte de ${fuente.nombre} generado con IA.`;
 
     return { request, interpretacion };
+  }
+
+  /** El filtro corregido, o null si no se puede usar: campo inexistente, operador que no aplica o valor invalido. */
+  private filtroValido(filtro: unknown, campoPorNombre: Map<string, CampoReporte>): ReportFilterDto | null {
+    if (!filtro || typeof filtro !== 'object') return null;
+    const { campo: nombre, operador, valor } = filtro as Record<string, unknown>;
+    const campo = typeof nombre === 'string' ? campoPorNombre.get(nombre) : undefined;
+    if (!campo || !OPERADORES_POR_TIPO[campo.tipo].includes(operador as OperadorFiltro)) return null;
+
+    const texto = typeof valor === 'string' ? valor.trim() : String(valor ?? '').trim();
+    if (campo.tipo === 'BOOLEAN') {
+      if (texto !== 'true' && texto !== 'false') return null;
+      return { campo: campo.name, operador: operador as OperadorFiltro, valor: texto === 'true' };
+    }
+    if (campo.tipo === 'NUMBER') {
+      const numero = Number(texto.replace(',', '.'));
+      if (texto === '' || !Number.isFinite(numero)) return null;
+      return { campo: campo.name, operador: operador as OperadorFiltro, valor: numero };
+    }
+    if (campo.tipo === 'DATE') {
+      const fecha = fechaValida(texto);
+      return fecha ? { campo: campo.name, operador: operador as OperadorFiltro, valor: fecha } : null;
+    }
+    return texto ? { campo: campo.name, operador: operador as OperadorFiltro, valor: texto } : null;
+  }
+
+  /**
+   * Un orden que el constructor acepte. Con medidas en el reporte, el orden tiene que ser por una medida o por una
+   * columna incluida; si el de Gemini (o el por defecto) no cumple, se ordena por la primera medida, de mayor a menor.
+   */
+  private ordenValido(
+    sortBruto: unknown,
+    tipo: TipoReporte,
+    selectedFields: string[],
+    campoPorNombre: Map<string, CampoReporte>,
+  ): { campo: string; direccion: 'asc' | 'desc' } {
+    const hayMedidas = selectedFields.some((nombre) => campoPorNombre.get(nombre)?.categoria === 'MEASURE');
+    const sirve = (nombre: string): boolean => {
+      const campo = campoPorNombre.get(nombre);
+      if (!campo || campo.tipo === 'BOOLEAN') return false;
+      return !hayMedidas || campo.categoria === 'MEASURE' || selectedFields.includes(nombre);
+    };
+
+    const pedido = sortBruto as { campo?: unknown; direccion?: unknown } | undefined;
+    if (pedido && typeof pedido.campo === 'string' && sirve(pedido.campo)) {
+      return { campo: pedido.campo, direccion: pedido.direccion === 'asc' ? 'asc' : 'desc' };
+    }
+    if (sirve(ORDEN_POR_DEFECTO[tipo].campo)) return ORDEN_POR_DEFECTO[tipo];
+    const primeraMedida = selectedFields.find((nombre) => campoPorNombre.get(nombre)?.categoria === 'MEASURE');
+    if (primeraMedida) return { campo: primeraMedida, direccion: 'desc' };
+    // Sin medidas, cualquier columna elegida que se pueda ordenar.
+    return { campo: selectedFields.find(sirve) ?? selectedFields[0], direccion: 'asc' };
   }
 
   private async obtenerSucursalesActivas(): Promise<string[]> {
@@ -306,23 +302,29 @@ export class GeminiReporteService {
         sucursales.length > 0 ? sucursales.join(', ') : '(sin sucursales activas registradas)'
       }`,
       '',
-      `Hoy es ${hoy} (zona horaria America/La_Paz). Si el pedido menciona un período relativo ("hoy", "ayer", "esta semana", "el mes pasado", "últimos 15 días", "este año"), calcula dateFrom/dateTo en formato AAAA-MM-DD.`,
+      `Hoy es ${hoy} (zona horaria America/La_Paz). Si el pedido menciona un período relativo ("hoy", "ayer", "esta semana", "el mes pasado", "últimos 15 días", "este año"), calcula dateFrom/dateTo en formato AAAA-MM-DD. "El mes pasado" es el mes calendario anterior completo.`,
       '',
       'Reglas de salida (responde solo el JSON, sin texto adicional):',
       '- reportType: VENTAS, INVENTARIO o COMPRAS, el que mejor corresponda al pedido.',
       '- selectedFields: campos del catálogo del tipo elegido. Incluye al menos una MEASURE si el pedido pide un número/total/monto/cantidad, y las DIMENSION relevantes para agrupar o identificar filas.',
       '- INVENTARIO no tiene fecha (es una foto del stock actual): nunca devuelvas dateFrom/dateTo para ese tipo, aunque el pedido mencione un período (ignóralo).',
-      '- filters: opcional. Solo campos del tipo elegido. "valor" siempre como texto; para campos booleanos usa el texto "true" o "false".',
-      '- sort: opcional. Si el pedido pide un "top N", "las más vendidas/vendidos" o similar, ordena por la medida relevante en "desc".',
+      '- filters: opcional. Solo campos del tipo elegido. "valor" siempre como texto; para campos booleanos usa el texto "true" o "false". Para buscar un producto o una categoría por su nombre usa el operador "contains".',
+      '- sort: si el pedido pide un "top N", "las más vendidas/vendidos" o similar, ordena por la medida relevante en "desc". Si ordenas por una DIMENSION, inclúyela en selectedFields.',
       '- limit: entero entre 1 y 100. Usa el número pedido en un "top N"; si no se especifica, usa 50.',
       '- interpretacion: 1 o 2 frases en español claro, dirigidas al usuario final (sin tecnicismos de SQL/JSON), resumiendo qué reporte armaste y por qué, como si le explicaras lo que entendiste de su pedido.',
     ].join('\n');
   }
 
   private describirFuente(fuente: FuenteReporte): string {
-    const campos = fuente.campos
-      .map((campo) => `  - ${campo.name} (${campo.categoria}, ${campo.tipo}): ${campo.label}`)
-      .join('\n');
+    const campos = fuente.campos.map((campo) => `  - ${campo.name} (${campo.categoria}, ${campo.tipo}): ${campo.label}`).join('\n');
     return `### ${fuente.id} — ${fuente.nombre}\n${fuente.descripcion}\nCampos válidos:\n${campos}`;
   }
+}
+
+/** La fecha si es AAAA-MM-DD y existe en el calendario; undefined si no. */
+function fechaValida(valor: unknown): string | undefined {
+  if (typeof valor !== 'string' || !FECHA_ISO.test(valor)) return undefined;
+  const [anio, mes, dia] = valor.split('-').map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  return fecha.getUTCFullYear() === anio && fecha.getUTCMonth() === mes - 1 && fecha.getUTCDate() === dia ? valor : undefined;
 }

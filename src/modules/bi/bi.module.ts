@@ -27,6 +27,7 @@ import { ModelosService } from './services/modelos.service.js';
   imports: [TypeOrmModule.forFeature([BiConversacion, BiMensaje, BiGrafico])],
   controllers: [BiEstadoController, EtlController, AgenteController, ModelosController, GraficosController],
   providers: [GeminiBiClient, BiEstadoService, EtlService, EtlProgramadoService, AvisoMlService, MlClienteService, RegistroHerramientas, AgenteService, ModelosService, GraficosService],
-  exports: [EtlService],
+  // GeminiBiClient tambien lo usan los reportes generativos: un solo cliente de IA (Vertex o API key) en todo el backend.
+  exports: [EtlService, GeminiBiClient],
 })
 export class BiModule {}

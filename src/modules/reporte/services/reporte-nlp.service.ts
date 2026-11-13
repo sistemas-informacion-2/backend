@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { fechaLocal, sumarDias, sumarMeses } from '../../../common/utils/fecha.util.js';
+import { fechaLocal, inicioDeMes, sumarDias, sumarMeses } from '../../../common/utils/fecha.util.js';
 import { DataSource } from 'typeorm';
 import { TenantContext } from '../../../common/tenant/tenant-context.service.js';
 import { normalizarTexto } from '../catalog/reporte-catalog.constants.js';
@@ -129,11 +129,19 @@ export class ReporteNlpService {
     const hoy = fechaLocal();
     const diasAtras = (dias: number) => sumarDias(hoy, -dias);
 
-    if (/hoy/.test(prompt)) return { desde: hoy, hasta: hoy, periodoTexto: 'hoy' };
+    if (/\bhoy\b/.test(prompt)) return { desde: hoy, hasta: hoy, periodoTexto: 'hoy' };
+    if (/\bayer\b/.test(prompt)) return { desde: diasAtras(1), hasta: diasAtras(1), periodoTexto: 'ayer' };
 
-    if (/mes/.test(prompt) && /ultimo|pasado/.test(prompt)) {
-      return { desde: sumarMeses(hoy, -1), hasta: hoy, periodoTexto: 'el último mes' };
+    // "El mes pasado" es el mes calendario anterior completo (en octubre, todo septiembre); "el último mes" son los
+    // últimos 30 días hasta hoy. Antes los dos se trataban como lo segundo.
+    if (/\bmes (pasado|anterior)\b/.test(prompt)) {
+      const inicioMesActual = inicioDeMes(hoy);
+      return { desde: sumarMeses(inicioMesActual, -1), hasta: sumarDias(inicioMesActual, -1), periodoTexto: 'el mes pasado' };
     }
+    if (/\b(este|del) mes\b|\bmes actual\b/.test(prompt)) return { desde: inicioDeMes(hoy), hasta: hoy, periodoTexto: 'este mes' };
+    if (/\bultimo mes\b/.test(prompt)) return { desde: sumarMeses(hoy, -1), hasta: hoy, periodoTexto: 'el último mes' };
+    // normalizarTexto quita la tilde de la ñ: "año" llega como "ano".
+    if (/\b(este|del) ano\b/.test(prompt)) return { desde: `${hoy.slice(0, 4)}-01-01`, hasta: hoy, periodoTexto: 'este año' };
 
     // "dos semanas" también hay que reconocerlo: antes solo se fijaba en si
     // aparecía la palabra "semana" (sin mirar la cantidad), así que "últimas
@@ -163,10 +171,13 @@ export class ReporteNlpService {
     tipo: 'VENTAS' | 'INVENTARIO' | 'COMPRAS',
   ): Promise<{ sucursal?: string; limite: number; esTop: boolean; esCritico: boolean }> {
     let limite = 50;
-    const maximo = prompt.match(/(\d+)\s*(prendas|productos|variantes|articulos)/) ?? prompt.match(/las?\s*(\d+)\s*(mas vendidas|mas vendidos|primeras|principales)/);
+    const maximo =
+      prompt.match(/(\d+)\s*(prendas|productos|variantes|articulos)/) ??
+      prompt.match(/\bl[ao]s?\s*(\d+)\s*(mas vendid[oa]s|primer[oa]s|principales)/) ??
+      prompt.match(/\btop\s*(\d+)/);
     if (maximo) limite = Math.max(1, Math.min(LIMITE_NLP_MAXIMO, Number(maximo[1])));
 
-    const esTop = tipo === 'VENTAS' && /mas vendidas|mas vendidos|top|primeras/.test(prompt);
+    const esTop = tipo === 'VENTAS' && /mas vendid[oa]s|\btop\b|primer[oa]s/.test(prompt);
     const esCritico = tipo === 'INVENTARIO' && /critico/.test(prompt);
 
     const sucursales = await this.dataSource.query<Array<{ nombre: string }>>(

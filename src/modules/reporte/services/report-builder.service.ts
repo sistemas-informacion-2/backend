@@ -59,7 +59,32 @@ export class ReportBuilderService {
     return buscarFuente(tipoReporte).nombre;
   }
 
+  /**
+   * Revisa una configuracion sin tocar la base: lanza BadRequestException (400) si no se puede ejecutar. Lo usa el
+   * generativo para descartar una configuracion de Gemini invalida y usar el interprete de respaldo.
+   */
+  validar(request: ReportRunRequestDto): void {
+    this.armarConsulta(request);
+  }
+
   async ejecutar(request: ReportRunRequestDto): Promise<ReportResultDto> {
+    const consulta = this.armarConsulta(request);
+    const total = await this.contar(consulta.fromSql, consulta.whereSql, consulta.groupExprs, consulta.agregar, consulta.params);
+
+    const params = [...consulta.params, consulta.limites.limit, consulta.limites.offset];
+    const sql = `${consulta.sql} LIMIT $${params.length - 1} OFFSET $${params.length}`;
+    const filas = await this.dataSource.query<Array<Record<string, unknown>>>(sql, params);
+
+    return {
+      columns: request.selectedFields,
+      columnLabels: consulta.campos.map((campo) => campo.label),
+      rows: filas.map((fila) => request.selectedFields.map((name) => this.serializar(fila[name]))),
+      total,
+    };
+  }
+
+  /** Valida la configuracion y arma el SQL (sin LIMIT/OFFSET). No consulta la base. */
+  private armarConsulta(request: ReportRunRequestDto) {
     const fuente = buscarFuente(request.reportType);
 
     const joinsRequeridos = new Set<string>(fuente.joinsSiempre);
@@ -92,11 +117,16 @@ export class ReportBuilderService {
       const valor = this.coercionDeValor(campo, filtro.valor);
       if (OPERADORES_DIRECTOS.has(filtro.operador)) {
         const simbolo = OPERADOR_SQL[filtro.operador as Exclude<OperadorFiltro, 'contains' | 'startsWith' | 'endsWith'>];
-        whereFiltros.push(clausula(campo.sql, simbolo, valor));
+        // El texto se compara sin distinguir mayusculas: "poleras" encuentra la categoria "Poleras".
+        whereFiltros.push(
+          campo.tipo === 'STRING' ? `LOWER(${campo.sql}) ${simbolo} LOWER($${agregarValor(valor)})` : clausula(campo.sql, simbolo, valor),
+        );
       } else {
+        // El % y el _ que escribe el usuario son letras, no comodines de LIKE.
+        const literal = String(valor).replace(/[\\%_]/g, '\\$&');
         const comodin =
-          filtro.operador === 'endsWith' ? `%${valor}` : filtro.operador === 'startsWith' ? `${valor}%` : `%${valor}%`;
-        whereFiltros.push(`LOWER(${campo.sql}) LIKE LOWER($${agregarValor(comodin)})`);
+          filtro.operador === 'endsWith' ? `%${literal}` : filtro.operador === 'startsWith' ? `${literal}%` : `%${literal}%`;
+        whereFiltros.push(`LOWER(${campo.sql}) LIKE LOWER($${agregarValor(comodin)}) ESCAPE '\\'`);
       }
     }
 
@@ -149,21 +179,11 @@ export class ReportBuilderService {
       offset: Math.max(Math.floor(request.offset ?? 0), 0),
     };
 
-    const total = await this.contar(fromSql, whereSql, groupExprs, agregar, params);
-
     const selects = campos.map((campo) => `${this.expresionSelect(valorDe(campo), campo, agregar, peso !== null)} AS "${campo.name}"`);
     let sql = `SELECT ${selects.join(', ')} FROM ${fromSql}${whereSql}${groupClause}`;
     if (ordenes.length) sql += ` ORDER BY ${ordenes.join(', ')}`;
-    sql += ` LIMIT $${agregarValor(limites.limit)} OFFSET $${agregarValor(limites.offset)}`;
 
-    const filas = await this.dataSource.query<Array<Record<string, unknown>>>(sql, params);
-
-    return {
-      columns: request.selectedFields,
-      columnLabels: campos.map((campo) => campo.label),
-      rows: filas.map((fila) => request.selectedFields.map((name) => this.serializar(fila[name]))),
-      total,
-    };
+    return { campos, fromSql, whereSql, groupExprs, agregar, params, sql, limites };
   }
 
   private async contar(

@@ -1,52 +1,61 @@
 import { GeminiReporteService } from './gemini-reporte.service.js';
+import type { GeminiBiClient } from '../../bi/agente/gemini.client.js';
 
-function crearService(cfg: { apiKey?: string; model?: string } = {}, sucursales: string[] = ['La Paz', 'Santa Cruz']) {
-  const valores: Record<string, unknown> = { 'gemini.apiKey': cfg.apiKey ?? 'clave-de-prueba', 'gemini.model': cfg.model ?? 'gemini-3.5-flash-lite' };
-  const config = { get: (clave: string) => valores[clave] };
+function crearService(opciones: { modo?: 'VERTEX' | 'API_KEY' | 'SIN_CONFIGURAR'; model?: string } = {}, sucursales: string[] = ['La Paz', 'Santa Cruz']) {
+  const config = { get: (clave: string) => (clave === 'gemini.model' ? (opciones.model ?? 'gemini-3.5-flash-lite') : undefined) };
   const dataSource = { query: vi.fn().mockResolvedValue(sucursales.map((nombre) => ({ nombre }))) };
-  return { service: new GeminiReporteService(config as never, dataSource as never, { empresaId: () => 1, empresa: () => ({ id: 1, nombre: 'Moda Andina' }) } as never), dataSource };
+  const generar = vi.fn();
+  const ia = { modo: () => opciones.modo ?? 'VERTEX', generar } as unknown as GeminiBiClient;
+  const tenant = { empresaId: () => 1, empresa: () => ({ id: 1, nombre: 'Moda Andina' }) };
+  return { service: new GeminiReporteService(config as never, dataSource as never, tenant as never, ia), generar };
 }
 
-function respuestaGemini(jsonTexto: string) {
-  return { ok: true, status: 200, statusText: 'OK', json: async () => ({ candidates: [{ content: { parts: [{ text: jsonTexto }] } }] }), text: async () => '' };
+/** Respuesta del SDK de @google/genai: `text` es el JSON que armo el modelo. */
+function respuesta(datos: object | string) {
+  return { text: typeof datos === 'string' ? datos : JSON.stringify(datos), promptFeedback: undefined };
+}
+
+function errorHttp(status: number) {
+  return Object.assign(new Error(`Gemini respondio ${status}`), { status });
 }
 
 describe('GeminiReporteService', () => {
-  const fetchMock = vi.fn();
-
-  beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('disponible es false sin API key', () => {
-    const { service } = crearService({ apiKey: '' });
+  it('disponible es false sin Vertex ni API key', () => {
+    const { service } = crearService({ modo: 'SIN_CONFIGURAR' });
     expect(service.disponible).toBe(false);
   });
 
-  it('interpretar rechaza si no hay API key, sin llamar a fetch', async () => {
-    const { service } = crearService({ apiKey: '' });
+  it('interpretar rechaza si no está configurado, sin llamar al modelo', async () => {
+    const { service, generar } = crearService({ modo: 'SIN_CONFIGURAR' });
     await expect(service.interpretar('ventas de hoy')).rejects.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(generar).not.toHaveBeenCalled();
+  });
+
+  it('usa el modelo de los reportes y pide JSON con el esquema fijo', async () => {
+    const { service, generar } = crearService({ model: 'gemini-3.5-flash-lite' });
+    generar.mockResolvedValue(respuesta({ reportType: 'VENTAS', selectedFields: ['sucursal'], interpretacion: 'x' }));
+
+    await service.interpretar('ventas');
+
+    const peticion = generar.mock.calls[0][0] as { model: string; config: Record<string, unknown> };
+    expect(peticion.model).toBe('gemini-3.5-flash-lite');
+    expect(peticion.config.responseMimeType).toBe('application/json');
+    expect(peticion.config.responseSchema).toBeDefined();
+    // Las instrucciones nombran la tienda de la empresa actual.
+    expect(String(peticion.config.systemInstruction)).toContain('Moda Andina');
   });
 
   it('arma el request validando los campos contra el catalogo real', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue(
-      respuestaGemini(
-        JSON.stringify({
-          reportType: 'VENTAS',
-          selectedFields: ['sucursal', 'monto_total', 'campo_inventado'],
-          filters: [{ campo: 'sucursal', operador: 'eq', valor: 'La Paz' }],
-          sort: { campo: 'monto_total', direccion: 'desc' },
-          limit: 5,
-          interpretacion: 'Ventas de La Paz ordenadas por monto, generado con IA.',
-        }),
-      ),
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({
+        reportType: 'VENTAS',
+        selectedFields: ['sucursal', 'monto_total', 'campo_inventado'],
+        filters: [{ campo: 'sucursal', operador: 'eq', valor: 'La Paz' }],
+        sort: { campo: 'monto_total', direccion: 'desc' },
+        limit: 5,
+        interpretacion: 'Ventas de La Paz ordenadas por monto, generado con IA.',
+      }),
     );
 
     const { request, interpretacion } = await service.interpretar('ventas de la paz, las que mas plata dejaron');
@@ -59,23 +68,74 @@ describe('GeminiReporteService', () => {
     expect(request.limit).toBe(5);
     expect(request.offset).toBe(0);
     expect(interpretacion).toBe('Ventas de La Paz ordenadas por monto, generado con IA.');
+  });
 
-    const [, opciones] = fetchMock.mock.calls[0] as [string, { body: string }];
-    const cuerpoEnviado = JSON.parse(opciones.body);
-    expect(cuerpoEnviado.generationConfig.responseMimeType).toBe('application/json');
+  it('sin orden y sin la fecha en las columnas, ordena por la primera medida (antes daba 400)', async () => {
+    const { service, generar } = crearService();
+    // Típico de "ventas por sucursal": medidas sin fecha. El orden por defecto (fecha) el constructor lo rechazaba.
+    generar.mockResolvedValue(respuesta({ reportType: 'VENTAS', selectedFields: ['sucursal', 'monto_total', 'cantidad'], interpretacion: 'x' }));
+
+    const { request } = await service.interpretar('ventas por sucursal');
+
+    expect(request.sort).toEqual({ campo: 'monto_total', direccion: 'desc' });
+  });
+
+  it('un orden por una columna que no está en el reporte se reemplaza por uno válido', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({ reportType: 'VENTAS', selectedFields: ['producto', 'cantidad'], sort: { campo: 'codigo_nota', direccion: 'asc' }, interpretacion: 'x' }),
+    );
+
+    const { request } = await service.interpretar('productos más vendidos');
+
+    expect(request.sort).toEqual({ campo: 'cantidad', direccion: 'desc' });
+  });
+
+  it('descarta filtros con valores u operadores inválidos en vez de fallar', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({
+        reportType: 'VENTAS',
+        selectedFields: ['producto', 'monto_total'],
+        filters: [
+          { campo: 'monto_total', operador: 'gt', valor: 'mucho' },
+          { campo: 'monto_total', operador: 'contains', valor: '100' },
+          { campo: 'fecha_emision', operador: 'eq', valor: 'ayer' },
+          { campo: 'cliente_identificado', operador: 'eq', valor: 'tal vez' },
+          { campo: 'monto_total', operador: 'gte', valor: '150,5' },
+          { campo: 'producto', operador: 'contains', valor: 'polera' },
+        ],
+        interpretacion: 'x',
+      }),
+    );
+
+    const { request } = await service.interpretar('ventas grandes de poleras');
+
+    expect(request.filters).toEqual([
+      { campo: 'monto_total', operador: 'gte', valor: 150.5 },
+      { campo: 'producto', operador: 'contains', valor: 'polera' },
+    ]);
+  });
+
+  it('descarta fechas mal formadas o que no existen, y ordena un rango al revés', async () => {
+    const { service, generar } = crearService();
+    generar
+      .mockResolvedValueOnce(respuesta({ reportType: 'VENTAS', selectedFields: ['sucursal'], dateFrom: '2026-02-30', dateTo: '11/2026', interpretacion: 'x' }))
+      .mockResolvedValueOnce(respuesta({ reportType: 'VENTAS', selectedFields: ['sucursal'], dateFrom: '2026-11-10', dateTo: '2026-11-01', interpretacion: 'x' }));
+
+    const invalidas = (await service.interpretar('ventas')).request;
+    const alReves = (await service.interpretar('ventas')).request;
+
+    expect(invalidas.dateFrom).toBeUndefined();
+    expect(invalidas.dateTo).toBeUndefined();
+    expect(alReves.dateFrom).toBe('2026-11-01');
+    expect(alReves.dateTo).toBe('2026-11-10');
   });
 
   it('descarta un filtro de sucursal que no existe en la BD (Gemini no debe poder inventar sedes)', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue(
-      respuestaGemini(
-        JSON.stringify({
-          reportType: 'VENTAS',
-          selectedFields: ['sucursal'],
-          filters: [{ campo: 'sucursal', operador: 'eq', valor: 'Sucursal Inventada' }],
-          interpretacion: 'x',
-        }),
-      ),
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({ reportType: 'VENTAS', selectedFields: ['sucursal'], filters: [{ campo: 'sucursal', operador: 'eq', valor: 'Sucursal Inventada' }], interpretacion: 'x' }),
     );
 
     const { request } = await service.interpretar('ventas de la sucursal inventada');
@@ -84,17 +144,9 @@ describe('GeminiReporteService', () => {
   });
 
   it('nunca manda rango de fechas para INVENTARIO aunque Gemini lo intente', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue(
-      respuestaGemini(
-        JSON.stringify({
-          reportType: 'INVENTARIO',
-          selectedFields: ['sucursal', 'stock_disponible'],
-          dateFrom: '2026-01-01',
-          dateTo: '2026-01-31',
-          interpretacion: 'x',
-        }),
-      ),
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(
+      respuesta({ reportType: 'INVENTARIO', selectedFields: ['sucursal', 'stock_disponible'], dateFrom: '2026-01-01', dateTo: '2026-01-31', interpretacion: 'x' }),
     );
 
     const { request } = await service.interpretar('stock de enero');
@@ -104,48 +156,45 @@ describe('GeminiReporteService', () => {
   });
 
   it('cae a los campos por defecto si Gemini no selecciona ninguno valido', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue(respuestaGemini(JSON.stringify({ reportType: 'COMPRAS', selectedFields: [], interpretacion: 'x' })));
+    const { service, generar } = crearService();
+    generar.mockResolvedValue(respuesta({ reportType: 'COMPRAS', selectedFields: [], interpretacion: 'x' }));
 
     const { request } = await service.interpretar('compras');
 
-    expect(request.selectedFields.length).toBeGreaterThan(0);
     expect(request.selectedFields).toContain('proveedor');
   });
 
-  it('propaga el error si Gemini responde con un status distinto de 200', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue({ ok: false, status: 429, statusText: 'Too Many Requests', text: async () => 'quota exceeded' });
+  it('propaga el error si Gemini falla con un status distinto de 503, sin reintentar', async () => {
+    const { service, generar } = crearService();
+    generar.mockRejectedValue(errorHttp(429));
 
     await expect(service.interpretar('ventas de hoy')).rejects.toThrow(/429/);
-    // 429 no es un 503 de "alta demanda": no amerita el reintento especial, se propaga directo.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(generar).toHaveBeenCalledTimes(1);
   });
 
   it('un 503 (alta demanda) se reintenta una vez y, si la segunda vez responde bien, funciona', async () => {
-    const { service } = crearService();
-    fetchMock
-      .mockResolvedValueOnce({ ok: false, status: 503, statusText: 'Service Unavailable', text: async () => 'high demand' })
-      .mockResolvedValueOnce(respuestaGemini(JSON.stringify({ reportType: 'VENTAS', selectedFields: ['sucursal'], interpretacion: 'ok tras reintento' })));
+    const { service, generar } = crearService();
+    generar.mockRejectedValueOnce(errorHttp(503)).mockResolvedValueOnce(respuesta({ reportType: 'VENTAS', selectedFields: ['sucursal'], interpretacion: 'ok tras reintento' }));
 
     const { interpretacion } = await service.interpretar('ventas de hoy');
 
     expect(interpretacion).toBe('ok tras reintento');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(generar).toHaveBeenCalledTimes(2);
   }, 10_000);
 
-  it('un 503 persistente (dos veces seguidas) se propaga tras el unico reintento, sin insistir mas', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable', text: async () => 'high demand' });
+  it('un 503 persistente se propaga tras el unico reintento', async () => {
+    const { service, generar } = crearService();
+    generar.mockRejectedValue(errorHttp(503));
 
     await expect(service.interpretar('ventas de hoy')).rejects.toThrow(/503/);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(generar).toHaveBeenCalledTimes(2);
   }, 10_000);
 
-  it('propaga el error si la respuesta no trae JSON valido', async () => {
-    const { service } = crearService();
-    fetchMock.mockResolvedValue(respuestaGemini('esto no es json'));
+  it('propaga el error si la respuesta no trae JSON valido o viene bloqueada', async () => {
+    const { service, generar } = crearService();
+    generar.mockResolvedValueOnce(respuesta('esto no es json')).mockResolvedValueOnce({ text: undefined, promptFeedback: { blockReason: 'SAFETY' } });
 
     await expect(service.interpretar('ventas de hoy')).rejects.toThrow(/JSON/);
+    await expect(service.interpretar('ventas de hoy')).rejects.toThrow(/bloqueo/);
   });
 });

@@ -79,7 +79,7 @@ describe('ReportBuilderService', () => {
     });
     const sql = query.mock.calls[1][0] as string;
     expect(sql).toContain('ROUND(SUM((nv.monto_total * COALESCE(dnv.peso, 1))), 2)::float8');
-    expect(sql).toContain('pr.nombre = $1 AND nv.monto_total >= $2');
+    expect(sql).toContain('LOWER(pr.nombre) = LOWER($1) AND nv.monto_total >= $2');
   });
 
   it('por nota y producto, cada producto recibe su parte del monto de la nota', async () => {
@@ -181,7 +181,7 @@ describe('ReportBuilderService', () => {
     });
 
     const sql = query.mock.calls[1][0] as string;
-    expect(sql).toContain('WHERE nv.monto_total >= $1 AND sc.nombre = $2');
+    expect(sql).toContain('WHERE nv.monto_total >= $1 AND LOWER(sc.nombre) = LOWER($2)');
   });
 
   it('matchType "OR" combina los filtros con OR, agrupados entre paréntesis', async () => {
@@ -200,7 +200,7 @@ describe('ReportBuilderService', () => {
     });
 
     const sql = query.mock.calls[1][0] as string;
-    expect(sql).toContain('WHERE (nv.monto_total >= $1 OR sc.nombre = $2)');
+    expect(sql).toContain('WHERE (nv.monto_total >= $1 OR LOWER(sc.nombre) = LOWER($2))');
   });
 
   it('matchType "OR" no afecta el rango de fechas, que sigue siendo AND', async () => {
@@ -220,7 +220,7 @@ describe('ReportBuilderService', () => {
     });
 
     const sql = query.mock.calls[1][0] as string;
-    expect(sql).toContain('WHERE nv.fecha_emision >= $3 AND (nv.monto_total >= $1 OR sc.nombre = $2)');
+    expect(sql).toContain('WHERE nv.fecha_emision >= $3 AND (nv.monto_total >= $1 OR LOWER(sc.nombre) = LOWER($2))');
   });
 
   it('rechaza tipos de reporte no soportados', async () => {
@@ -301,6 +301,31 @@ describe('ReportBuilderService', () => {
         filters: [{ campo: 'monto_total', operador: 'gt', valor }],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('en "contiene" el % y el _ del usuario son letras, no comodines', async () => {
+    const { service, query } = crearBuilder([[{ total: 0 }], []]);
+
+    await service.ejecutar({
+      reportType: 'VENTAS',
+      selectedFields: ['producto'],
+      filters: [{ campo: 'producto', operador: 'contains', valor: '50%_off' }],
+    });
+
+    const [sql, params] = query.mock.calls[1] as [string, unknown[]];
+    expect(sql).toContain("LOWER(pr.nombre) LIKE LOWER($1) ESCAPE '\\'");
+    expect(params[0]).toBe('%50\\%\\_off%');
+  });
+
+  it('validar revisa la configuración sin consultar la base', () => {
+    const { service, query } = crearBuilder([]);
+
+    expect(() => service.validar({ reportType: 'VENTAS', selectedFields: ['sucursal', 'monto_total'] })).not.toThrow();
+    // Con medidas, ordenar por una columna que no está en el reporte no es válido.
+    expect(() =>
+      service.validar({ reportType: 'VENTAS', selectedFields: ['sucursal', 'monto_total'], sort: { campo: 'fecha_emision', direccion: 'desc' } }),
+    ).toThrow(BadRequestException);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('COMPRAS compara y agrupa por el día de la compra, sin la hora', async () => {

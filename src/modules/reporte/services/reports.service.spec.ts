@@ -6,13 +6,14 @@ import { ReportsService } from './reports.service.js';
 import { ReportePlantillaRepository } from '../repositories/reporte-plantilla.repository.js';
 import type { ReportePlantilla } from '../entities/reporte-plantilla.entity.js';
 import type { TenantContext } from '../../../common/tenant/tenant-context.service.js';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { CuotaGenerativoService } from './cuota-generativo.service.js';
 
 function crearService(overrides: { builder?: unknown; nlp?: unknown; gemini?: unknown; plantillaRepo?: unknown; cuota?: unknown } = {}) {
   const builder = {
     catalogo: vi.fn().mockReturnValue([]),
     ejecutar: vi.fn().mockResolvedValue({ columns: [], columnLabels: [], rows: [], total: 0 }),
+    validar: vi.fn(),
     nombreTipo: vi.fn().mockReturnValue('Ventas'),
     ...(overrides.builder as Record<string, never> | undefined),
   } as unknown as ReportBuilderService;
@@ -178,6 +179,24 @@ describe('ReportsService', () => {
     expect(nlp.interpretar).toHaveBeenCalledWith('ventas de hoy');
     expect(respuesta.fuente).toBe('REGEX');
     expect(respuesta.interpretacion).toContain('límite diario de reportes con IA');
+  });
+
+  it('generativo cae al traductor si la configuración de Gemini no es válida para el constructor (en vez de un 400)', async () => {
+    const { service, builder, nlp } = crearService({
+      gemini: { disponible: true, interpretar: vi.fn().mockResolvedValue({ request: { reportType: 'VENTAS', selectedFields: ['x'] }, interpretacion: 'ia' }) },
+      builder: {
+        validar: vi.fn().mockImplementation(() => {
+          throw new BadRequestException('orden invalido');
+        }),
+      },
+      nlp: { interpretar: vi.fn().mockResolvedValue({ request: { reportType: 'VENTAS', selectedFields: ['sucursal'] }, interpretacion: 'regex' }) },
+    });
+
+    const respuesta = await service.generativo('ventas por sucursal');
+
+    expect(nlp.interpretar).toHaveBeenCalled();
+    expect(respuesta.fuente).toBe('REGEX');
+    expect(builder.ejecutar).toHaveBeenCalledWith({ reportType: 'VENTAS', selectedFields: ['sucursal'] });
   });
 
   it('generativo sin Gemini configurado no gasta cupo', async () => {

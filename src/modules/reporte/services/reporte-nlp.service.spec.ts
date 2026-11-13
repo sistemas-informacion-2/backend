@@ -1,5 +1,6 @@
 import { ReporteNlpService } from './reporte-nlp.service.js';
 import { fechaLocal, sumarDias } from '../../../common/utils/fecha.util.js';
+import { fijarReloj } from '../../../common/utils/reloj.js';
 
 function crearNlp(nombresSucursales: string[]) {
   const dataSource = {
@@ -72,6 +73,42 @@ describe('ReporteNlpService', () => {
 
     expect(request.reportType).toBe('COMPRAS');
     expect(request.filters).toEqual([]);
+  });
+
+  describe('períodos', () => {
+    // Jueves 13/11/2026 a las 11:00 en La Paz.
+    beforeEach(() => fijarReloj(new Date('2026-11-13T15:00:00Z')));
+    afterEach(() => fijarReloj(null));
+
+    it.each([
+      ['ventas de ayer', '2026-11-12', '2026-11-12', 'ayer'],
+      ['ventas del mes pasado', '2026-10-01', '2026-10-31', 'el mes pasado'],
+      ['ventas del mes anterior', '2026-10-01', '2026-10-31', 'el mes pasado'],
+      ['ventas de este mes', '2026-11-01', '2026-11-13', 'este mes'],
+      ['ventas del último mes', '2026-10-13', '2026-11-13', 'el último mes'],
+      ['ventas de este año', '2026-01-01', '2026-11-13', 'este año'],
+    ])('"%s" va del %s al %s', async (pedido, desde, hasta, texto) => {
+      const { request, interpretacion } = await crearNlp([]).interpretar(pedido);
+
+      expect(request.dateFrom).toBe(desde);
+      expect(request.dateTo).toBe(hasta);
+      expect(interpretacion).toContain(texto);
+    });
+
+    it('"el mes pasado" en enero es diciembre del año anterior', async () => {
+      fijarReloj(new Date('2027-01-05T15:00:00Z'));
+      const { request } = await crearNlp([]).interpretar('compras del mes pasado');
+
+      expect(request.dateFrom).toBe('2026-12-01');
+      expect(request.dateTo).toBe('2026-12-31');
+    });
+  });
+
+  it.each(['top 5 de ventas', 'los 5 productos más vendidos', 'los 5 más vendidos'])('"%s" pide 5 filas ordenadas por cantidad', async (pedido) => {
+    const { request } = await crearNlp([]).interpretar(pedido);
+
+    expect(request.limit).toBe(5);
+    expect(request.sort).toEqual({ campo: 'cantidad', direccion: 'desc' });
   });
 
   it('un pedido sin pistas cae en el reporte por defecto de ventas', async () => {

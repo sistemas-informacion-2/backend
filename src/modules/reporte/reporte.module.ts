@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BiModule } from '../bi/bi.module.js';
 import { ReportePlantilla } from './entities/reporte-plantilla.entity.js';
 import { ReportsController } from './controllers/reports.controller.js';
 import { DashboardController } from './controllers/dashboard.controller.js';
@@ -13,7 +14,8 @@ import { CuotaGenerativoService } from './services/cuota-generativo.service.js';
 import { ReportePlantillaRepository } from './repositories/reporte-plantilla.repository.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ReportePlantilla])],
+  // BiModule aporta GeminiBiClient, el cliente de IA (Vertex o API key) que usa el generativo.
+  imports: [TypeOrmModule.forFeature([ReportePlantilla]), BiModule],
   controllers: [ReportsController, DashboardController],
   providers: [
     DashboardService,
