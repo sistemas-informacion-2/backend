@@ -39,12 +39,12 @@ describe('exportarReporte', () => {
     expect(archivo.buffer.toString('utf8')).toContain('Monto total');
   });
 
-  it('genera un Excel (SpreadsheetML)', async () => {
+  it('genera un Excel .xlsx real (un ZIP), no el SpreadsheetML de antes', async () => {
     const archivo = await exportarReporte('excel', documento());
 
-    expect(archivo.contentType).toContain('application/vnd.ms-excel');
-    expect(archivo.nombreArchivo).toBe('ventas.xls');
-    expect(archivo.buffer.toString('utf8')).toContain('<Workbook');
+    expect(archivo.contentType).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(archivo.nombreArchivo).toBe('ventas.xlsx');
+    expect(archivo.buffer.subarray(0, 2).toString('latin1')).toBe('PK');
   });
 
   it('genera el PDF profesional', async () => {
@@ -59,19 +59,18 @@ describe('exportarReporte', () => {
     await expect(exportarReporte('pdf', documento({ resumen: undefined }))).rejects.toThrow(/resumen/);
   });
 
-  it('solo el PDF necesita calcular el resumen', () => {
+  it('el PDF y el Excel necesitan el resumen; el HTML no', () => {
     expect(necesitaResumen('pdf')).toBe(true);
+    expect(necesitaResumen('excel')).toBe(true);
     expect(necesitaResumen('html')).toBe(false);
   });
 
   describe('cuando el reporte tiene más filas que las exportadas', () => {
     const recortado: ReportResultDto = { ...resultado, total: 1234 };
 
-    it.each([
-      ['html', 'utf8'],
-      ['excel', 'utf8'],
-    ] as const)('el %s lo avisa', async (formato, codificacion) => {
-      const texto = (await exportarReporte(formato, documento({ resultado: recortado }))).buffer.toString(codificacion);
+    // El aviso del Excel se prueba en excel-reporte.spec.ts: el .xlsx está comprimido.
+    it('el html lo avisa', async () => {
+      const texto = (await exportarReporte('html', documento({ resultado: recortado }))).buffer.toString('utf8');
       expect(texto).toContain('Se muestran las primeras 2 de 1.234 filas');
     });
 
@@ -83,6 +82,6 @@ describe('exportarReporte', () => {
   });
 
   it('sanea el nombre de archivo según el formato', async () => {
-    expect((await exportarReporte('excel', documento({ nombreReporte: 'Ventas 2026' }))).nombreArchivo).toBe('ventas-2026.xls');
+    expect((await exportarReporte('excel', documento({ nombreReporte: 'Ventas 2026' }))).nombreArchivo).toBe('ventas-2026.xlsx');
   });
 });

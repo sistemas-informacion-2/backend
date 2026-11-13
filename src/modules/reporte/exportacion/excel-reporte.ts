@@ -16,8 +16,9 @@ import type { Grafico, Indicador } from './resumen.types.js';
 const PLATAFORMA = 'DOMINATR';
 /** Formatos de numero de Excel. El codigo usa la notacion de Excel; cada equipo lo muestra con su separador local. */
 const FORMATO_BS = '"Bs "#,##0.00';
-const FORMATO_NUMERO = '#,##0.##';
+// Enteros sin decimales: "#,##0.##" mostraria "3.422." (con el separador colgando) en Excel.
 const FORMATO_ENTERO = '#,##0';
+const FORMATO_DECIMAL = '#,##0.00';
 const FORMATO_PORCENTAJE = '0.0%';
 const FORMATO_FECHA = 'dd/mm/yyyy';
 
@@ -169,7 +170,7 @@ class Escritor {
     fila.getCell(1).value = indicador.etiqueta;
     const valor = fila.getCell(2);
     valor.value = indicador.valor ?? '—';
-    if (typeof indicador.valor === 'number') valor.numFmt = indicador.formato === 'MONEDA' ? FORMATO_BS : FORMATO_NUMERO;
+    if (typeof indicador.valor === 'number') valor.numFmt = indicador.formato === 'MONEDA' ? FORMATO_BS : formatoNumero(indicador.valor);
     valor.font = fuenteExcel({ negrita: true, color: TINTA, tam: 11 });
     valor.alignment = { horizontal: 'right' };
     fila.getCell(4).value = indicador.detalle ?? '';
@@ -177,23 +178,34 @@ class Escritor {
     bordeInferior(fila, ANCHOS_RESUMEN.length);
   }
 
-  /** Los datos de un grafico como tabla: nombre, valor y participacion sobre el total. */
+  /**
+   * Los datos de un grafico como tabla. La participacion va solo en el anillo: sus porciones (con "Otros") suman el
+   * total. Las barras y los rankings muestran los 10 primeros, y un porcentaje sobre ellos no seria el del total.
+   */
   grafico(grafico: Grafico): void {
+    const conParticipacion = grafico.tipo === 'ANILLO';
     const total = grafico.puntos.reduce((suma, punto) => suma + punto.valor, 0);
     const conRanking = grafico.tipo === 'RANKING';
-    this.encabezado([conRanking ? 'Posición y nombre' : 'Nombre', grafico.formato === 'MONEDA' ? 'Monto' : 'Cantidad', 'Participación']);
+    const columnas = conParticipacion ? 3 : 2;
+    this.encabezado([
+      conRanking ? 'Posición y nombre' : 'Nombre',
+      grafico.formato === 'MONEDA' ? 'Monto' : 'Cantidad',
+      ...(conParticipacion ? ['Participación'] : []),
+    ]);
     grafico.puntos.forEach((punto, i) => {
       const fila = this.siguiente();
       fila.getCell(1).value = conRanking ? `${i + 1}. ${punto.etiqueta}` : punto.etiqueta;
       const valor = fila.getCell(2);
       valor.value = punto.valor;
-      valor.numFmt = grafico.formato === 'MONEDA' ? FORMATO_BS : FORMATO_NUMERO;
-      const parte = fila.getCell(3);
-      parte.value = total > 0 ? punto.valor / total : 0;
-      parte.numFmt = FORMATO_PORCENTAJE;
-      parte.font = fuenteExcel({ color: SUAVE, tam: 10 });
-      if (i % 2 === 1) for (let c = 1; c <= 3; c++) fila.getCell(c).fill = relleno(FILA_ALTERNA);
-      bordeInferior(fila, 3);
+      valor.numFmt = grafico.formato === 'MONEDA' ? FORMATO_BS : formatoNumero(punto.valor);
+      if (conParticipacion) {
+        const parte = fila.getCell(3);
+        parte.value = total > 0 ? punto.valor / total : 0;
+        parte.numFmt = FORMATO_PORCENTAJE;
+        parte.font = fuenteExcel({ color: SUAVE, tam: 10 });
+      }
+      if (i % 2 === 1) for (let c = 1; c <= columnas; c++) fila.getCell(c).fill = relleno(FILA_ALTERNA);
+      bordeInferior(fila, columnas);
     });
   }
 }
@@ -264,7 +276,7 @@ function escribirCelda(celda: ExcelJS.Cell, valor: string | number | boolean, fo
   }
   if (typeof valor === 'number') {
     celda.value = valor;
-    celda.numFmt = formato === 'MONEDA' ? FORMATO_BS : Number.isInteger(valor) ? FORMATO_ENTERO : FORMATO_NUMERO;
+    celda.numFmt = formato === 'MONEDA' ? FORMATO_BS : formatoNumero(valor);
     return;
   }
   if (formato === 'FECHA' && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
@@ -278,6 +290,10 @@ function escribirCelda(celda: ExcelJS.Cell, valor: string | number | boolean, fo
 }
 
 // ---------------------------------------------------------------- utilidades
+
+function formatoNumero(valor: number): string {
+  return Number.isInteger(valor) ? FORMATO_ENTERO : FORMATO_DECIMAL;
+}
 
 interface Fuente {
   negrita?: boolean;

@@ -105,32 +105,6 @@ function generarHtml(nombreReporte: string, resultado: ReportResultDto): Buffer 
   return Buffer.from(html, 'utf8');
 }
 
-function generarExcel(nombreReporte: string, resultado: ReportResultDto): Buffer {
-  const celda = (valor: string | number | boolean): string => {
-    if (typeof valor === 'number') return `<Cell><Data ss:Type="Number">${valor}</Data></Cell>`;
-    if (typeof valor === 'boolean') return `<Cell><Data ss:Type="Boolean">${String(valor)}</Data></Cell>`;
-    return `<Cell><Data ss:Type="String">${escaparXml(celdaTexto(valor))}</Data></Cell>`;
-  };
-  const filas = resultado.rows.map((fila) => `<Row>${fila.map(celda).join('')}</Row>`).join('\n');
-  // Si el reporte se recorto, el aviso va al final: la primera fila sigue siendo el encabezado de la tabla.
-  const aviso = estaRecortado(resultado) ? `\n<Row></Row>\n<Row>${celda(resumenFilas(resultado))}</Row>` : '';
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="Encabezado"><Font ss:Bold="1"/></Style>
-  </Styles>
-  <Worksheet ss:Name="${escaparXml(slugificar(nombreReporte))}">
-    <Table>
-      <Row>${resultado.columnLabels.map((label) => `<Cell ss:StyleID="Encabezado"><Data ss:Type="String">${escaparXml(label)}</Data></Cell>`).join('')}</Row>
-${filas}${aviso}
-    </Table>
-  </Worksheet>
-</Workbook>
-`;
-  return Buffer.from(xml, 'utf8');
-}
-
 /** true si el archivo trae menos filas que el reporte (se exporta hasta LIMITE_REPORTE_MAXIMO). */
 function estaRecortado(resultado: ReportResultDto): boolean {
   return resultado.rows.length < resultado.total;
@@ -149,10 +123,6 @@ function celdaTexto(valor: string | number | boolean): string {
 
 function escaparHtml(valor: string): string {
   return valor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function escaparXml(valor: string): string {
-  return escaparHtml(valor).replace(/'/g, '&apos;');
 }
 
 function slugificar(nombre: string): string {
